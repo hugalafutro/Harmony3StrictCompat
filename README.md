@@ -1,8 +1,39 @@
 # Harmony 3 Strict Binding Compat (local)
 
-Local stop-gap fixes for a large RimWorld 1.7 mod list (Harmony 3, UnityStubs). Every fix is temporary and
-fingerprints the mod method it touches: when that mod updates, the log shows a red error so the fix can be
-re-checked or removed. See `About/About.xml` for the list of fixes and `Source/` for the code.
+Local stop-gap fixes for a large RimWorld 1.7 mod list (Harmony 3, UnityStubs). Every fix is temporary: remove it
+once the mod it covers is fixed upstream.
+
+## Fixes
+
+Each C# fix fingerprints the foreign method it touches (FNV-1a of the IL). When that mod updates, the log shows a
+red `[Harmony3StrictCompat] ... changed` error so the fix can be re-checked. XML fixes use PatchOperationTest steps
+that fail loudly the same way.
+
+| Mod | Problem | Fix |
+|---|---|---|
+| Biomes! Caverns (Caveworld Flora) | Wild fungus colonies never regrow: `Mycelium.NotifyPlantRemoved` is never called, so a colony that once filled up stays "full" with no mushrooms | Each wild mushroom removed lowers its colony's count (floored at 0, colony kept); on load every count is reset to the live mushrooms |
+| Biomes! Caverns (Caveworld Flora) | Wild fungi mouseover reads `Brightbells)`, growth missing | Re-inserts ` (NN% growth` in `FruitingBody.LabelMouseover` |
+| Biomes! Caverns | `BMT_ResourceBlueCrystal` "is equipment but has no verbs or tools" config error | XML: strips its equipment nodes (`1.7/Patches/BiomesCaverns_BlueCrystal.xml`) |
+| MSS Tweaks and Fun | Haunt portraits saved upside down on 1.7/Vulkan | Flips the rows before the PNG is encoded |
+| MSS Tweaks and Fun | VFE Pirates Buckoneer culture patch targets `VFEP_Junkers/VFEP_Mercenaries` | Exact xpath remap to the `VFEP_Mercenaries` faction |
+| Eternal Pawns | Recycles faction leaders and warcasket pawns as ordinary visitors/raiders (kind rewritten, casket lost); ignores `MustBeCapableOfViolence` | Keeps leaders, leader kinds and warcasket wearers out of the veteran draw; honours the violence flag |
+| Hospitality | Arrival re-gear destroys visitors' warcaskets | Skips the re-gear for casket wearers and re-locks their casket pieces |
+| Hospitality | Arriving guests pocket their headgear, warcasket helmet included | Skips headgear pocketing for casket wearers |
+| Hospitality | Guest sleeps on the floor beside its own bed | Diagnostic only: logs which bed check failed (remove once the cause is known) |
+| Giddy-Up 2 | Dismounted caravan animals park where the rider stepped off, so the caravan never arrives or leaves | Keeps lord animals' travel/follow focus across `Dismount` |
+| Vanilla / unknown | Trade caravan whose trader has a non-trader pawn kind: dismiss does nothing, caravan never exits | A guard holding a trader kind counts as the Trader |
+| VEF (MVCF) | Multi-verb weapons get 100% accuracy and 1 s cooldown; duplicate stat rows; "Range 1" | Unset verb stats fall back to the weapon's own; duplicate rows hidden; Range row rebuilt |
+| VEF | Verb range factor mutates the shared verb def and can stick (29.85 instead of 19.9) | Factor applied to the result instead |
+| Simple Leadership | Faction leaders join raids whose points can't cover them | Leaders only join when the raid points allow it |
+| Sensible Bed Ownership | Reservation prefix null-refs on just-despawned beds | Skipped for beds with no map |
+| Skilled Refueling | Harmony 3 rejects a patch with a mistyped `__instance` | Unchecked binding for that one patch (it never uses the wrong type) |
+| Basic Traits | "TraitHediffApplier: Processing pawn" debug spam | Log calls removed, logic kept |
+| Triumphant Research | Blank research-complete window with a per-frame index error | Shows the project's full unlock list |
+| Too Many Mods | 22 lowercase `Defs/thingDef[` xpaths (Rimsenal items) | Case fixed |
+| Rimsenal Faction Pack - Spacer | Second style comp on the mech commander helmet, Dresser and EndTable (duplicate load IDs) | Those conditionals skipped, for that mod only |
+| ReGrowth plant patches | Duplicate wild plant records abort the world-gen Landmarks / Mutators steps | Dedupes `BiomeDef.wildPlants` |
+| Vanilla | Pawns deep-saved in quests are built before the world exists (MechEnergy null-ref) | No needs while no world exists; saved needs load right after |
+| Vanilla / unknown | Trade ship slave also saved as a world pawn loads twice | World copy dropped after load |
 
 Companion XML tweaks: [LocalTweaks](https://github.com/hugalafutro/LocalTweaks).
 

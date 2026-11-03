@@ -23,6 +23,7 @@
 - Biomes! Caverns (Caveworld Flora): wild fungus colonies regrow (each removed mushroom lowers its colony's count; on load counts are reset to the live mushrooms).
 - Biomes! Caverns (Caveworld Flora): wild fungi mouseover shows growth again instead of "Brightbells)".
 - Biomes! Caverns: strips the equipment nodes from BMT_ResourceBlueCrystal ("is equipment but has no verbs or tools").
+- Loading Progress: its startup profiler no longer races during parallel XML loading (a mod's defs could fail to load and crash the game into a ModsConfig reset).
 - MSS Tweaks and Fun: haunt portraits no longer saved upside down on 1.7/Vulkan.
 - MSS Tweaks and Fun: VFE Pirates Buckoneer culture patch remapped to the VFEP_Mercenaries faction.
 - Eternal Pawns: faction leaders, leader kinds and warcasket wearers stay out of the veteran draw; MustBeCapableOfViolence honoured.

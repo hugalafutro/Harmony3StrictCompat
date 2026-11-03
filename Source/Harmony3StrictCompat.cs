@@ -115,6 +115,27 @@ namespace Harmony3StrictCompat
 						postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(CfuRecountColonies)));
 				}
 			}
+			var lpInfo = Target("ilyvion.LoadingProgress.StartupImpact.ModInfoList:GetModInfoFor");
+			if (lpInfo != null)
+				harmony.Patch(lpInfo, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LpLockEnter)),
+					finalizer: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LpLockExit)));
+		}
+
+		// ---- Loading Progress: race in its startup-impact profiler ----------------------------------------------
+		// ModInfoList.GetModInfoFor does Dictionary.TryGetValue then Add with no lock, and is called from the parallel
+		// per-mod XML loading. Two threads for the same mod both miss and both Add: "Could not load defs for mod
+		// Ludeon.RimWorld.Anomaly: An item with the same key has already been added", so that mod's defs are skipped.
+		// 2026-11-03 it hit Anomaly; a recipe then referenced a missing Anomaly item, RecipeDefGenerator null-reffed,
+		// the game reset ModsConfig.xml to Core + DLC and reloaded with thousands of errors. Serialize the call.
+		static void LpLockEnter(object __instance, out bool __state)
+		{
+			__state = false;
+			System.Threading.Monitor.Enter(__instance, ref __state);
+		}
+
+		static void LpLockExit(object __instance, bool __state)
+		{
+			if (__state) System.Threading.Monitor.Exit(__instance);
 		}
 
 		// ---- Biomes! Caverns (Caveworld Flora Unleashed): wild fungus colonies never regrow ---------------------
@@ -377,6 +398,7 @@ namespace Harmony3StrictCompat
 			["MSSFP.Utils.PawnGraphicUtils+<>c__DisplayClass4_0:<SaveTextureToFile>b__0"] = 0x3C2DDE1F39E984E8,  // MSS Tweaks and Fun 1.7, 2026-10-19
 			["Caveworld_Flora_Unleashed.FruitingBody:get_LabelMouseover"] = 0xB098C8B9BC3CE626,                 // Biomes! Caverns 1.7, 2026-10-20
 			["Caveworld_Flora_Unleashed.GenCaveFungusReproduction:TryGrowMycelium"] = 0x614612774F447421,         // Biomes! Caverns 1.7, 2026-10-20
+			["ilyvion.LoadingProgress.StartupImpact.ModInfoList:GetModInfoFor"] = 0x357F68C7E142FD4F,          // Loading Progress 1.7, 2026-10-21
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an

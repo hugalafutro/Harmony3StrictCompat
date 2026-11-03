@@ -75,8 +75,8 @@ def main():
         return
     readme.write_text(new, encoding="utf-8", newline="\n")
     git = lambda *a: subprocess.run(["git", "-C", str(REPO), *a], check=True, capture_output=True)
-    git("add", "README.md")
-    git("commit", "-m", f"Update active mod list ({len(active)} mods)")
+    # pathspec commit: never sweeps up other staged work in progress
+    git("commit", "-m", f"Update active mod list ({len(active)} mods)", "--", "README.md")
     if "--no-push" not in sys.argv:
         git("push", "-q", "origin", "main")
 

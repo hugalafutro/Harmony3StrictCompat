@@ -131,14 +131,15 @@ namespace Harmony3StrictCompat
 		// ---- Better Workbench Management: bill options overlap the Ideology style button -------------------------
 		// BWM draws its block (output filter, count away, restrict workbench) in the bill dialog's left column at
 		// inRect.height - 50 - 100, about 99 px tall, so it ends ~51 px above the bottom. Vanilla puts the "Use global
-		// style" dropdown (or "No styles available") at height - 90 .. -60 in the same column whenever Ideology is in
-		// classic mode and the recipe makes a thing, so "Restrict workbench" sits on top of it. Lift BWM's block by
-		// 50 px in exactly that case (offset 100 becomes 150).
+		// style" dropdown (or "No styles available") at height - 90 .. -60 in the same column when Ideology is in classic
+		// mode and the recipe makes a thing; Style Change Anytime draws its own dropdown in the same spot for every
+		// recipe that makes a thing, classic or not. "Restrict workbench" sits on top of it. Lift BWM's block by 50 px
+		// whenever Ideology is active and the recipe makes a thing (offset 100 becomes 150).
 		static readonly AccessTools.FieldRef<Dialog_BillConfig, Bill_Production> BillOf =
 			AccessTools.FieldRefAccess<Dialog_BillConfig, Bill_Production>("bill");
 
 		static float BwmBottomOffset(Dialog_BillConfig dialog) =>
-			ModsConfig.IdeologyActive && Find.IdeoManager.classicMode && BillOf(dialog)?.recipe?.ProducedThingDef != null ? 150f : 100f;
+			ModsConfig.IdeologyActive && BillOf(dialog)?.recipe?.ProducedThingDef != null ? 150f : 100f;
 
 		static IEnumerable<CodeInstruction> BwmClearStyleButton(IEnumerable<CodeInstruction> instructions)
 		{

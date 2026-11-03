@@ -1,0 +1,5 @@
+Tools/bak/
+__pycache__/
+*.bak*
+# personal LAN sync script (host names, key paths)
+Tools/sync_g15.sh

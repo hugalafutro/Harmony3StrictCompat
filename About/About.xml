@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData>
+  <name>Harmony 3 Strict Binding Compat (local)</name>
+  <author>sammael</author>
+  <packageId>sammael.harmony3strictcompat</packageId>
+  <supportedVersions>
+    <li>1.7</li>
+  </supportedVersions>
+  <modDependencies>
+    <li>
+      <packageId>brrainz.harmony</packageId>
+      <displayName>Harmony</displayName>
+    </li>
+  </modDependencies>
+  <loadAfter>
+    <li>brrainz.harmony</li>
+  </loadAfter>
+  <loadBefore>
+    <li>mrhydralisk.skilledrefueling</li>
+  </loadBefore>
+  <description>Local stop-gap fixes for RimWorld 1.7 (Harmony 3, UnityStubs). Remove each one when the mod it covers is fixed.
+- Skilled Refueling: Harmony 3 unchecked binding for a patch with a mistyped __instance (it never uses the wrong type).
+- Too Many Mods: corrects its 22 lowercase "Defs/thingDef[" xpaths (Rimsenal items).
+- MSS Tweaks and Fun: fixes the VFE Pirates Buckoneer culture patch that targets VFEP_Junkers/VFEP_Mercenaries instead of the VFEP_Mercenaries faction.
+- Rimsenal Faction Pack - Spacer: skips the patches that give the mech commander helmet, Dresser and EndTable a second style comp.
+- Sensible Bed Ownership: skips its reservation prefix for beds with no map (it null-refs on just-despawned beds).
+- Simple Leadership: a faction/base leader only joins a raid if the raid's points cover the leader's combat power (on builds that charge the leader's cost, only if enough points remain for the rest of the raid).
+- Basic Traits: silences the "TraitHediffApplier: Processing pawn" debug lines (its hediff logic still runs).
+- Fingerprints every mod method it touches and logs a red error when one changes, i.e. that mod updated and the fix needs re-checking.
+- ReGrowth plant patches: removes duplicate wild plant records from biomes (they abort the world-gen Landmarks and Mutators steps).
+- Vanilla: Pawn_NeedsTracker.ShouldHaveNeed gives no needs while no world exists yet (pawns deep-saved in quest parts are built before the world loads; the MechEnergy check null-refs on Find.FactionManager). Saved needs load right after, nothing lost.
+- Vanilla/unknown mod: a trade ship's slave for sale that is also saved as a world pawn loads twice (duplicate thingID errors); after load the world copy is dropped and the ship named in the log.
+- Biomes! Caverns: strips the equipment nodes from the BMT_ResourceBlueCrystal resource (dev-mode config error "is equipment but has no verbs or tools"); XML patch with Test steps that fail loudly once the def changes.
+- Triumphant Research: when its research-complete window filters every unlock away (a product shared by recipes under other, unfinished research, e.g. MSS neutroamine) it shows the project's full unlock list instead of a blank window with a per-frame index error.</description>
+</ModMetaData>

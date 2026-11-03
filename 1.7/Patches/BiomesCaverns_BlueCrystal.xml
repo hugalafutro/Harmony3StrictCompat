@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch>
+  <!-- Biomes! Caverns (workshop 2969748433, 1.6/Defs/Items/BMT_Crystals.xml): BMT_ResourceBlueCrystal is a
+       stone-block resource that also declares equipmentType Primary, a CompEquippable comp and weaponClasses,
+       but has no tools or verbs. Dev mode logs "Config error in BMT_ResourceBlueCrystal: is equipment but has
+       no verbs or tools". Strip the three equipment nodes.
+       The PatchOperationTest steps make the whole sequence fail with a red patch error as soon as the author
+       changes or removes any of them, i.e. the mod updated and this fix needs re-checking. -->
+  <Operation Class="PatchOperationSequence" MayRequire="BiomesTeam.BiomesCaverns">
+    <operations>
+      <li Class="PatchOperationTest">
+        <xpath>Defs/ThingDef[defName="BMT_ResourceBlueCrystal"]/equipmentType</xpath>
+      </li>
+      <li Class="PatchOperationTest">
+        <xpath>Defs/ThingDef[defName="BMT_ResourceBlueCrystal"]/comps/li[compClass="CompEquippable"]</xpath>
+      </li>
+      <li Class="PatchOperationTest">
+        <xpath>Defs/ThingDef[defName="BMT_ResourceBlueCrystal"]/weaponClasses</xpath>
+      </li>
+      <li Class="PatchOperationRemove">
+        <xpath>Defs/ThingDef[defName="BMT_ResourceBlueCrystal"]/equipmentType</xpath>
+      </li>
+      <li Class="PatchOperationRemove">
+        <xpath>Defs/ThingDef[defName="BMT_ResourceBlueCrystal"]/comps/li[compClass="CompEquippable"]</xpath>
+      </li>
+      <li Class="PatchOperationRemove">
+        <xpath>Defs/ThingDef[defName="BMT_ResourceBlueCrystal"]/weaponClasses</xpath>
+      </li>
+    </operations>
+  </Operation>
+</Patch>

@@ -25,6 +25,7 @@
 - Biomes! Caverns: strips the equipment nodes from BMT_ResourceBlueCrystal ("is equipment but has no verbs or tools").
 - Loading Progress: its startup profiler no longer races during parallel XML loading (a mod's defs could fail to load and crash the game into a ModsConfig reset).
 - Loadout Compositing + Better Workbench Management: per-tag bills get the "count pawns away / on caravan" option back (BWM's new Debug build broke LC's transpiler).
+- Better Workbench Management: its bill options no longer overlap the Ideology "Use global style" dropdown.
 - MSS Tweaks and Fun: haunt portraits no longer saved upside down on 1.7/Vulkan.
 - MSS Tweaks and Fun: VFE Pirates Buckoneer culture patch remapped to the VFEP_Mercenaries faction.
 - Eternal Pawns: faction leaders, leader kinds and warcasket wearers stay out of the veteran draw; MustBeCapableOfViolence honoured.

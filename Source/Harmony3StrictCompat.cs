@@ -119,10 +119,42 @@ namespace Harmony3StrictCompat
 			if (lpInfo != null)
 				harmony.Patch(lpInfo, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LpLockEnter)),
 					finalizer: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LpLockExit)));
+			var bwmFilters = Target("ImprovedWorkbenches.BillConfig_DoWindowContents_Patch:DrawFilters");
+			if (bwmFilters != null)
+				harmony.Patch(bwmFilters, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(BwmClearStyleButton)));
 			var lcBwm = Target("Inventory.BWM_DoWindowContentsPatch_Patch:Transpiler");
 			lcCountAway = Target("Inventory.BWM_DoWindowContentsPatch_Patch:ShouldCountAway");
-			if (lcBwm != null && lcCountAway != null && Target("ImprovedWorkbenches.BillConfig_DoWindowContents_Patch:DrawFilters") != null)
+			if (lcBwm != null && lcCountAway != null && bwmFilters != null)
 				harmony.Patch(lcBwm, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LcBwmCountAway)));
+		}
+
+		// ---- Better Workbench Management: bill options overlap the Ideology style button -------------------------
+		// BWM draws its block (output filter, count away, restrict workbench) in the bill dialog's left column at
+		// inRect.height - 50 - 100, about 99 px tall, so it ends ~51 px above the bottom. Vanilla puts the "Use global
+		// style" dropdown (or "No styles available") at height - 90 .. -60 in the same column whenever Ideology is in
+		// classic mode and the recipe makes a thing, so "Restrict workbench" sits on top of it. Lift BWM's block by
+		// 50 px in exactly that case (offset 100 becomes 150).
+		static readonly AccessTools.FieldRef<Dialog_BillConfig, Bill_Production> BillOf =
+			AccessTools.FieldRefAccess<Dialog_BillConfig, Bill_Production>("bill");
+
+		static float BwmBottomOffset(Dialog_BillConfig dialog) =>
+			ModsConfig.IdeologyActive && Find.IdeoManager.classicMode && BillOf(dialog)?.recipe?.ProducedThingDef != null ? 150f : 100f;
+
+		static IEnumerable<CodeInstruction> BwmClearStyleButton(IEnumerable<CodeInstruction> instructions)
+		{
+			var list = instructions.ToList();
+			int hits = 0;
+			for (int i = 2; i < list.Count; i++)
+				if (list[i].opcode == OpCodes.Ldc_R4 && list[i].operand is float f && f == 100f
+					&& list[i - 1].opcode == OpCodes.Sub && list[i - 2].opcode == OpCodes.Ldc_R4 && list[i - 2].operand is float g && g == 50f)
+				{
+					list[i] = new CodeInstruction(OpCodes.Ldarg_0).WithLabels(list[i].labels).WithBlocks(list[i].blocks);
+					list.Insert(i + 1, new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(BwmBottomOffset))));
+					hits++;
+				}
+			if (hits != 1)
+				Log.Error($"[Harmony3StrictCompat] BWM style-button overlap: expected 1 `height - 50 - 100`, found {hits}");
+			return list;
 		}
 
 		// ---- Loadout Compositing x Better Workbench Management: "count away" option missing -----------------------

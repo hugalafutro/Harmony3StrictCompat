@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch>
+  <!-- Personal tweak (not a fix): Hospitality's powered vending machine draws 100 W instead of 10 and keeps its
+       stored items frozen while powered. The freezing itself is C# (VendingFridge in Harmony3StrictCompat.cs),
+       which looks the def up by name and does nothing if it is missing. -->
+  <Operation Class="PatchOperationReplace" MayRequire="Adamas.VendingMachines">
+    <xpath>Defs/ThingDef[defName="VendingMachine"]/comps/li[@Class="CompProperties_Power"]/basePowerConsumption</xpath>
+    <value>
+      <basePowerConsumption>100</basePowerConsumption>
+    </value>
+  </Operation>
+  <Operation Class="PatchOperationReplace" MayRequire="Adamas.VendingMachines">
+    <xpath>Defs/ThingDef[defName="VendingMachine"]/description</xpath>
+    <value>
+      <description>A standard vending machine for guests. Refrigerated: keeps stored items frozen while powered.</description>
+    </value>
+  </Operation>
+</Patch>

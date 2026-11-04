@@ -925,4 +925,30 @@ namespace Harmony3StrictCompat
 				PathEndMode.OnCell, TraverseParms.For(pawn), 9999f, t => pawn.CanReserve(t) && !t.IsForbidden(pawn));
 		}
 	}
+
+	// ---- Hospitality vending machine works as a fridge (personal tweak, not a fix) ---------------------------
+	// 1.7/Patches/VendingMachine_Fridge.xml raises its draw to 100 W. While it has power, items stored in it read
+	// the same temperature as in [sbz] Fridge's fridges (ambient - 100, floored at -10 C), so food freezes and stops
+	// rotting. Done here instead of turning it into an Adaptive Storage thing because already-built machines keep
+	// their saved class and would need rebuilding.
+	[StaticConstructorOnStartup]
+	static class VendingFridge
+	{
+		static readonly ThingDef machine = DefDatabase<ThingDef>.GetNamedSilentFail("VendingMachine");
+
+		static VendingFridge()
+		{
+			if (machine == null) return;
+			new Harmony("sammael.harmony3strictcompat").Patch(AccessTools.PropertyGetter(typeof(Thing), nameof(Thing.AmbientTemperature)),
+				postfix: new HarmonyMethod(typeof(VendingFridge), nameof(Chill)));
+		}
+
+		static void Chill(Thing __instance, ref float __result)
+		{
+			if (__result <= -10f || __instance.def.category != ThingCategory.Item || !__instance.Spawned) return;
+			if (__instance.Map.edificeGrid[__instance.Position] is not Building b || b.def != machine) return;
+			if (b.GetComp<CompPowerTrader>() is { PowerOn: false }) return;
+			__result = Mathf.Max(__result - 100f, -10f);
+		}
+	}
 }

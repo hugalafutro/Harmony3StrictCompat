@@ -27,6 +27,7 @@
 - Loadout Compositing + Better Workbench Management: per-tag bills get the "count pawns away / on caravan" option back (BWM's new Debug build broke LC's transpiler).
 - Better Workbench Management: its bill options no longer overlap the "Use global style" dropdown (vanilla classic mode or Style Change Anytime).
 - Vanilla Races Expanded - Sanguophage: animalfeeders (strigoi) drink animal hemogen packs on their own, like regular packs, when no prisoner or regular pack is available.
+- Hospitality: Vending machines (personal tweak): the powered vending machine draws 100 W and keeps stored items frozen while powered.
 - MSS Tweaks and Fun: haunt portraits no longer saved upside down on 1.7/Vulkan.
 - MSS Tweaks and Fun: VFE Pirates Buckoneer culture patch remapped to the VFEP_Mercenaries faction.
 - Eternal Pawns: faction leaders, leader kinds and warcasket wearers stay out of the veteran draw; MustBeCapableOfViolence honoured.

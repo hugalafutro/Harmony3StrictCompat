@@ -75,10 +75,10 @@ namespace Harmony3StrictCompat
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GuRestoreTravelFocus)));
 			harmony.Patch(AccessTools.Method(typeof(TraderCaravanUtility), nameof(TraderCaravanUtility.GetTraderCaravanRole)),
 				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(TraderRoleByTraderKind)));
-			var hospSleep = Target("Hospitality.JobGiver_Sleep:TryIssueJobPackage");
 			guestBedField = AccessTools.Field(AccessTools.TypeByName("Hospitality.CompGuest"), "bed");
-			if (hospSleep != null && guestBedField != null)
-				harmony.Patch(hospSleep, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GuestFloorSleepProbe)));
+			if (guestBedField != null)
+				harmony.Patch(AccessTools.Method(typeof(Pawn_JobTracker), nameof(Pawn_JobTracker.StartJob)),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GuestFloorSleepProbe)));
 			var epDispatch = Target("FinitePopulationVeterans.WorldPopulationManager:IsPawnAvailableForDispatch");
 			if (epDispatch != null)
 				harmony.Patch(epDispatch, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(EpNoLeaderVeterans)));
@@ -341,26 +341,37 @@ namespace Harmony3StrictCompat
 		}
 
 		// ---- Diagnostic: Hospitality guest sleeping on the floor next to a bed it owns ----------------------
-		// JobGiver_Sleep puts a guest on the floor when RestUtility.IsValidBedFor rejects its claimed guest bed (or
-		// it owns none), and logs nothing. Seen 2026-11-01 (Bladeskarthak, VRE Insector); the save afterwards showed
-		// no blocker, so the cause was momentary. Re-run the checks the moment the floor job is handed out and log
-		// which fail. Diagnostic only: changes nothing. Remove once the cause is known.
+		// Seen 2026-11-01 (Bladeskarthak) and 2026-11-04 (Hindman, Rova, Vay, Allen, Muddy): guests with a claimed
+		// guest bed sleep on the floor far from it. v34-v52 probed Hospitality.JobGiver_Sleep, but that node returns the
+		// pawn's CURRENT job unchanged when it has one, so it only re-reported floor jobs some other node had started
+		// (every report said the bed was valid). Now probe Pawn_JobTracker.StartJob instead: when a guest with a
+		// claimed bed starts a floor LayDown, log which think node issued it (with its parent chain and the duty) and
+		// what is wrong with the bed right then. Diagnostic only: changes nothing. Remove once the cause is known.
 		static FieldInfo guestBedField;
 		static readonly HashSet<int> probedJobs = new();
+		static readonly AccessTools.FieldRef<Pawn_JobTracker, Pawn> JobTrackerPawn = AccessTools.FieldRefAccess<Pawn_JobTracker, Pawn>("pawn");
 
-		static void GuestFloorSleepProbe(Pawn __0, ThinkResult __result)
+		static void GuestFloorSleepProbe(Pawn_JobTracker __instance, Job newJob, ThinkNode jobGiver, ThinkTreeDef thinkTree)
 		{
-			var job = __result.Job;
-			if (job == null || job.def != JobDefOf.LayDown || job.targetA.HasThing || __0?.Map == null) return;
-			var comp = __0.AllComps?.FirstOrDefault(c => c.GetType() == guestBedField.DeclaringType);
-			if (comp == null || guestBedField.GetValue(comp) is not Building_Bed bed || !probedJobs.Add(job.loadID)) return;
+			if (newJob == null || newJob.def != JobDefOf.LayDown || newJob.targetA.HasThing) return;
+			var pawn = JobTrackerPawn(__instance);
+			if (pawn?.Map == null) return;
+			var comp = pawn.AllComps?.FirstOrDefault(c => c.GetType() == guestBedField.DeclaringType);
+			if (comp == null || guestBedField.GetValue(comp) is not Building_Bed bed || !probedJobs.Add(newJob.loadID)) return;
 			try
 			{
-				Log.Warning($"[Harmony3StrictCompat] guest {__0.LabelShort} sleeps on the floor at {job.targetA.Cell} although it claimed {bed.LabelShort} at {bed.Position}: {string.Join("; ", BedProblems(__0, bed))}");
+				var chain = new List<string>();
+				for (var n = jobGiver; n != null && chain.Count < 12; n = n.parent)
+					chain.Add(n.GetType().Name);
+				string source = jobGiver == null ? "no think node (started directly by code)" : string.Join(" < ", chain);
+				Log.Warning($"[Harmony3StrictCompat] guest {pawn.LabelShort} starts sleeping on the floor at {newJob.targetA.Cell} " +
+					$"although it claimed {bed.LabelShort} at {bed.Position}. Issued by: {source} (tree {thinkTree?.defName ?? newJob.jobGiverThinkTree?.defName ?? "none"}, " +
+					$"duty {pawn.mindState?.duty?.def?.defName ?? "none"}, rest {pawn.needs?.rest?.CurLevelPercentage:P0}, mental state {pawn.MentalStateDef?.defName ?? "none"}). " +
+					$"Bed: {string.Join("; ", BedProblems(pawn, bed))}\n{new System.Diagnostics.StackTrace(1, false)}");
 			}
 			catch (Exception e)
 			{
-				Log.Warning($"[Harmony3StrictCompat] guest floor-sleep probe for {__0.LabelShort} failed: {e.Message}");
+				Log.Warning($"[Harmony3StrictCompat] guest floor-sleep probe failed: {e.Message}");
 			}
 		}
 
@@ -454,7 +465,6 @@ namespace Harmony3StrictCompat
 			["VEF.Weapons.VerbUtility+VerbProperties_AdjustedRange_Patch:Finalizer"] = 0x5828134280ED3E2B,
 			["TriumphantResearch.Window_ResearchComplete:.ctor"] = 0x55438039A644309A,                            // 1.6 build, 2026-11-01
 			["GiddyUp.MountUtility:Dismount"] = 0x6A5F245D923DC418,                                                // Giddy-Up 2 Continued 1.7, 2026-11-01
-			["Hospitality.JobGiver_Sleep:TryIssueJobPackage"] = 0x1CEFA35951771534,                              // Hospitality 1.7, 2026-11-01 (diagnostic only)
 			["Hospitality.Utilities.SpawnGroupUtility:GenerateNewGearFor"] = 0x9968B91075E1A216,                  // Hospitality 1.7, 2026-11-02
 			["Hospitality.Utilities.ItemUtility:PocketHeadgear"] = 0x5500E1A13797F143,                       // Hospitality 1.7, 2026-11-02
 			["FinitePopulationVeterans.WorldPopulationManager:IsPawnAvailableForDispatch"] = 0x5A8A111FF41E04D8, // Eternal Pawns 1.6 build, 2026-04-13

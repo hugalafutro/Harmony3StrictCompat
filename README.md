@@ -23,7 +23,7 @@ that fail loudly the same way.
 | Eternal Pawns | Recycles faction leaders and warcasket pawns as ordinary visitors/raiders (kind rewritten, casket lost); ignores `MustBeCapableOfViolence` | Keeps leaders, leader kinds and warcasket wearers out of the veteran draw; honours the violence flag |
 | Hospitality | Arrival re-gear destroys visitors' warcaskets | Skips the re-gear for casket wearers and re-locks their casket pieces |
 | Hospitality | Arriving guests pocket their headgear, warcasket helmet included | Skips headgear pocketing for casket wearers |
-| Hospitality | Guest sleeps on the floor beside its own bed | Diagnostic only: logs which bed check failed (remove once the cause is known) |
+| Hospitality | Guests with a claimed bed sleep on the floor elsewhere | Diagnostic only: when such a guest starts a floor `LayDown`, logs which think node issued it, its duty, rest level and what is wrong with the bed (remove once the cause is known) |
 | Giddy-Up 2 | Dismounted caravan animals park where the rider stepped off, so the caravan never arrives or leaves | Keeps lord animals' travel/follow focus across `Dismount` |
 | Vanilla / unknown | Trade caravan whose trader has a non-trader pawn kind: dismiss does nothing, caravan never exits | A guard holding a trader kind counts as the Trader |
 | VEF (MVCF) | Multi-verb weapons get 100% accuracy and 1 s cooldown; duplicate stat rows; "Range 1" | Unset verb stats fall back to the weapon's own; duplicate rows hidden; Range row rebuilt |

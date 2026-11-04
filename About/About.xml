@@ -31,7 +31,7 @@
 - MSS Tweaks and Fun: VFE Pirates Buckoneer culture patch remapped to the VFEP_Mercenaries faction.
 - Eternal Pawns: faction leaders, leader kinds and warcasket wearers stay out of the veteran draw; MustBeCapableOfViolence honoured.
 - Hospitality: visitors in warcaskets skip the arrival re-gear (casket pieces re-locked) and keep their casket helmet on.
-- Hospitality: diagnostic only, logs why a guest sleeps on the floor beside its own bed.
+- Hospitality: diagnostic only, logs which think node puts a guest with a claimed bed on the floor.
 - Giddy-Up 2: dismounted caravan animals keep their travel/follow target, so the caravan arrives and leaves.
 - Vanilla/unknown: a caravan guard holding a trader kind counts as the Trader (dismiss works, caravan exits).
 - VEF (MVCF): multi-verb weapons use the weapon's own accuracy/cooldown when the verb sets none; duplicate stat rows hidden; Range row fixed.

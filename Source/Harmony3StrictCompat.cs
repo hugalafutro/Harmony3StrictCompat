@@ -115,6 +115,9 @@ namespace Harmony3StrictCompat
 						postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(CfuRecountColonies)));
 				}
 			}
+			foreach (var msfSlider in new[] { "ModSettingsFramework.PatchOperationSliderFloat:ApplyWorker", "ModSettingsFramework.PatchOperationSliderInt:ApplyWorker" })
+				if (Target(msfSlider) is { } msfApply)
+					harmony.Patch(msfApply, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(MsfSliderAllNodes)));
 			var lpInfo = Target("ilyvion.LoadingProgress.StartupImpact.ModInfoList:GetModInfoFor");
 			if (lpInfo != null)
 				harmony.Patch(lpInfo, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LpLockEnter)),
@@ -156,6 +159,26 @@ namespace Harmony3StrictCompat
 			if (hits != 1)
 				Log.Error($"[Harmony3StrictCompat] BWM style-button overlap: expected 1 `height - 50 - 100`, found {hits}");
 			return list;
+		}
+
+		// ---- Mod Settings Framework: slider settings only reach the first matching node ---------------------------
+		// PatchOperationSliderFloat/Int.ApplyWorker write the slider value with xml.SelectSingleNode(xpath), so an xpath
+		// that matches several nodes only changes the first. ReBuild: Doors and Corners' "Grate tile speed penalty"
+		// targets `TerrainDef[@Name="RB_TileGrateMetalBase" or defName="RB_SterileGrateTile"]/pathCost`: the metal grate
+		// base got the slider value, the sterile grate tile kept pathCost 10 (57% walk speed). After the original runs,
+		// copy the first node's new value to every other match. Skipped when the option would not run (CanRun false or
+		// no settings container), exactly when the original leaves the first node alone.
+		static void MsfSliderAllNodes(PatchOperation __instance, System.Xml.XmlDocument xml)
+		{
+			var type = __instance.GetType();
+			if (AccessTools.Method(type, "CanRun")?.Invoke(__instance, null) is not true
+				|| AccessTools.PropertyGetter(type, "SettingsContainer")?.Invoke(__instance, null) == null
+				|| AccessTools.Field(type, "xpath")?.GetValue(__instance) is not string xpath)
+				return;
+			var nodes = xml.SelectNodes(xpath);
+			if (nodes == null || nodes.Count < 2) return;
+			for (int i = 1; i < nodes.Count; i++)
+				nodes[i].InnerText = nodes[0].InnerText;
 		}
 
 		// ---- Loadout Compositing x Better Workbench Management: "count away" option missing -----------------------
@@ -477,6 +500,8 @@ namespace Harmony3StrictCompat
 			["Inventory.BWM_DoWindowContentsPatch_Patch:ShouldCountAway"] = 0xA22693055B6314E7,                // Loadout Compositing 1.7, 2026-10-28
 			["ImprovedWorkbenches.BillConfig_DoWindowContents_Patch:DrawFilters"] = 0x5FFF926429D5F4D6,        // BWM 1.7 Waylith (Debug build), 2026-11-03
 			["VanillaRacesExpandedSanguophage.JobGiver_GetCorpseHemogen:TryGiveJob"] = 0x00285EA300E503C6,   // VRE Sanguophage 1.6 build, 2026-10-01
+			["ModSettingsFramework.PatchOperationSliderFloat:ApplyWorker"] = 0x7D3F07C2C28B20A5,              // VEF 1.7 0ModSettingsFramework.dll, 2026-10-13
+			["ModSettingsFramework.PatchOperationSliderInt:ApplyWorker"] = 0x03DFA38BA62A830B,
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an

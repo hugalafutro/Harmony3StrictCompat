@@ -77,7 +77,9 @@ def main():
     if new == text:
         return
     readme.write_text(new, encoding="utf-8", newline="\n")
-    git = lambda *a: subprocess.run(["git", "-C", str(REPO), *a], check=True, capture_output=True)
+    # The scheduled task runs under pythonw; without CREATE_NO_WINDOW each console git.exe flashes a window.
+    git = lambda *a: subprocess.run(["git", "-C", str(REPO), *a], check=True, capture_output=True,
+                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     # pathspec commit: never sweeps up other staged work in progress
     git("commit", "-m", f"Update active mod list ({len(active)} mods)", "--", "README.md")
     if "--no-push" not in sys.argv:

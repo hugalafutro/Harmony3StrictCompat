@@ -466,6 +466,7 @@ namespace Harmony3StrictCompat
 			["Inventory.BWM_DoWindowContentsPatch_Patch:Transpiler"] = 0x1208A46933A47D41,                     // Loadout Compositing 1.7, 2026-10-28
 			["Inventory.BWM_DoWindowContentsPatch_Patch:ShouldCountAway"] = 0xA22693055B6314E7,                // Loadout Compositing 1.7, 2026-10-28
 			["ImprovedWorkbenches.BillConfig_DoWindowContents_Patch:DrawFilters"] = 0x5FFF926429D5F4D6,        // BWM 1.7 Waylith (Debug build), 2026-11-03
+			["VanillaRacesExpandedSanguophage.JobGiver_GetCorpseHemogen:TryGiveJob"] = 0x00285EA300E503C6,   // VRE Sanguophage 1.6 build, 2026-10-01
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an
@@ -865,6 +866,53 @@ namespace Harmony3StrictCompat
 				AccessTools.Field(typeof(BiomeDef), "cachedWildPlants").SetValue(biome, null);
 				Log.Message($"[Harmony3StrictCompat] {biome.defName}: removed {removed} duplicate wild plant record(s)");
 			}
+		}
+	}
+
+	// ---- VRE Sanguophage: animalfeeders never drink animal hemogen packs on their own -----------------------
+	// VRE gives corpsefeeders their own job giver (JobGiver_GetCorpseHemogen, drinks VRE_HemogenPack_Corpse), but
+	// nothing does the same for VRE_HemogenPack_Animal: vanilla JobGiver_GetHemogen only looks for HemogenPack. So a
+	// strigoi carrying animal packs lets hemogen hit 0. When the vanilla giver finds nothing (no prisoner to feed on, no
+	// regular pack), an animalfeeder drinks animal packs the vanilla way: carried, then inventory, then the nearest
+	// allowed one on the map, as many as fit below max hemogen. Regular packs and prisoners still come first.
+	// VRE's corpse job giver is fingerprinted: if VRE reworks feeding, recheck whether this is still needed.
+	[StaticConstructorOnStartup]
+	static class AnimalfeederHemogenPacks
+	{
+		static readonly GeneDef animalFeeder = DefDatabase<GeneDef>.GetNamedSilentFail("VRE_AnimalFeeder");
+		static readonly ThingDef animalPack = DefDatabase<ThingDef>.GetNamedSilentFail("VRE_HemogenPack_Animal");
+		static readonly float packGain = animalPack?.ingestible?.outcomeDoers?.OfType<IngestionOutcomeDoer_OffsetHemogen>().FirstOrDefault()?.offset ?? 0f;
+
+		static AnimalfeederHemogenPacks()
+		{
+			if (animalFeeder == null || animalPack == null || packGain <= 0f) return;
+			Harmony3StrictCompatMod.Target("VanillaRacesExpandedSanguophage.JobGiver_GetCorpseHemogen:TryGiveJob");
+			new Harmony("sammael.harmony3strictcompat").Patch(AccessTools.Method(typeof(JobGiver_GetHemogen), "TryGiveJob"),
+				postfix: new HarmonyMethod(typeof(AnimalfeederHemogenPacks), nameof(DrinkAnimalPack)));
+		}
+
+		static void DrinkAnimalPack(Pawn pawn, ref Job __result)
+		{
+			if (__result != null || pawn.genes == null || !pawn.genes.HasActiveGene(animalFeeder)) return;
+			var gene = pawn.genes.GetFirstGeneOfType<Gene_Hemogen>();
+			if (gene == null || !gene.hemogenPacksAllowed || !gene.ShouldConsumeHemogenNow()) return;
+			int want = Mathf.FloorToInt((gene.Max - gene.Value) / packGain);
+			if (want <= 0) return;
+			var pack = FindPack(pawn);
+			if (pack == null) return;
+			__result = JobMaker.MakeJob(JobDefOf.Ingest, pack);
+			__result.count = Mathf.Min(pack.stackCount, want);
+			__result.ingestTotalCount = true;
+		}
+
+		static Thing FindPack(Pawn pawn)
+		{
+			var carried = pawn.carryTracker.CarriedThing;
+			if (carried != null && carried.def == animalPack) return carried;
+			foreach (var t in pawn.inventory.innerContainer)
+				if (t.def == animalPack) return t;
+			return GenClosest.ClosestThing_Global_Reachable(pawn.Position, pawn.Map, pawn.Map.listerThings.ThingsOfDef(animalPack),
+				PathEndMode.OnCell, TraverseParms.For(pawn), 9999f, t => pawn.CanReserve(t) && !t.IsForbidden(pawn));
 		}
 	}
 }

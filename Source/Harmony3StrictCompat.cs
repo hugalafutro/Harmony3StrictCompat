@@ -1062,8 +1062,14 @@ namespace Harmony3StrictCompat
 	//  - SBO's bed list is the same object and not marked dirty (bed built, destroyed, faction change);
 	//  - same preferred bed, same map, the bed still spawned and still listing the pawn as owner;
 	//  - at most 250 ticks old (catches anything else, e.g. substructure under a bed).
-	// Main thread only (other threads run SBO's code as before). Every 64th hit is recomputed and compared; a
-	// mismatch is logged (first one in full) and the entry dropped. A one-time line reports hits/misses/mismatches.
+	// Every 64th hit is recomputed and compared; a mismatch is logged (first one in full) and the entry dropped.
+	// A one-time line reports hits/misses/mismatches.
+	// Threads: the parallel pawn pre-render jobs read OwnedBed too (Capture Expansion's LayingFacing/GetBodyPos
+	// postfixes call IsRestrained -> OwnedBed for every pawn lying in a bed: 95 sleeping animals in animal beds cost
+	// ~16 ms a frame, 2026-11-05), so the cache is a ConcurrentDictionary used from any thread. SBO's own bed list
+	// (a HashSet rebuilt in place when dirty) is not thread-safe either: a worker reading it while another rebuilds
+	// it threw "Collection was modified" inside ParallelGetPreRenderResults. AllAssignedBedsAndDeathrestCaskets now
+	// runs under a lock.
 	[StaticConstructorOnStartup]
 	static class SboOwnedBedCache
 	{
@@ -1075,7 +1081,8 @@ namespace Harmony3StrictCompat
 			public HashSet<Building_Bed> bedList;
 		}
 
-		static readonly Dictionary<Pawn, Entry> cache = new();
+		static readonly System.Collections.Concurrent.ConcurrentDictionary<Pawn, Entry> cache = new();
+		static readonly object bedListLock = new();
 		static int epoch, hits, misses, mismatches, checks;
 		static bool reported;
 		[ThreadStatic] static bool bypass;
@@ -1088,10 +1095,10 @@ namespace Harmony3StrictCompat
 			var utility = AccessTools.TypeByName("SensibleBedOwnership.Utility");
 			if (utility == null) return;
 			Harmony3StrictCompatMod.Target("SensibleBedOwnership.Patch_Pawn_Ownership_get_OwnedBed:Prefix");
-			Harmony3StrictCompatMod.Target("SensibleBedOwnership.Utility:AllAssignedBedsAndDeathrestCaskets");
+			var allBeds = Harmony3StrictCompatMod.Target("SensibleBedOwnership.Utility:AllAssignedBedsAndDeathrestCaskets");
 			var getMain = Harmony3StrictCompatMod.Target("SensibleBedOwnership.Utility:GetMainBed", args: [typeof(Pawn)]);
 			var getPreferred = AccessTools.DeclaredMethod(utility, "GetPreferredBed", [typeof(Pawn)]);
-			if (getMain == null || getPreferred == null || AccessTools.DeclaredField(utility, "bedCache")?.FieldType != typeof(HashSet<Building_Bed>)
+			if (allBeds == null || getMain == null || getPreferred == null || AccessTools.DeclaredField(utility, "bedCache")?.FieldType != typeof(HashSet<Building_Bed>)
 				|| AccessTools.DeclaredField(utility, "bedCacheDirty")?.FieldType != typeof(bool))
 			{
 				Log.Error("[Harmony3StrictCompat] Sensible Bed Ownership changed its bed lookup: OwnedBed cache not applied, recheck it");
@@ -1121,12 +1128,25 @@ namespace Harmony3StrictCompat
 				}
 			harmony.Patch(AccessTools.Method(typeof(Verse.Profile.MemoryUtility), nameof(Verse.Profile.MemoryUtility.ClearAllMapsAndWorld)),
 				postfix: new HarmonyMethod(typeof(SboOwnedBedCache), nameof(Reset)));
+			harmony.Patch(allBeds,
+				prefix: new HarmonyMethod(typeof(SboOwnedBedCache), nameof(LockBedList)), finalizer: new HarmonyMethod(typeof(SboOwnedBedCache), nameof(UnlockBedList)));
 			harmony.Patch(getMain, prefix: new HarmonyMethod(typeof(SboOwnedBedCache), nameof(Lookup)),
 				postfix: new HarmonyMethod(typeof(SboOwnedBedCache), nameof(Store)));
 			Log.Message($"[Harmony3StrictCompat] Sensible Bed Ownership: OwnedBed cache on ({hooked} ownership methods watched)");
 		}
 
 		static void Bump() => System.Threading.Interlocked.Increment(ref epoch);
+
+		static void LockBedList(out bool __state)
+		{
+			__state = false;
+			System.Threading.Monitor.Enter(bedListLock, ref __state);
+		}
+
+		static void UnlockBedList(bool __state)
+		{
+			if (__state) System.Threading.Monitor.Exit(bedListLock);
+		}
 
 		static void Reset()
 		{
@@ -1137,7 +1157,7 @@ namespace Harmony3StrictCompat
 		static bool Lookup(Pawn pawn, ref Building_Bed __result, out bool __state)
 		{
 			__state = false;
-			if (bypass || pawn == null || Current.Game == null || !UnityData.IsInMainThread) return true;
+			if (bypass || pawn == null || Current.Game == null) return true;
 			__state = true;
 			if (!cache.TryGetValue(pawn, out var e) || !Valid(pawn, e)) { misses++; return true; }
 			if (++checks % 64 == 0 && !Verify(pawn, e.bed)) { misses++; return true; }
@@ -1179,7 +1199,7 @@ namespace Harmony3StrictCompat
 			try { fresh = mainBed(pawn); }
 			finally { bypass = false; }
 			if (fresh == cached) return true;
-			cache.Remove(pawn);
+			cache.TryRemove(pawn, out _);
 			if (++mismatches == 1)
 				Log.Warning($"[Harmony3StrictCompat] Sensible Bed Ownership OwnedBed cache was stale for {pawn.LabelShort}: cached {cached?.ThingID ?? "no bed"}, " +
 					$"SBO now says {fresh?.ThingID ?? "no bed"}. Something changed bed ownership without a watched method; entry dropped. Please report what just happened.");

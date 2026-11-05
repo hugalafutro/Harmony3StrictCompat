@@ -136,6 +136,77 @@ namespace Harmony3StrictCompat
 				bwUpperMark = (Action<ColonistBarColonistDrawer, Rect, Pawn>)bwUpper.CreateDelegate(typeof(Action<ColonistBarColonistDrawer, Rect, Pawn>));
 				harmony.Patch(ltoDraw, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LtoBusyworkUpperMark)));
 			}
+			// Vanilla bug, found through Modern Needs Tab; its prefix is fingerprinted so an MNT update gets re-checked.
+			Target("ModernNeedsTab.Patch_Pawn_JobTracker_EndCurrentJob:Prefix");
+			harmony.Patch(AccessTools.PropertyGetter(typeof(MinifiedThing), nameof(MinifiedThing.LabelNoCount)),
+				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(EmptyMinifiedLabel)));
+			foreach (var csClean in new[] { "CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__0", "CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__1" })
+				if (Target(csClean) is { } csToil)
+					harmony.Patch(csToil, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(CsFilthGone)));
+			var hdInit = Target("HaulersDream.CompositableLoadoutsCompat:InitKeepApi");
+			var hdWanted = Target("HaulersDream.CompositableLoadoutsCompat:LoadoutWantedUnits");
+			hdItemDefs = AccessTools.PropertyGetter(AccessTools.TypeByName("Inventory.Item"), "Defs");
+			if (hdInit != null && hdWanted != null && hdItemDefs != null)
+			{
+				harmony.Patch(hdInit, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdBridgeKeepApi)));
+				harmony.Patch(hdWanted, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdWantedUnits)));
+			}
+		}
+
+		// ---- Hauler's Dream x Compositable Loadouts: loadout items not kept during surplus unload ---------------
+		// HD keeps a pawn's loadout items out of "adopt all surplus" by reading CL's Item.Def and Item.Quantity. CL's
+		// 1.7 Item holds several alternative defs (members: Defs, RepresentativeDef) and has no Def any more, so HD's
+		// InitKeepApi logs "per-pawn loadout keep API ... did not fully resolve" and turns the shield off: HD may
+		// unload what CL fetches again, in a loop. When only Item.Def is missing, switch the shield back on and count
+		// every loadout item whose Defs include the def (an item with alternatives keeps each of them, the safe side).
+		// HD's own warning still prints once at startup; the bridge logs right after it.
+		static MethodInfo hdItemDefs;
+
+		static void HdBridgeKeepApi(ref bool ___keepApiOk, MethodInfo ___loadoutGetter, MethodInfo ___itemsGetter,
+			MethodInfo ___itemDefGetter, MethodInfo ___itemQtyGetter)
+		{
+			if (___keepApiOk || ___itemDefGetter != null || ___loadoutGetter == null || ___itemsGetter == null || ___itemQtyGetter == null) return;
+			___keepApiOk = true;
+			Log.Message("[Harmony3StrictCompat] Hauler's Dream: Compositable Loadouts keep API bridged to Item.Defs, loadout items are kept during surplus unload again");
+		}
+
+		static bool HdWantedUnits(ThingComp comp, ThingDef def, ref int __result, MethodInfo ___loadoutGetter,
+			MethodInfo ___itemsGetter, MethodInfo ___itemDefGetter, MethodInfo ___itemQtyGetter)
+		{
+			if (___itemDefGetter != null) return true;   // HD resolved Item.Def itself: its own code runs
+			__result = 0;
+			if (___loadoutGetter.Invoke(comp, null) is not { } loadout || ___itemsGetter.Invoke(loadout, null) is not System.Collections.IEnumerable items)
+				return false;
+			foreach (var item in items)
+				if (item != null && hdItemDefs.Invoke(item, null) is IEnumerable<ThingDef> defs && defs.Contains(def))
+					__result += Math.Max((int)___itemQtyGetter.Invoke(item, null), 0);
+			return false;
+		}
+
+		// ---- Common Sense: clean-before-eating crashes when the filth vanishes -----------------------------------
+		// Utility.CleanFilthToil's init and tick actions read the target filth's def, Position and Map with no check.
+		// When another pawn cleans that filth first (or it is destroyed otherwise), the next tick null-refs on its Map
+		// and the whole eating job ends with an error. Every other caller adds JumpIfDespawnedOrNullOrForbidden; the
+		// tool-user ingest path (JobDriver_PrepareToIngestToils_ToolUser) does not. Move on to the next toil (the
+		// next filth in the queue, then the meal) when the target is gone.
+		static bool CsFilthGone(Toil ___toil, TargetIndex ___Ind)
+		{
+			var actor = ___toil?.actor;
+			if (actor?.jobs?.curJob == null || actor.jobs.curJob.GetTarget(___Ind).Thing is Filth { Spawned: true }) return true;
+			actor.jobs.curDriver.ReadyForNextToil();
+			return false;
+		}
+
+		// ---- Vanilla: label of an emptied minified thing --------------------------------------------------------
+		// MinifiedThing.LabelNoCount returns InnerThing.LabelNoCount, but InnerThing is null once the contents were
+		// installed (a HaulToContainer delivering a minified building into its frame). JobDriver_HaulToContainer.
+		// GetReport reads that label, so anything asking for the job report then null-refs: Modern Needs Tab's
+		// EndCurrentJob prefix did, and turned its job-history capture off for the session. Use the def's label.
+		static bool EmptyMinifiedLabel(MinifiedThing __instance, ref string __result)
+		{
+			if (__instance.InnerThing != null) return true;
+			__result = __instance.def.label;
+			return false;
 		}
 
 		// ---- Busywork "Upper" job icon on LTO Colony Groups portraits -------------------------------------------
@@ -521,6 +592,12 @@ namespace Harmony3StrictCompat
 			["ModSettingsFramework.PatchOperationSliderInt:ApplyWorker"] = 0x03DFA38BA62A830B,
 			["Busywork.Patch_ColonistBarColonistDrawer_DrawColonist:Postfix"] = 0x8671BDCBF4F254FC,          // Busywork 1.7, 2026-11-05
 			["TacticalGroups.TacticalGroups_ColonistBarColonistDrawer:DrawColonist"] = 0x092B4F83C851CE01,     // LTO Colony Groups 1.6 build, 2026-11-05
+			["ModernNeedsTab.Patch_Pawn_JobTracker_EndCurrentJob:Prefix"] = 0xDD06E10633A7F9FC,             // Modern Needs Tab, 2026-11-05
+			["CommonSense.ThingMaker_MakeThing_CommonSensePatch:Postfix"] = 0xE351865A0EF38D39,             // Common Sense 1.6 build, 2026-11-05
+			["CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__0"] = 0x3736DE64D224E604,
+			["CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__1"] = 0x61D455F6E62CAD49,
+			["HaulersDream.CompositableLoadoutsCompat:InitKeepApi"] = 0x3F15140E9ED2D991,                    // Hauler's Dream 1.6 build, 2026-11-05
+			["HaulersDream.CompositableLoadoutsCompat:LoadoutWantedUnits"] = 0x89C4B3F40C058F43,
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an
@@ -793,10 +870,11 @@ namespace Harmony3StrictCompat
 
 		// ---- Conditional patches skipped entirely (reported as succeeded) --------------------------------
 	//  - Rimsenal Faction Pack - Spacer (3086137468) adds CompProperties_Styleable to the mech commander helmet,
-	//    Dresser and EndTable whenever the def has a <comps> node, without checking for an existing style comp.
-	//    1.7's ApparelBase already supplies one for the helmet, and every styling mod (VIE Memes, Alpha Memes,
+	//    Dresser, EndTable and FloodLight whenever the def has a <comps> node, without checking for an existing style
+	//    comp. 1.7's ApparelBase already supplies one for the helmet, and every styling mod (VIE Memes, Alpha Memes,
 	//    Sophian Style, Medieval 2, Dune) guards its own furniture add. Two comps save sourcePrecept/styleDef twice
-	//    ("Tried to register the same load ID twice" on every load; 7 EndTable + 6 Dresser, 2026-10-29).
+	//    ("Tried to register the same load ID twice" on every load; 7 EndTable + 6 Dresser, 2026-10-29; an Alpha
+	//    Memes Mesoamerican flood light, 2026-11-05).
 	//    Key: conditional xpath -> substring the patch's sourceFile must contain. The other mods' guarded adds use
 	//    the very same inner xpath, so the file check is what keeps them alive (v20 emptied them all: no comp,
 	//    styles lost).
@@ -805,6 +883,7 @@ namespace Harmony3StrictCompat
 		["/Defs/ThingDef[defName = \"Apparel_ArmorHelmetMechCommander\"]/comps"] = "3086137468",
 		["/Defs/ThingDef[defName = \"Dresser\"]/comps"] = "3086137468",
 		["/Defs/ThingDef[defName = \"EndTable\"]/comps"] = "3086137468",
+		["/Defs/ThingDef[defName = \"FloodLight\"]/comps"] = "3086137468",
 	};
 	// The operation still runs normally (never skip Apply itself: XML Extensions tracks every Apply with a
 		// prefix/finalizer pair, and an early return desyncs its error stack so it then reports every optional
@@ -968,6 +1047,32 @@ namespace Harmony3StrictCompat
 			return GenClosest.ClosestThing_Global_Reachable(pawn.Position, pawn.Map, pawn.Map.listerThings.ThingsOfDef(animalPack),
 				PathEndMode.OnCell, TraverseParms.For(pawn), 9999f, t => pawn.CanReserve(t) && !t.IsForbidden(pawn));
 		}
+	}
+
+	// ---- Common Sense: "Getting random element from empty collection" on uncraftable food ---------------------
+	// With "add meal ingredients" on, its ThingMaker.MakeThing postfix gives a food item with an empty ingredient
+	// list the ingredients of a random recipe that makes it. For food no recipe makes, the pick is from an empty
+	// list: a warning, and since the miss is never cached, a fresh scan of every recipe plus another warning each
+	// time such a stack is split (hauling). Skip the postfix for defs no ingredient recipe produces, which is exactly
+	// when it would find nothing. Patched once defs are final, so the product set includes generated recipes.
+	[StaticConstructorOnStartup]
+	static class CommonSenseUncraftableFood
+	{
+		static readonly HashSet<ThingDef> products = new();
+
+		static CommonSenseUncraftableFood()
+		{
+			var postfix = Harmony3StrictCompatMod.Target("CommonSense.ThingMaker_MakeThing_CommonSensePatch:Postfix");
+			if (postfix == null) return;
+			foreach (var recipe in DefDatabase<RecipeDef>.AllDefsListForReading)
+				if (!recipe.ingredients.NullOrEmpty() && recipe.products != null)
+					foreach (var p in recipe.products)
+						if (p?.thingDef != null) products.Add(p.thingDef);
+			new Harmony("sammael.harmony3strictcompat").Patch(postfix,
+				prefix: new HarmonyMethod(typeof(CommonSenseUncraftableFood), nameof(HasRecipe)));
+		}
+
+		static bool HasRecipe(ThingDef def) => def == null || products.Contains(def);
 	}
 
 	// ---- Hospitality vending machine works as a fridge (personal tweak, not a fix) ---------------------------

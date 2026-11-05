@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch>
+  <!-- Weapons that name a SoundDef nobody defines. Each load logs "Could not resolve cross-reference: No
+       Verse.SoundDef named ..." and the weapon plays no sound. Point them at existing sounds.
+       The PatchOperationTest steps make each sequence fail with a red patch error as soon as the author changes
+       or fixes any of these nodes, i.e. the mod updated and this fix needs re-checking. -->
+
+  <!-- Stem's VWE Industrial Expansion (workshop 3787566245), Defs/ThingDefs_Misc/Weapons/RangedIndustrialExpanded(x2).xml:
+       - the service and assault pistols use soundInteract Interact_Pistol, which only VFE Settlers defines
+         (not in this mod list); vanilla's autopistol equip sound fits.
+       - the sawn-off repeater's soundCast VWEE_Shot_SawnOffRepeater is defined nowhere (the mod ships no SoundDefs);
+         use the bolt-action rifle shot, like its sibling, the sawn-off rifle. -->
+  <Operation Class="PatchOperationSequence" MayRequire="Stem.VWEIndustrialExpansion">
+    <operations>
+      <li Class="PatchOperationTest">
+        <xpath>Defs/ThingDef[defName="VWEE_ServicePistol"]/soundInteract[text()="Interact_Pistol"]</xpath>
+      </li>
+      <li Class="PatchOperationTest">
+        <xpath>Defs/ThingDef[defName="VWEE_AssaultPistol"]/soundInteract[text()="Interact_Pistol"]</xpath>
+      </li>
+      <li Class="PatchOperationTest">
+        <xpath>Defs/ThingDef[defName="VWEE_Gun_SawnOffRepeater"]/verbs/li/soundCast[text()="VWEE_Shot_SawnOffRepeater"]</xpath>
+      </li>
+      <li Class="PatchOperationReplace">
+        <xpath>Defs/ThingDef[defName="VWEE_ServicePistol" or defName="VWEE_AssaultPistol"]/soundInteract</xpath>
+        <value>
+          <soundInteract>Interact_Autopistol</soundInteract>
+        </value>
+      </li>
+      <li Class="PatchOperationReplace">
+        <xpath>Defs/ThingDef[defName="VWEE_Gun_SawnOffRepeater"]/verbs/li/soundCast[text()="VWEE_Shot_SawnOffRepeater"]</xpath>
+        <value>
+          <soundCast>Shot_BoltActionRifle</soundCast>
+        </value>
+      </li>
+    </operations>
+  </Operation>
+
+  <!-- Fortification Industrial - Citadel (workshop 2887532326), 1.6/Vanilla/Defs/Things/FTC_Bunker_Vanilla.xml:
+       the flame bunker's gun FTC_Wall_Flame_Gun fires with VFE_Shot_InfernoSpewer, which no active mod defines.
+       Vanilla Weapons Expanded's own flamethrower uses vanilla InfernoCannon_Fire; use that. -->
+  <Operation Class="PatchOperationSequence" MayRequire="Aoba.Fortress.Industrial.Citadel">
+    <operations>
+      <li Class="PatchOperationTest">
+        <xpath>Defs/ThingDef[defName="FTC_Wall_Flame_Gun"]/verbs/li/soundCast[text()="VFE_Shot_InfernoSpewer"]</xpath>
+      </li>
+      <li Class="PatchOperationReplace">
+        <xpath>Defs/ThingDef[defName="FTC_Wall_Flame_Gun"]/verbs/li/soundCast[text()="VFE_Shot_InfernoSpewer"]</xpath>
+        <value>
+          <soundCast>InfernoCannon_Fire</soundCast>
+        </value>
+      </li>
+    </operations>
+  </Operation>
+</Patch>

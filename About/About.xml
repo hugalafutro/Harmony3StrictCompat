@@ -27,6 +27,11 @@
 - Loadout Compositing + Better Workbench Management: per-tag bills get the "count pawns away / on caravan" option back (BWM's new Debug build broke LC's transpiler).
 - Better Workbench Management: its bill options no longer overlap the "Use global style" dropdown (vanilla classic mode or Style Change Anytime).
 - Busywork + LTO Colony Groups: "Upper" job icons show on Colony Groups portraits (Busywork only hooked the vanilla colonist bar).
+- Hauler's Dream + Compositable Loadouts: loadout items are kept during surplus unload again (CL's items now list several defs; HD only knew Item.Def).
+- Common Sense: no "random element from empty collection" warnings for food no recipe makes (meal ingredients lookup skipped).
+- Common Sense: clean-before-eating moves on when its filth is already gone instead of erroring out of the eating job.
+- Vanilla (found through Modern Needs Tab): an emptied minified thing has a label again, so job reports no longer throw and MNT keeps recording job history.
+- Stem's VWE Industrial Expansion, Fortification Industrial - Citadel: missing weapon sounds pointed at existing ones (pistol equip, sawn-off repeater shot, flame bunker).
 - Vanilla Races Expanded - Sanguophage: animalfeeders (strigoi) drink animal hemogen packs on their own, like regular packs, when no prisoner or regular pack is available.
 - Hospitality: Vending machines (personal tweak): the powered vending machine draws 100 W and keeps stored items frozen while powered.
 - Mod Settings Framework (VEF): slider settings reach every def their xpath matches, not just the first (ReBuild's grate speed slider now covers the sterile grate tile).
@@ -45,7 +50,7 @@
 - Basic Traits: "TraitHediffApplier: Processing pawn" debug spam removed.
 - Triumphant Research: shows the full unlock list instead of a blank window.
 - Too Many Mods: 22 lowercase "Defs/thingDef[" xpaths fixed (Rimsenal items).
-- Rimsenal Faction Pack - Spacer: no second style comp on the mech commander helmet, Dresser and EndTable.
+- Rimsenal Faction Pack - Spacer: no second style comp on the mech commander helmet, Dresser, EndTable and FloodLight.
 - ReGrowth plant patches: duplicate wild plant records removed from biomes (world-gen Landmarks/Mutators steps).
 - Vanilla: no needs while no world exists (quest pawns built before the world loads).
 - Vanilla/unknown: trade ship slave also saved as a world pawn no longer loads twice.</description>

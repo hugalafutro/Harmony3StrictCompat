@@ -598,6 +598,9 @@ namespace Harmony3StrictCompat
 			["CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__1"] = 0x61D455F6E62CAD49,
 			["HaulersDream.CompositableLoadoutsCompat:InitKeepApi"] = 0x3F15140E9ED2D991,                    // Hauler's Dream 1.6 build, 2026-11-05
 			["HaulersDream.CompositableLoadoutsCompat:LoadoutWantedUnits"] = 0x89C4B3F40C058F43,
+			["SensibleBedOwnership.Patch_Pawn_Ownership_get_OwnedBed:Prefix"] = 0x696E7432D36527D8,       // SBO 1.6 build, 2026-11-05
+			["SensibleBedOwnership.Utility:GetMainBed"] = 0xAE5863A6DF81EAD6,                                // (Pawn) overload
+			["SensibleBedOwnership.Utility:AllAssignedBedsAndDeathrestCaskets"] = 0x8560CE17C9797D18,
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an
@@ -1046,6 +1049,141 @@ namespace Harmony3StrictCompat
 				if (t.def == animalPack) return t;
 			return GenClosest.ClosestThing_Global_Reachable(pawn.Position, pawn.Map, pawn.Map.listerThings.ThingsOfDef(animalPack),
 				PathEndMode.OnCell, TraverseParms.For(pawn), 9999f, t => pawn.CanReserve(t) && !t.IsForbidden(pawn));
+		}
+	}
+
+	// ---- Sensible Bed Ownership: OwnedBed rescans every bed on every call ----------------------------------------
+	// SBO replaces Pawn_Ownership.OwnedBed with Utility.GetMainBed(pawn), which filters every colonist bed on every
+	// map for this owner (bedCache.Where(OwnersForReading.Contains).ToList()) and weighs them when there are several.
+	// UI drawing, alerts and dozens of mods read OwnedBed: Circinus 2026-11-05 counted 200k-520k calls a minute,
+	// 2.3-5.1% of frame, single calls up to 79 ms (150 beds: 123 colony, 27 Hospitality guest beds).
+	// Remember SBO's answer per pawn, and only hand it back while nothing it depends on can have changed:
+	//  - ownership epoch unchanged (bumped by every vanilla/mod assign, unassign, claim and unclaim method);
+	//  - SBO's bed list is the same object and not marked dirty (bed built, destroyed, faction change);
+	//  - same preferred bed, same map, the bed still spawned and still listing the pawn as owner;
+	//  - at most 250 ticks old (catches anything else, e.g. substructure under a bed).
+	// Main thread only (other threads run SBO's code as before). Every 64th hit is recomputed and compared; a
+	// mismatch is logged (first one in full) and the entry dropped. A one-time line reports hits/misses/mismatches.
+	[StaticConstructorOnStartup]
+	static class SboOwnedBedCache
+	{
+		struct Entry
+		{
+			public Building_Bed bed, preferred;
+			public int epoch, tick;
+			public Map map;
+			public HashSet<Building_Bed> bedList;
+		}
+
+		static readonly Dictionary<Pawn, Entry> cache = new();
+		static int epoch, hits, misses, mismatches, checks;
+		static bool reported;
+		[ThreadStatic] static bool bypass;
+		static Func<Pawn, Building_Bed> mainBed, preferredBed;
+		static AccessTools.FieldRef<HashSet<Building_Bed>> bedList;
+		static AccessTools.FieldRef<bool> bedListDirty;
+
+		static SboOwnedBedCache()
+		{
+			var utility = AccessTools.TypeByName("SensibleBedOwnership.Utility");
+			if (utility == null) return;
+			Harmony3StrictCompatMod.Target("SensibleBedOwnership.Patch_Pawn_Ownership_get_OwnedBed:Prefix");
+			Harmony3StrictCompatMod.Target("SensibleBedOwnership.Utility:AllAssignedBedsAndDeathrestCaskets");
+			var getMain = Harmony3StrictCompatMod.Target("SensibleBedOwnership.Utility:GetMainBed", args: [typeof(Pawn)]);
+			var getPreferred = AccessTools.DeclaredMethod(utility, "GetPreferredBed", [typeof(Pawn)]);
+			if (getMain == null || getPreferred == null || AccessTools.DeclaredField(utility, "bedCache")?.FieldType != typeof(HashSet<Building_Bed>)
+				|| AccessTools.DeclaredField(utility, "bedCacheDirty")?.FieldType != typeof(bool))
+			{
+				Log.Error("[Harmony3StrictCompat] Sensible Bed Ownership changed its bed lookup: OwnedBed cache not applied, recheck it");
+				return;
+			}
+			mainBed = AccessTools.MethodDelegate<Func<Pawn, Building_Bed>>(getMain);
+			preferredBed = AccessTools.MethodDelegate<Func<Pawn, Building_Bed>>(getPreferred);
+			bedList = AccessTools.StaticFieldRefAccess<HashSet<Building_Bed>>(AccessTools.DeclaredField(utility, "bedCache"));
+			bedListDirty = AccessTools.StaticFieldRefAccess<bool>(AccessTools.DeclaredField(utility, "bedCacheDirty"));
+
+			var harmony = new Harmony("sammael.harmony3strictcompat");
+			var bump = new HarmonyMethod(typeof(SboOwnedBedCache), nameof(Bump));
+			var compMutators = new HashSet<string> { "ForceAddPawn", "ForceRemovePawn", "TryAssignPawn", "TryUnassignPawn", "SortAssignedPawns", "PostSpawnSetup", "PostDeSpawn", "PostSwapMap" };
+			int hooked = 0;
+			foreach (var type in typeof(CompAssignableToPawn).AllSubclasses().Prepend(typeof(CompAssignableToPawn)))
+				foreach (var m in AccessTools.GetDeclaredMethods(type))
+					if (compMutators.Contains(m.Name) && !m.IsAbstract && !m.ContainsGenericParameters && m.GetMethodBody() != null)
+					{
+						harmony.Patch(m, postfix: bump);
+						hooked++;
+					}
+			foreach (var name in new[] { "ClaimBedIfNonMedical", "UnclaimBed", "UnclaimAll", "ClaimDeathrestCasket", "UnclaimDeathrestCasket", "Notify_ChangedGuestStatus" })
+				if (AccessTools.DeclaredMethod(typeof(Pawn_Ownership), name) is { } m)
+				{
+					harmony.Patch(m, postfix: bump);
+					hooked++;
+				}
+			harmony.Patch(AccessTools.Method(typeof(Verse.Profile.MemoryUtility), nameof(Verse.Profile.MemoryUtility.ClearAllMapsAndWorld)),
+				postfix: new HarmonyMethod(typeof(SboOwnedBedCache), nameof(Reset)));
+			harmony.Patch(getMain, prefix: new HarmonyMethod(typeof(SboOwnedBedCache), nameof(Lookup)),
+				postfix: new HarmonyMethod(typeof(SboOwnedBedCache), nameof(Store)));
+			Log.Message($"[Harmony3StrictCompat] Sensible Bed Ownership: OwnedBed cache on ({hooked} ownership methods watched)");
+		}
+
+		static void Bump() => System.Threading.Interlocked.Increment(ref epoch);
+
+		static void Reset()
+		{
+			cache.Clear();
+			Bump();
+		}
+
+		static bool Lookup(Pawn pawn, ref Building_Bed __result, out bool __state)
+		{
+			__state = false;
+			if (bypass || pawn == null || Current.Game == null || !UnityData.IsInMainThread) return true;
+			__state = true;
+			if (!cache.TryGetValue(pawn, out var e) || !Valid(pawn, e)) { misses++; return true; }
+			if (++checks % 64 == 0 && !Verify(pawn, e.bed)) { misses++; return true; }
+			hits++;
+			__result = e.bed;
+			__state = false;
+			return false;
+		}
+
+		static void Store(Pawn pawn, Building_Bed __result, bool __state)
+		{
+			if (!__state) return;
+			if (cache.Count > 4096) cache.Clear();
+			cache[pawn] = new Entry
+			{
+				bed = __result, preferred = preferredBed(pawn), epoch = epoch, tick = Find.TickManager.TicksGame,
+				map = pawn.MapHeld, bedList = bedListDirty() ? null : bedList(),
+			};
+			if (!reported && hits + misses >= 200000)
+			{
+				reported = true;
+				Log.Message($"[Harmony3StrictCompat] Sensible Bed Ownership OwnedBed cache: {hits} hits, {misses} misses, {mismatches} mismatches in {checks / 64} spot checks");
+			}
+		}
+
+		static bool Valid(Pawn pawn, Entry e)
+		{
+			int age = Find.TickManager.TicksGame - e.tick;
+			return e.epoch == epoch && age >= 0 && age < 250 && e.bedList != null && !bedListDirty() && e.bedList == bedList()
+				&& e.map == pawn.MapHeld && e.preferred == preferredBed(pawn)
+				&& (e.bed == null || (e.bed.Spawned && e.bed.OwnersForReading.Contains(pawn)));
+		}
+
+		// Recompute through SBO (bypassing the cache) and compare with what the cache would have returned.
+		static bool Verify(Pawn pawn, Building_Bed cached)
+		{
+			Building_Bed fresh;
+			bypass = true;
+			try { fresh = mainBed(pawn); }
+			finally { bypass = false; }
+			if (fresh == cached) return true;
+			cache.Remove(pawn);
+			if (++mismatches == 1)
+				Log.Warning($"[Harmony3StrictCompat] Sensible Bed Ownership OwnedBed cache was stale for {pawn.LabelShort}: cached {cached?.ThingID ?? "no bed"}, " +
+					$"SBO now says {fresh?.ThingID ?? "no bed"}. Something changed bed ownership without a watched method; entry dropped. Please report what just happened.");
+			return false;
 		}
 	}
 

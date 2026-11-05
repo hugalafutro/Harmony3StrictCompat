@@ -76,9 +76,15 @@ namespace Harmony3StrictCompat
 			harmony.Patch(AccessTools.Method(typeof(TraderCaravanUtility), nameof(TraderCaravanUtility.GetTraderCaravanRole)),
 				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(TraderRoleByTraderKind)));
 			guestBedField = AccessTools.Field(AccessTools.TypeByName("Hospitality.CompGuest"), "bed");
-			if (guestBedField != null)
-				harmony.Patch(AccessTools.Method(typeof(Pawn_JobTracker), nameof(Pawn_JobTracker.StartJob)),
-					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GuestFloorSleepProbe)));
+			var hospSleep = AccessTools.Method("Hospitality.JobGiver_Sleep:TryIssueJobPackage");
+			if (guestBedField != null && hospSleep != null)
+			{
+				harmony.Patch(hospSleep, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SleepProbeStart)),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SleepProbeEnd)));
+				var isValidBed = AccessTools.Method(typeof(RestUtility), nameof(RestUtility.IsValidBedFor));
+				harmony.Patch(isValidBed, postfix: new HarmonyMethod(AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(SleepProbeVanillaResult))) { priority = Priority.First });
+				harmony.Patch(isValidBed, postfix: new HarmonyMethod(AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(SleepProbeFinalResult))) { priority = Priority.Last });
+			}
 			var epDispatch = Target("FinitePopulationVeterans.WorldPopulationManager:IsPawnAvailableForDispatch");
 			if (epDispatch != null)
 				harmony.Patch(epDispatch, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(EpNoLeaderVeterans)));
@@ -91,6 +97,9 @@ namespace Harmony3StrictCompat
 			var hospPocket = Target("Hospitality.Utilities.ItemUtility:PocketHeadgear");
 			if (hospPocket != null)
 				harmony.Patch(hospPocket, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospKeepCasketHelmet)));
+			var epIssue = Target("FinitePopulationVeterans.WorldPopulationManager:TryGetVeteran");
+			if (epIssue != null)
+				harmony.Patch(epIssue, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(EpIssuedLeavesWorld)));
 			var epMatch = Target("FinitePopulationVeterans.WorldPopulationManager:PawnMatchesRequest");
 			if (epMatch != null)
 				harmony.Patch(epMatch, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(EpViolenceCheck)));
@@ -424,6 +433,21 @@ namespace Harmony3StrictCompat
 			Log.Message($"[Harmony3StrictCompat] Eternal Pawns: kept {p.LabelShort} ({p.Faction?.Name}) out of the veteran draw, {why}");
 		}
 
+		// TryGetVeteran hands a pawn out but leaves it a Free world pawn until it spawns. Vanilla's own redress
+		// (GenerateOrRedressPawnInternal) takes from that same Free list and removes what it takes, so in the next
+		// GeneratePawn of the same group (Eternal Pawns' 50% roll failing) vanilla could redress the issued veteran
+		// again: ChangeKind + new gear, and the same Pawn object twice in the group. Seen twice with The Patreons'
+		// caravan: trader Patch (Town_Trader) re-picked as a Mercenary_Gunner guard, so the trader became a "gunner";
+		// "Tried to spawn X but it's already spawned" and "Lord tried to add X whom it already controls" for 3 pawns;
+		// Giddy-Up then gave Staunch two pack muffalos, the second waited for him forever at the map edge and the
+		// lord never left LordToil_Travel (caravan starved). Do what vanilla does for a redressed pawn: take it out
+		// of WorldPawns. Eternal Pawns' mission cleanup passes a veteran back to the world if it never reaches a map.
+		static void EpIssuedLeavesWorld(Pawn __result)
+		{
+			if (__result != null && !__result.Spawned && Find.WorldPawns.Contains(__result))
+				Find.WorldPawns.RemovePawn(__result);
+		}
+
 		// ---- Hospitality: visitors in warcaskets re-geared on arrival ---------------------------------------
 		// SpawnGroupUtility.GenerateNewGearFor runs PawnGenerator.RedressPawn on every visitor, which destroys all worn
 		// apparel and rolls a fresh set from the pawn kind. For a warcasket kind that yields casket pieces plus whatever
@@ -475,32 +499,85 @@ namespace Harmony3StrictCompat
 		// (every report said the bed was valid). Now probe Pawn_JobTracker.StartJob instead: when a guest with a
 		// claimed bed starts a floor LayDown, log which think node issued it (with its parent chain and the duty) and
 		// what is wrong with the bed right then. Diagnostic only: changes nothing. Remove once the cause is known.
+		// v67: the v53 StartJob probe caught 4 guests on 2026-11-05 22:23: Hospitality.JobGiver_Sleep itself issues the
+		// floor LayDown (its fallback when CompGuest.HasBed is false or IsValidBedFor(its bed) is false), yet every bed
+		// check passed again at StartJob. So check at decision time instead: while JobGiver_Sleep decides for a guest
+		// that owns a bed, a first-priority postfix on RestUtility.IsValidBedFor re-runs the vanilla sub-checks the
+		// moment vanilla says no, and a last-priority postfix notes when vanilla said yes but a mod postfix said no.
+		// When the decision is a floor LayDown, the JobGiver postfix logs what was seen.
 		static FieldInfo guestBedField;
-		static readonly HashSet<int> probedJobs = new();
-		static readonly AccessTools.FieldRef<Pawn_JobTracker, Pawn> JobTrackerPawn = AccessTools.FieldRefAccess<Pawn_JobTracker, Pawn>("pawn");
+		[ThreadStatic] static Pawn sleepProbePawn;
+		[ThreadStatic] static Building_Bed sleepProbeBed;
+		[ThreadStatic] static bool sleepProbeVanilla;
+		[ThreadStatic] static List<string> sleepProbeNotes;
+		static bool sleepProbeOwnersLogged;
 
-		static void GuestFloorSleepProbe(Pawn_JobTracker __instance, Job newJob, ThinkNode jobGiver, ThinkTreeDef thinkTree)
+		static Building_Bed GuestBedOf(Pawn pawn)
 		{
-			if (newJob == null || newJob.def != JobDefOf.LayDown || newJob.targetA.HasThing) return;
-			var pawn = JobTrackerPawn(__instance);
-			if (pawn?.Map == null) return;
 			var comp = pawn.AllComps?.FirstOrDefault(c => c.GetType() == guestBedField.DeclaringType);
-			if (comp == null || guestBedField.GetValue(comp) is not Building_Bed bed || !probedJobs.Add(newJob.loadID)) return;
+			return comp == null ? null : guestBedField.GetValue(comp) as Building_Bed;
+		}
+
+		static void SleepProbeStart(Pawn pawn)
+		{
+			sleepProbePawn = null;
+			if (pawn?.Map == null || pawn.CurJob != null || GuestBedOf(pawn) is not Building_Bed bed) return;
+			sleepProbePawn = pawn;
+			sleepProbeBed = bed;
+			(sleepProbeNotes ??= new()).Clear();
+		}
+
+		static void SleepProbeVanillaResult(Thing bedThing, Pawn sleeper, bool __result)
+		{
+			if (sleeper == null || sleeper != sleepProbePawn || bedThing != sleepProbeBed) return;
+			sleepProbeVanilla = __result;
+			if (__result) return;
+			sleepProbePawn = null; // BedProblems calls IsValidBedFor itself
+			try { sleepProbeNotes.Add($"vanilla IsValidBedFor said no; checks run at that moment: {string.Join("; ", BedProblems(sleeper, sleepProbeBed))}"); }
+			catch (Exception e) { sleepProbeNotes.Add($"check failed: {e.Message}"); }
+			finally { sleepProbePawn = sleeper; }
+		}
+
+		static void SleepProbeFinalResult(Thing bedThing, Pawn sleeper, bool __result)
+		{
+			if (sleeper == null || sleeper != sleepProbePawn || bedThing != sleepProbeBed) return;
+			if (sleepProbeVanilla && !__result)
+				sleepProbeNotes.Add($"vanilla IsValidBedFor said yes, a mod postfix turned it to no (postfix owners: {PatchOwners(AccessTools.Method(typeof(RestUtility), nameof(RestUtility.IsValidBedFor)))})");
+			else if (__result)
+				sleepProbeNotes.Add("IsValidBedFor said yes for the bed");
+		}
+
+		static void SleepProbeEnd(Pawn pawn, ThinkResult __result)
+		{
+			if (pawn == null || pawn != sleepProbePawn) return;
+			sleepProbePawn = null;
+			var job = __result.Job;
+			if (job == null || job.def != JobDefOf.LayDown || job.targetA.HasThing) return;
 			try
 			{
-				var chain = new List<string>();
-				for (var n = jobGiver; n != null && chain.Count < 12; n = n.parent)
-					chain.Add(n.GetType().Name);
-				string source = jobGiver == null ? "no think node (started directly by code)" : string.Join(" < ", chain);
-				Log.Warning($"[Harmony3StrictCompat] guest {pawn.LabelShort} starts sleeping on the floor at {newJob.targetA.Cell} " +
-					$"although it claimed {bed.LabelShort} at {bed.Position}. Issued by: {source} (tree {thinkTree?.defName ?? newJob.jobGiverThinkTree?.defName ?? "none"}, " +
-					$"duty {pawn.mindState?.duty?.def?.defName ?? "none"}, rest {pawn.needs?.rest?.CurLevelPercentage:P0}, mental state {pawn.MentalStateDef?.defName ?? "none"}). " +
-					$"Bed: {string.Join("; ", BedProblems(pawn, bed))}\n{new System.Diagnostics.StackTrace(1, false)}");
+				var bed = sleepProbeBed;
+				string why = sleepProbeNotes.Count > 0 ? string.Join(" | ", sleepProbeNotes)
+					: $"IsValidBedFor was never asked about the bed, so CompGuest.HasBed was false (spawned {bed.Spawned}, " +
+					  $"assigned ({Names(bed.CompAssignableToPawn?.AssignedPawnsForReading)}), owners ({Names(bed.OwnersForReading)})) and FindBedFor found no other bed";
+				string owners = sleepProbeOwnersLogged ? "" :
+					$" Patch owners: IsValidBedFor [{PatchOwners(AccessTools.Method(typeof(RestUtility), nameof(RestUtility.IsValidBedFor)))}], " +
+					$"CanUseBedNow [{PatchOwners(AccessTools.Method(typeof(RestUtility), nameof(RestUtility.CanUseBedNow)))}], " +
+					$"JobGiver_Sleep [{PatchOwners(AccessTools.Method("Hospitality.JobGiver_Sleep:TryIssueJobPackage"))}].";
+				sleepProbeOwnersLogged = true;
+				Log.Warning($"[Harmony3StrictCompat] guest {pawn.LabelShort} told to sleep on the floor at {job.targetA.Cell} although it claimed " +
+					$"{bed.LabelShort} at {bed.Position} (tick {Find.TickManager.TicksGame}, hour {GenLocalDate.HourOfDay(pawn)}, rest {pawn.needs?.rest?.CurLevelPercentage:P0}, " +
+					$"duty {pawn.mindState?.duty?.def?.defName ?? "none"}, position {pawn.Position}): {why}.{owners}");
 			}
 			catch (Exception e)
 			{
 				Log.Warning($"[Harmony3StrictCompat] guest floor-sleep probe failed: {e.Message}");
 			}
+		}
+
+		static string PatchOwners(MethodBase m)
+		{
+			var info = m == null ? null : Harmony.GetPatchInfo(m);
+			return info == null ? "none" : string.Join(", ", info.Prefixes.Concat(info.Postfixes).Concat(info.Transpilers).Concat(info.Finalizers).Select(p => p.owner).Distinct());
 		}
 
 		static IEnumerable<string> BedProblems(Pawn p, Building_Bed bed)
@@ -598,6 +675,7 @@ namespace Harmony3StrictCompat
 			["HospitalityCasino.JobGiver_PlaySlotMachines:TryGiveJob"] = 0x886CDC4608E3C02D,                 // Casino 1.7, 2026-11-05
 			["FinitePopulationVeterans.WorldPopulationManager:IsPawnAvailableForDispatch"] = 0x5A8A111FF41E04D8, // Eternal Pawns 1.6 build, 2026-04-13
 			["FinitePopulationVeterans.WorldPopulationManager:PawnMatchesRequest"] = 0xAF54B4F3884BC77E, // Eternal Pawns 1.6 build, 2026-04-13
+			["FinitePopulationVeterans.WorldPopulationManager:TryGetVeteran"] = 0xEEC0813511A23153,      // Eternal Pawns 1.6 build, 2026-04-13
 			["MSSFP.Utils.PawnGraphicUtils+<>c__DisplayClass4_0:<SaveTextureToFile>b__0"] = 0x3C2DDE1F39E984E8,  // MSS Tweaks and Fun 1.7, 2026-10-19
 			["Caveworld_Flora_Unleashed.FruitingBody:get_LabelMouseover"] = 0xB098C8B9BC3CE626,                 // Biomes! Caverns 1.7, 2026-10-20
 			["Caveworld_Flora_Unleashed.GenCaveFungusReproduction:TryGrowMycelium"] = 0x614612774F447421,         // Biomes! Caverns 1.7, 2026-10-20

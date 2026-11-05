@@ -85,6 +85,9 @@ namespace Harmony3StrictCompat
 			var hospRegear = Target("Hospitality.Utilities.SpawnGroupUtility:GenerateNewGearFor");
 			if (hospRegear != null)
 				harmony.Patch(hospRegear, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospKeepWarcasketGear)));
+			var hcSlots = Target("HospitalityCasino.JobGiver_PlaySlotMachines:TryGiveJob");
+			if (hcSlots != null)
+				harmony.Patch(hcSlots, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HcSlotsOnlyIdleVisitors)));
 			var hospPocket = Target("Hospitality.Utilities.ItemUtility:PocketHeadgear");
 			if (hospPocket != null)
 				harmony.Patch(hospPocket, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospKeepCasketHelmet)));
@@ -442,6 +445,20 @@ namespace Harmony3StrictCompat
 		// VFE Pirates strips all non-casket apparel from casket wearers, so skipping the whole call loses nothing.
 		static bool HospKeepCasketHelmet(Pawn pawn) => !WearsCasket(pawn);
 
+		// ---- Hospitality: Casino: visitors leave their lord duty to play slot machines ----------------------------
+		// HC_SlotMachineVisitor inserts JobGiver_PlaySlotMachines at Humanlike_PostMentalState, above the lord duty
+		// node, for every friendly non-player pawn; it only skips Hospitality guests and LordToil_ExitMap. So it
+		// overrides any lord job: the bestower left the bestowing ceremony to gamble, guards boarding the shuttle
+		// (LordToil_EnterShuttleOrLeave) were pulled off it and the shuttle left pawns behind / stayed, and leaving
+		// trade caravans (LordToil_ExitMapAndEscortCarriers) ran back across the map. Only casino visitors and trade
+		// caravans waiting at their chill spot (LordToil_DefendTraderCaravan) may gamble now.
+		static bool HcSlotsOnlyIdleVisitors(Pawn pawn)
+		{
+			var lord = pawn?.GetLord();
+			return lord?.LordJob?.GetType().FullName == "HospitalityCasino.LordJob_CasinoVisit"
+				|| lord?.LordJob is LordJob_TradeWithColony && lord.CurLordToil?.GetType().Name == "LordToil_DefendTraderCaravan";
+		}
+
 		static bool IsCasketPiece(Apparel a) => a?.GetType().Name == "Apparel_Warcasket";
 		static bool WearsCasket(Pawn p) => p?.apparel?.WornApparel.Any(IsCasketPiece) == true;
 
@@ -578,6 +595,7 @@ namespace Harmony3StrictCompat
 			["GiddyUp.MountUtility:Dismount"] = 0x6A5F245D923DC418,                                                // Giddy-Up 2 Continued 1.7, 2026-11-01
 			["Hospitality.Utilities.SpawnGroupUtility:GenerateNewGearFor"] = 0x9968B91075E1A216,                  // Hospitality 1.7, 2026-11-02
 			["Hospitality.Utilities.ItemUtility:PocketHeadgear"] = 0x5500E1A13797F143,                       // Hospitality 1.7, 2026-11-02
+			["HospitalityCasino.JobGiver_PlaySlotMachines:TryGiveJob"] = 0x886CDC4608E3C02D,                 // Casino 1.7, 2026-11-05
 			["FinitePopulationVeterans.WorldPopulationManager:IsPawnAvailableForDispatch"] = 0x5A8A111FF41E04D8, // Eternal Pawns 1.6 build, 2026-04-13
 			["FinitePopulationVeterans.WorldPopulationManager:PawnMatchesRequest"] = 0xAF54B4F3884BC77E, // Eternal Pawns 1.6 build, 2026-04-13
 			["MSSFP.Utils.PawnGraphicUtils+<>c__DisplayClass4_0:<SaveTextureToFile>b__0"] = 0x3C2DDE1F39E984E8,  // MSS Tweaks and Fun 1.7, 2026-10-19

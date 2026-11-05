@@ -601,6 +601,8 @@ namespace Harmony3StrictCompat
 			["SensibleBedOwnership.Patch_Pawn_Ownership_get_OwnedBed:Prefix"] = 0x696E7432D36527D8,       // SBO 1.6 build, 2026-11-05
 			["SensibleBedOwnership.Utility:GetMainBed"] = 0xAE5863A6DF81EAD6,                                // (Pawn) overload
 			["SensibleBedOwnership.Utility:AllAssignedBedsAndDeathrestCaskets"] = 0x8560CE17C9797D18,
+			["VEF.Buildings.CompRandomBuildingGraphic:ChangeGraphic"] = 0xC22ADB911FDB5E90,                  // VEF 1.7, 2026-11-04
+			["AdaptiveStorage.StorageGraphicWorker:GetGraphicFor"] = 0x2899906440FC5118,                     // ASF 1.6 build, 2025-11-12
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an
@@ -1256,6 +1258,85 @@ namespace Harmony3StrictCompat
 			if (__instance.Map.edificeGrid[__instance.Position] is not Building b || b.def != machine) return;
 			if (b.GetComp<CompPowerTrader>() is { PowerOn: false }) return;
 			__result = Mathf.Max(__result - 100f, -10f);
+		}
+	}
+
+	// ---- VTE Variations "choose graphic" on Adaptive Storage furniture ---------------------------------------
+	// Reel's Expanded Storage rebuilds VFE furniture (wardrobe, royal dresser) as Adaptive Storage buildings. ASF
+	// hides the base graphic, draws the texture from the def's GraphicsDef instead and caches it until its renderer
+	// is dirtied. VEF's CompRandomBuildingGraphic (VTE Variations' choose / randomize graphic) only swaps
+	// Thing.graphicInt, so nothing changes on screen, not even after reload. For ASF defs that carry the VEF comp: a
+	// GraphicsDef layer whose texture is one of the comp's variants draws the chosen variant (same graphic class,
+	// shader, size and colours), and ChangeGraphic marks the renderer dirty. Every other building is untouched.
+	[StaticConstructorOnStartup]
+	static class VefGraphicOnAdaptiveStorage
+	{
+		static readonly HashSet<ThingDef> defs = new();
+		static Type compType;
+		static MethodInfo rendererOf, parentOf, setDirty;
+		static AccessTools.FieldRef<object, string> multiPath, singlePath;
+		static AccessTools.FieldRef<object, List<string>> variants;
+
+		static VefGraphicOnAdaptiveStorage()
+		{
+			var change = Harmony3StrictCompatMod.Target("VEF.Buildings.CompRandomBuildingGraphic:ChangeGraphic");
+			var getGraphic = Harmony3StrictCompatMod.Target("AdaptiveStorage.StorageGraphicWorker:GetGraphicFor");
+			if (change == null || getGraphic == null) return;
+			compType = change.DeclaringType;
+			var asfThing = AccessTools.TypeByName("AdaptiveStorage.ThingClass");
+			var renderer = AccessTools.TypeByName("AdaptiveStorage.StorageRenderer");
+			var propsType = AccessTools.TypeByName("VEF.Buildings.CompProperties_RandomBuildingGraphic");
+			rendererOf = asfThing == null ? null : AccessTools.PropertyGetter(asfThing, "Renderer");
+			parentOf = renderer == null ? null : AccessTools.PropertyGetter(renderer, "Parent");
+			setDirty = renderer == null ? null : AccessTools.Method(renderer, "SetAllPrintDatasDirty");
+			if (rendererOf == null || parentOf == null || setDirty == null || propsType == null
+				|| AccessTools.Field(compType, "newGraphicPath") == null || AccessTools.Field(compType, "newGraphicSinglePath") == null
+				|| AccessTools.Field(propsType, "randomGraphics") == null)
+			{
+				Log.Error("[Harmony3StrictCompat] Adaptive Storage or VEF members renamed: its mod updated, VTE Variations graphic fix for storage furniture skipped");
+				return;
+			}
+			multiPath = AccessTools.FieldRefAccess<string>(compType, "newGraphicPath");
+			singlePath = AccessTools.FieldRefAccess<string>(compType, "newGraphicSinglePath");
+			variants = AccessTools.FieldRefAccess<List<string>>(propsType, "randomGraphics");
+			foreach (var def in DefDatabase<ThingDef>.AllDefsListForReading)
+				if (def.thingClass != null && asfThing.IsAssignableFrom(def.thingClass) && def.comps.Any(propsType.IsInstanceOfType))
+					defs.Add(def);
+			if (defs.Count == 0) return;
+			var harmony = new Harmony("sammael.harmony3strictcompat");
+			harmony.Patch(getGraphic, postfix: new HarmonyMethod(typeof(VefGraphicOnAdaptiveStorage), nameof(UseChosenVariant)) { uncheckedReferenceBinding = true });
+			harmony.Patch(change, postfix: new HarmonyMethod(typeof(VefGraphicOnAdaptiveStorage), nameof(Redraw)));
+		}
+
+		static ThingComp CompOf(ThingWithComps thing)
+		{
+			foreach (var comp in thing.AllComps)
+				if (compType.IsInstanceOfType(comp)) return comp;
+			return null;
+		}
+
+		// __1 is the StorageRenderer, typed object because this assembly does not reference ASF.
+		static void UseChosenVariant(object __1, ref Graphic __result)
+		{
+			if (__result == null || __1 == null) return;
+			if (parentOf.Invoke(__1, null) is not ThingWithComps parent || !defs.Contains(parent.def)) return;
+			if (CompOf(parent) is not { } comp) return;
+			var chosen = multiPath(comp);
+			if (chosen.NullOrEmpty()) chosen = singlePath(comp);
+			if (chosen.NullOrEmpty() || chosen == __result.path) return;
+			var options = variants(comp.props);
+			if (options == null || !options.Contains(__result.path) || !options.Contains(chosen)) return;
+			__result = GraphicDatabase.Get(__result.GetType(), chosen, __result.Shader, __result.drawSize, __result.color,
+				__result.colorTwo, __result.data, __result.data?.shaderParameters);
+		}
+
+		static void Redraw(ThingComp __instance)
+		{
+			var parent = __instance.parent;
+			if (parent == null || !parent.Spawned || !defs.Contains(parent.def)) return;
+			if (rendererOf.Invoke(parent, null) is not { } renderer) return;
+			setDirty.Invoke(renderer, null);
+			parent.DirtyMapMesh(parent.Map);
 		}
 	}
 }

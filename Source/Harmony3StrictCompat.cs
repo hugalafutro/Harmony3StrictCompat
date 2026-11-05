@@ -212,7 +212,14 @@ namespace Harmony3StrictCompat
 		// Replace Stuff copies the old storage settings to the new building one tick later; until then the new storage
 		// has its def's defaults (an empty filter for the cellars) and haulers carry its contents off. Copy them as soon
 		// as the new building stands. Runs after Replace Stuff's prefix (Priority.Last), so its flag is already set.
+		// A grouped storage's real settings live in its StorageGroup (its own `settings` are a stale copy), and removing
+		// the old member drops a two-member group below vanilla's minimum, so the group dissolves. Take the group-aware
+		// settings, then put the new storage back into the old group, or into a new group with the old name and the
+		// remaining former members when it dissolved.
 		static StorageSettings replacedStorageSettings;
+		static StorageGroup replacedGroup;
+		static List<IStorageGroupMember> replacedGroupMembers;
+		static string replacedGroupLabel, replacedGroupTag;
 		static CellRect frameRect;
 
 		static void FrameCompleteBegin(Frame __instance)
@@ -223,6 +230,8 @@ namespace Harmony3StrictCompat
 			rsReplacing = rsWasNewThing != null && (bool)rsWasNewThing.GetValue(null);
 			completingDef = __instance.def.entityDefToBuild as ThingDef;
 			replacedStorageSettings = null;
+			replacedGroup = null;
+			replacedGroupMembers = null;
 			if (overflowMap == null || completingDef == null) return;
 			foreach (var cell in frameRect)
 				foreach (var t in cell.GetThingList(overflowMap))
@@ -230,7 +239,11 @@ namespace Harmony3StrictCompat
 						(rsReplacing || GenConstruct.HasMatchingReplacementTag(completingDef, old.def)))
 					{
 						replacedStorageSettings = new StorageSettings();
-						replacedStorageSettings.CopyFrom(old.settings);
+						replacedStorageSettings.CopyFrom(old.GetStoreSettings());
+						replacedGroup = old.storageGroup;
+						replacedGroupMembers = replacedGroup?.members.Where(m => m != old).ToList();
+						replacedGroupLabel = replacedGroup?.RenamableLabel;
+						replacedGroupTag = old.def.building?.storageGroupTag;
 						return;
 					}
 		}
@@ -248,9 +261,24 @@ namespace Harmony3StrictCompat
 					if (cell.GetFirstThing<Building_Storage>(map) is { } fresh)
 					{
 						fresh.settings.CopyFrom(replacedStorageSettings);
+						if (replacedGroup != null && fresh.def.building?.storageGroupTag == replacedGroupTag)
+						{
+							var group = replacedGroup;
+							if (!map.storageGroups.HasStorageGroup(group))
+							{
+								group = map.storageGroups.NewGroup(replacedGroupLabel);
+								group.GetStoreSettings().CopyFrom(replacedStorageSettings);
+								foreach (var member in replacedGroupMembers)
+									if (member is Thing { Spawned: true } t && t.Map == map && member.Group == null)
+										member.SetStorageGroup(group);
+							}
+							fresh.SetStorageGroup(group);
+						}
 						break;
 					}
 				replacedStorageSettings = null;
+				replacedGroup = null;
+				replacedGroupMembers = null;
 			}
 			foreach (var cell in overflowCells.Distinct().ToList())
 			{

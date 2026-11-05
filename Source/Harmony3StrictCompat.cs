@@ -129,7 +129,24 @@ namespace Harmony3StrictCompat
 			lcCountAway = Target("Inventory.BWM_DoWindowContentsPatch_Patch:ShouldCountAway");
 			if (lcBwm != null && lcCountAway != null && bwmFilters != null)
 				harmony.Patch(lcBwm, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LcBwmCountAway)));
+			var bwUpper = Target("Busywork.Patch_ColonistBarColonistDrawer_DrawColonist:Postfix");
+			var ltoDraw = Target("TacticalGroups.TacticalGroups_ColonistBarColonistDrawer:DrawColonist");
+			if (bwUpper != null && ltoDraw != null)
+			{
+				bwUpperMark = (Action<ColonistBarColonistDrawer, Rect, Pawn>)bwUpper.CreateDelegate(typeof(Action<ColonistBarColonistDrawer, Rect, Pawn>));
+				harmony.Patch(ltoDraw, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LtoBusyworkUpperMark)));
+			}
 		}
+
+		// ---- Busywork "Upper" job icon on LTO Colony Groups portraits -------------------------------------------
+		// In Upper mode Busywork stops feeding its job icon to Useful Marks (so "Useful Marks in Colony Groups" has
+		// nothing to draw) and draws it itself: over the pawn's head on the map, and in the portrait's top-left corner
+		// via a postfix on vanilla ColonistBarColonistDrawer.DrawColonist. LTO Colony Groups replaces the colonist
+		// bar with its own drawer, so that postfix never runs. Run Busywork's own postfix from LTO's DrawColonist; it
+		// never touches its drawer argument, so null is fine, and the Upper-mode check, position and colours stay its own.
+		static Action<ColonistBarColonistDrawer, Rect, Pawn> bwUpperMark;
+
+		static void LtoBusyworkUpperMark(Rect rect, Pawn colonist) => bwUpperMark(null, rect, colonist);
 
 		// ---- Better Workbench Management: bill options overlap the Ideology style button -------------------------
 		// BWM draws its block (output filter, count away, restrict workbench) in the bill dialog's left column at
@@ -502,6 +519,8 @@ namespace Harmony3StrictCompat
 			["VanillaRacesExpandedSanguophage.JobGiver_GetCorpseHemogen:TryGiveJob"] = 0x00285EA300E503C6,   // VRE Sanguophage 1.6 build, 2026-10-01
 			["ModSettingsFramework.PatchOperationSliderFloat:ApplyWorker"] = 0x7D3F07C2C28B20A5,              // VEF 1.7 0ModSettingsFramework.dll, 2026-10-13
 			["ModSettingsFramework.PatchOperationSliderInt:ApplyWorker"] = 0x03DFA38BA62A830B,
+			["Busywork.Patch_ColonistBarColonistDrawer_DrawColonist:Postfix"] = 0x8671BDCBF4F254FC,          // Busywork 1.7, 2026-11-05
+			["TacticalGroups.TacticalGroups_ColonistBarColonistDrawer:DrawColonist"] = 0x092B4F83C851CE01,     // LTO Colony Groups 1.6 build, 2026-11-05
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an

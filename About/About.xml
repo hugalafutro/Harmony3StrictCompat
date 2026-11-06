@@ -38,6 +38,7 @@
 - Designator Shapes + Better Architect Menu: flood fill stops at doors again.
 - Flourish - Everyday Animations: the telescope pose mirrors with the telescope's art, so a West-rotated telescope is used from the eyepiece side too.
 - Flourish - Everyday Animations: in the telescope pose the telescope is drawn over the pawn and under its hands.
+- VFE Tribals + UI Rethemed - Factions (visual tweak): the Cornerstones button is drawn as a UI Rethemed button in the themed Factions title bar.
 - Vanilla (found through Modern Needs Tab): an emptied minified thing has a label again, so job reports no longer throw and MNT keeps recording job history.
 - Stem's VWE Industrial Expansion, Fortification Industrial - Citadel: missing weapon sounds pointed at existing ones (pistol equip, sawn-off repeater shot, flame bunker).
 - Vanilla Races Expanded - Sanguophage: animalfeeders (strigoi) drink animal hemogen packs on their own, like regular packs, when no prisoner or regular pack is available.

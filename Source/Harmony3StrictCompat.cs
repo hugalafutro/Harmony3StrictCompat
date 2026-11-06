@@ -217,6 +217,46 @@ namespace Harmony3StrictCompat
 				harmony.Patch(AccessTools.Method(typeof(PawnRenderUtility), nameof(PawnRenderUtility.DrawEquipmentAndApparelExtras)),
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FlDrawAnchorTargetOverPawn)));
 			}
+			var vfetButton = Target("VFETribals.FactionUIUtility_DoWindowContents_Patch:Postfix");
+			var uirThemed = Target("UIRethemed.Factions.FactionsTab:Themed");
+			var uirButton = Target("UIRethemed.Core.CoreWidgets:Button");
+			var uirIcon = Target("UIRethemed.Core.CoreWidgets:Icon");
+			var uirBlue = AccessTools.PropertyGetter(AccessTools.TypeByName("UIRethemed.Core.Theme"), "HighlightBlue");
+			vfetWindow = AccessTools.TypeByName("VFETribals.Window_CustomizeCornerstones");
+			if (vfetButton != null && uirThemed != null && uirButton != null && uirIcon != null && uirBlue != null && vfetWindow != null)
+			{
+				uirFactionsThemed = (Func<Window, bool>)uirThemed.CreateDelegate(typeof(Func<Window, bool>));
+				uirThemedButton = (Func<Rect, string, Texture, Color?, bool, string, GameFont, string, bool, bool, bool>)uirButton.CreateDelegate(
+					typeof(Func<Rect, string, Texture, Color?, bool, string, GameFont, string, bool, bool, bool>));
+				uirIconFor = (Func<string, Texture2D>)uirIcon.CreateDelegate(typeof(Func<string, Texture2D>));
+				uirBlueColor = (Func<Color>)uirBlue.CreateDelegate(typeof(Func<Color>));
+				harmony.Patch(vfetButton, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(VfetThemedCornerstones)));
+			}
+		}
+
+		// ---- VFE Tribals + UI Rethemed - Factions: Cornerstones button in the theme's style ----
+		// VFE Tribals draws its Cornerstones button from a postfix on FactionUIUtility.DoWindowContents as a vanilla
+		// Widgets.ButtonText at (0, 10) of the Factions window (135 further right with VFE Classical, whose own button
+		// takes that spot). UIR Factions keeps a 135 px gap for it in its title bar (TitleBarSpaceDef) but leaves the
+		// vanilla look. While the tab is themed, draw it with UIR's own action button (blue, raised, as its faction
+		// action buttons) centred in the 40 px title bar that starts 6 px into the window; otherwise VFE's postfix runs.
+		static Func<Window, bool> uirFactionsThemed;
+		static Func<Rect, string, Texture, Color?, bool, string, GameFont, string, bool, bool, bool> uirThemedButton;
+		static Func<string, Texture2D> uirIconFor;
+		static Func<Color> uirBlueColor;
+		static Texture2D vfetIcon;
+		static Type vfetWindow;
+
+		static bool VfetThemedCornerstones()
+		{
+			var tab = Find.WindowStack.WindowOfType<MainTabWindow_Factions>();
+			if (tab == null || !uirFactionsThemed(tab)) return true;
+			vfetIcon ??= uirIconFor("campfire");
+			float x = (ModsConfig.IsActive("OskarPotocki.VFE.Classical") ? 135f : 0f) + 12f;
+			if (uirThemedButton(new Rect(x, 12f, 120f, 28f), "VFET.Cornerstones".Translate(), vfetIcon, uirBlueColor(), true,
+				"VFET.CustomizeCornerstones".Translate(), GameFont.Small, null, false, true))
+				Find.WindowStack.Add((Window)Activator.CreateInstance(vfetWindow));
+			return false;
 		}
 
 		// ---- Flourish - Everyday Animations: telescope drawn under the posed pawn, not between body and hands ----
@@ -939,6 +979,10 @@ namespace Harmony3StrictCompat
 			["Merthsoft.DesignatorShapes.Shapes.FloodFill:IsStructure"] = 0x01F3F2D215BA16DB,                 // Designator Shapes 1.7, 2026-11-02
 			["YayoAnimation.HarmonyPatches.PawnPatches.ParallelGetPreRenderResultsPatch:DataFor"] = 0x70EEFE43592C82C3, // Flourish Everyday 1.7, 2026-10-25
 			["Flourish.Everyday.JobAnimationWorker_Anchored:Evaluate"] = 0x817B489F5395FF01,                // Flourish Everyday 1.7, 2026-10-25
+			["VFETribals.FactionUIUtility_DoWindowContents_Patch:Postfix"] = 0x8824F2B542A8AC6E,             // VFE Tribals 1.6 build, 2026-10-14
+			["UIRethemed.Factions.FactionsTab:Themed"] = 0x6464010BFAB662C3,                               // UI Rethemed 1.7, 2026-11-06
+			["UIRethemed.Core.CoreWidgets:Button"] = 0x96B9EA4E631E845B,
+			["UIRethemed.Core.CoreWidgets:Icon"] = 0x2094A97723860CBE,
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an

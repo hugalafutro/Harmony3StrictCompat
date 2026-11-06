@@ -107,6 +107,13 @@ namespace Harmony3StrictCompat
 				harmony.Patch(AccessTools.Method(typeof(JoyUtility), nameof(JoyUtility.JoyTickCheckEnd)),
 					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HcChargeOtherTables)));
 			}
+			var hcInspect = Target("HospitalityCasino.CompVendingMachine:CompInspectStringExtra");
+			if (hcInspect != null && hcCompType != null)
+			{
+				hcPricing = AccessTools.FieldRefAccess<int>(hcCompType, "pricing");
+				hcItemPrice = AccessTools.Method(hcCompType, "GetSingleItemPrice");
+				harmony.Patch(hcInspect, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HcPricingLine)));
+			}
 			var hospPocket = Target("Hospitality.Utilities.ItemUtility:PocketHeadgear");
 			if (hospPocket != null)
 				harmony.Patch(hospPocket, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospKeepCasketHelmet)));
@@ -545,6 +552,24 @@ namespace Harmony3StrictCompat
 			hcInsertCoin(pawn, joySource);
 		}
 
+		// ---- Hospitality: Casino: show the pricing setting in the inspect pane ------------------------------------
+		// The pricing gizmo label is the only place the setting shows. Add it under "Contains" / "Lifetime earnings",
+		// with the silver InsertCoin charges per game (ceil of defaultPrice x 0 / 0.5 / 1 / 2). Payouts don't scale.
+		static AccessTools.FieldRef<object, int> hcPricing;
+		static MethodInfo hcItemPrice;
+		static readonly string[] hcPricingKeys = { "HospitalityCasino_Free", "HospitalityCasino_Low", "HospitalityCasino_Medium", "HospitalityCasino_High" };
+
+		static void HcPricingLine(ThingComp __instance, ref string __result)
+		{
+			if (string.IsNullOrEmpty(__result)) return;   // Casino shows nothing while the machine is switched off
+			int pricing = hcPricing(__instance);
+			if (pricing < 0 || pricing >= hcPricingKeys.Length) return;
+			string line = "Pricing: " + hcPricingKeys[pricing].Translate();
+			if (pricing > 0)
+				line += ", " + ((float)Mathf.CeilToInt((float)hcItemPrice.Invoke(__instance, new object[] { null }))).ToStringMoney("F0") + " per game";
+			__result += "\n" + line;
+		}
+
 		static bool IsCasketPiece(Apparel a) => a?.GetType().Name == "Apparel_Warcasket";
 		static bool WearsCasket(Pawn p) => p?.apparel?.WornApparel.Any(IsCasketPiece) == true;
 
@@ -736,6 +761,7 @@ namespace Harmony3StrictCompat
 			["Hospitality.Utilities.ItemUtility:PocketHeadgear"] = 0x5500E1A13797F143,                       // Hospitality 1.7, 2026-11-02
 			["HospitalityCasino.JobGiver_PlaySlotMachines:TryGiveJob"] = 0x886CDC4608E3C02D,                 // Casino 1.7, 2026-11-05
 			["HospitalityCasino.VendingMachineJobHelper:InsertCoin"] = 0xDD3ACDA377763174,                   // Casino 1.7, 2026-11-06
+			["HospitalityCasino.CompVendingMachine:CompInspectStringExtra"] = 0x4C16897C23044EC3,            // Casino 1.7, 2026-11-06
 			["FinitePopulationVeterans.WorldPopulationManager:IsPawnAvailableForDispatch"] = 0x5A8A111FF41E04D8, // Eternal Pawns 1.6 build, 2026-04-13
 			["FinitePopulationVeterans.WorldPopulationManager:PawnMatchesRequest"] = 0xAF54B4F3884BC77E, // Eternal Pawns 1.6 build, 2026-04-13
 			["FinitePopulationVeterans.WorldPopulationManager:TryGetVeteran"] = 0xEEC0813511A23153,      // Eternal Pawns 1.6 build, 2026-04-13

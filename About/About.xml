@@ -43,6 +43,7 @@
 - Eternal Pawns: faction leaders, leader kinds and warcasket wearers stay out of the veteran draw; MustBeCapableOfViolence honoured.
 - Eternal Pawns: an issued veteran leaves the world pawn list, so vanilla cannot redress it a second time in the same group (duplicate caravan pawns, stuck trade caravans).
 - Hospitality: Casino: tables given Casino's vending comp by LocalTweaks (tongo, billiards) charge visitors once per game.
+- Hospitality: Casino: the inspect pane shows the pricing setting and the silver charged per game.
 - Hospitality: Casino: only casino visitors and trade caravans at their chill spot play slot machines (bestowers, shuttle guards and leaving caravans keep their duty).
 - Hospitality: visitors in warcaskets skip the arrival re-gear (casket pieces re-locked) and keep their casket helmet on.
 - Hospitality: diagnostic only, logs which think node puts a guest with a claimed bed on the floor.

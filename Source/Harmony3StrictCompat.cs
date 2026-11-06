@@ -185,6 +185,9 @@ namespace Harmony3StrictCompat
 				carCleanArea = (Func<Map, Area>)carArea.CreateDelegate(typeof(Func<Map, Area>));
 				harmony.Patch(prClean, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PrCleanOnlyInCleanArea)));
 			}
+			var hfmHunt = Target("aRandomKiwi.HFM.JobGiver_AnimalHunt:TryGiveJob");
+			if (hfmHunt != null)
+				harmony.Patch(hfmHunt, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HfmPlayerAnimalsOnly)));
 			var hdInit = Target("HaulersDream.CompositableLoadoutsCompat:InitKeepApi");
 			var hdWanted = Target("HaulersDream.CompositableLoadoutsCompat:LoadoutWantedUnits");
 			hdItemDefs = AccessTools.PropertyGetter(AccessTools.TypeByName("Inventory.Item"), "Defs");
@@ -364,6 +367,15 @@ namespace Harmony3StrictCompat
 		{
 			if (__result && carCleanArea(t.Map) is { } area && !area[t.Position]) __result = false;
 		}
+
+		// ---- Hunt For Me: released animals hunt themselves ------------------------------------------------------
+		// HFM's think tree (Animal_PreWander) only checks that HuntingTraining is learned, not the faction, and a
+		// released animal keeps its training. Its supervised mode (the default) picks prey from the player's Hunt
+		// designations with no "prey is not me" check, so a released hydra marked for hunting got a HuntTrained job
+		// on itself and bit itself down. Vanilla never lets a Hunt designation sit on a player animal, so allowing
+		// only player animals to run the job giver also rules out self-prey. HFM's own gizmo and pack logic already
+		// assume player animals (Pawn_MindState patch checks Faction.OfPlayer).
+		static bool HfmPlayerAnimalsOnly(Pawn pawn) => pawn?.Faction == Faction.OfPlayer;
 
 		// ---- Common Sense: clean-before-eating crashes when the filth vanishes -----------------------------------
 		// Utility.CleanFilthToil's init and tick actions read the target filth's def, Position and Map with no check.
@@ -923,6 +935,7 @@ namespace Harmony3StrictCompat
 			["RimPacts.WorldComponent_RimPacts:DismissExilePawn"] = 0xEC9FEB84EB993051,                        // RimPacts 1.7, 2026-11-06
 			["PrisonerRealism.JobGiver_CleanCell:ShouldClean"] = 0xD2061DA02821F6FC,                          // Prisoner Realism 1.7, 2026-11-06
 			["CleaningAreaRelaunched.CleaningAreaRelaunched_Util:GetCleanArea"] = 0xD9B02D52DE61B82C,          // CAR 1.6 build, 2025-11-12
+			["aRandomKiwi.HFM.JobGiver_AnimalHunt:TryGiveJob"] = 0x865CBA567579063A,                            // Hunt For Me 1.6 build, 2025-12-25
 			["Merthsoft.DesignatorShapes.Shapes.FloodFill:IsStructure"] = 0x01F3F2D215BA16DB,                 // Designator Shapes 1.7, 2026-11-02
 			["YayoAnimation.HarmonyPatches.PawnPatches.ParallelGetPreRenderResultsPatch:DataFor"] = 0x70EEFE43592C82C3, // Flourish Everyday 1.7, 2026-10-25
 			["Flourish.Everyday.JobAnimationWorker_Anchored:Evaluate"] = 0x817B489F5395FF01,                // Flourish Everyday 1.7, 2026-10-25

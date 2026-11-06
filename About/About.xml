@@ -34,6 +34,7 @@
 - Common Sense: no "random element from empty collection" warnings for food no recipe makes (meal ingredients lookup skipped).
 - Common Sense: clean-before-eating moves on when its filth is already gone instead of erroring out of the eating job.
 - Prisoner Realism + Cleaning Area Relaunched: prisoners only clean filth inside the Clean area, no more standing-still Clean job loop.
+- Hunt For Me: only player animals take hunting jobs (a released animal marked for hunting no longer hunts itself).
 - Designator Shapes + Better Architect Menu: flood fill stops at doors again.
 - Flourish - Everyday Animations: the telescope pose mirrors with the telescope's art, so a West-rotated telescope is used from the eyepiece side too.
 - Flourish - Everyday Animations: in the telescope pose the telescope is drawn over the pawn and under its hands.

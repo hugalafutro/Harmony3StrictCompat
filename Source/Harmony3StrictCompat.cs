@@ -232,6 +232,34 @@ namespace Harmony3StrictCompat
 				uirBlueColor = (Func<Color>)uirBlue.CreateDelegate(typeof(Func<Color>));
 				harmony.Patch(vfetButton, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(VfetThemedCornerstones)));
 			}
+			var acInject = Target("AutoCastSpecialistCommands.AutoCastToilInjector:Inject");
+			Target("AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix");
+			acSettings = AccessTools.Field(AccessTools.TypeByName("AutoCastSpecialistCommands.AutoCastSpecialistCommands"), "settings");
+			acMiningOn = AccessTools.Field(AccessTools.TypeByName("AutoCastSpecialistCommands.AutoCastSpecialistCommandsSettings"), "enableAutoCastMiningCommand");
+			if (acInject != null && acSettings != null && acMiningOn != null)
+			{
+				acInjectCall = (AcInject)acInject.CreateDelegate(typeof(AcInject));
+				harmony.Patch(AccessTools.Method(typeof(JobDriver_Mine), "MakeNewToils"),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AcStonecallWhenMining)));
+			}
+		}
+
+		// ---- Auto-Cast Specialist Commands + Det's Xenotypes - Stoneborn: auto-cast Stonecall when mining ----
+		// Auto-Cast only knows the vanilla/SO/VME command AbilityDefs by name. Stonecall (DV_Stonecall, Stoneborn gene
+		// ability) is a self-only +30% mining/construction speed buff, so on a mine job hand it to Auto-Cast's own
+		// public toil injector, gated by its "Auto-Cast Mining Command" setting. The injector casts on the pawn itself
+		// when the ability is off cooldown. Its right-click gizmo toggle does not cover Stonecall; use the setting.
+		delegate void AcInject(JobDriver driver, ref IEnumerable<Toil> result, AbilityDef def, bool enabled);
+		static AcInject acInjectCall;
+		static FieldInfo acSettings, acMiningOn;
+		static AbilityDef acStonecall;
+		static bool acStonecallLooked;
+
+		static void AcStonecallWhenMining(JobDriver_Mine __instance, ref IEnumerable<Toil> __result)
+		{
+			if (!acStonecallLooked) { acStonecall = DefDatabase<AbilityDef>.GetNamedSilentFail("DV_Stonecall"); acStonecallLooked = true; }
+			var settings = acSettings.GetValue(null);
+			if (acStonecall != null && settings != null) acInjectCall(__instance, ref __result, acStonecall, (bool)acMiningOn.GetValue(settings));
 		}
 
 		// ---- VFE Tribals + UI Rethemed - Factions: Cornerstones button in the theme's style ----
@@ -983,6 +1011,8 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Factions.FactionsTab:Themed"] = 0x6464010BFAB662C3,                               // UI Rethemed 1.7, 2026-11-06
 			["UIRethemed.Core.CoreWidgets:Button"] = 0x96B9EA4E631E845B,
 			["UIRethemed.Core.CoreWidgets:Icon"] = 0x2094A97723860CBE,
+			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
+			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an

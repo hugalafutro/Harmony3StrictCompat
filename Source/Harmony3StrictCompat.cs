@@ -243,17 +243,6 @@ namespace Harmony3StrictCompat
 				uirIconFor = (Func<string, Texture2D>)iconFor.CreateDelegate(typeof(Func<string, Texture2D>));
 			if (uirFace != null && uirIconFor != null)
 				harmony.Patch(uirFace, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirMenuModButtonIcon)));
-			var mnPlate = Target("ModernNotifications.CardChrome:Plate", args: new[] { typeof(Rect), typeof(Color) });
-			var mnAccent = Target("ModernNotifications.CardChrome:AccentLeft");
-			uirRoundedFill = Target("UIRethemed.Core.Rounded:Fill");
-			var uirBg = Target("UIRethemed.Core.Theme:get_BG");
-			if (mnPlate != null && mnAccent != null && uirRoundedFill != null && uirBg != null)
-			{
-				uirBgColor = (Func<Color>)uirBg.CreateDelegate(typeof(Func<Color>));
-				uirAllCorners = uirRoundedFill.GetParameters()[2].DefaultValue;
-				harmony.Patch(mnPlate, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(MnRoundedPlate)));
-				harmony.Patch(mnAccent, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(MnInsetAccent)));
-			}
 			var acInject = Target("AutoCastSpecialistCommands.AutoCastToilInjector:Inject");
 			Target("AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix");
 			acSettings = AccessTools.Field(AccessTools.TypeByName("AutoCastSpecialistCommands.AutoCastSpecialistCommands"), "settings");
@@ -398,29 +387,6 @@ namespace Harmony3StrictCompat
 			}
 			if (smuLabel == null || !smuLabel.IsMatch(text)) return;
 			iconTex = smuIcon ??= uirIconFor("arrow-clockwise");
-		}
-
-		// ---- Modern Notifications + UI Rethemed: message cards in the theme's chrome ----
-		// With only MN's docked messages on (its letters, alerts and panel are off in favour of UIR), its cards are flat
-		// square near-black plates with a full-height accent bar. Draw them as UIR's notification rows do
-		// (StatusRow.Draw): a rounded Theme.BG plate at 0.6 alpha, scaled by MN's own fade; the type colour stays as a
-		// slim inset bar instead of the edge bar. CardChrome is shared by all MN surfaces, so any re-enabled MN surface
-		// gets the same chrome.
-		static MethodInfo uirRoundedFill;
-		static object uirAllCorners;
-		static Func<Color> uirBgColor;
-
-		static bool MnRoundedPlate(Rect r, Color fill)
-		{
-			var bg = uirBgColor();
-			uirRoundedFill.Invoke(null, new object[] { r, new Color(bg.r, bg.g, bg.b, fill.a * 0.68f), uirAllCorners });
-			return false;
-		}
-
-		static bool MnInsetAccent(Rect r, Color accent, float alpha)
-		{
-			Widgets.DrawBoxSolid(new Rect(r.x + 5f, r.y + 5f, 2f, r.height - 10f), new Color(accent.r, accent.g, accent.b, alpha));
-			return false;
 		}
 
 		// ---- Flourish - Everyday Animations: telescope drawn under the posed pawn, not between body and hands ----
@@ -1150,10 +1116,6 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0xFEC5735778B040A7,
 			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0xC62AB6FF16C5404C,
 			["UIRethemed.MainBar.MenuWindow:Face"] = 0x1F0FBC8E540DFA3D,
-			["UIRethemed.Core.Rounded:Fill"] = 0xB0F1152608DD0D9B,
-			["UIRethemed.Core.Theme:get_BG"] = 0x319AE935C44F0C78,
-			["ModernNotifications.CardChrome:Plate"] = 0xEF7990C8CF50250D,                                  // Modern Notifications 1.7, 2026-10-18; (Rect, Color)
-			["ModernNotifications.CardChrome:AccentLeft"] = 0xA1873A79B150CA47,
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,

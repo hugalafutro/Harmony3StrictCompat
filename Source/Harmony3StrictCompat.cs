@@ -196,6 +196,78 @@ namespace Harmony3StrictCompat
 			var dsStructure = Target("Merthsoft.DesignatorShapes.Shapes.FloodFill:IsStructure");
 			if (dsStructure != null)
 				harmony.Patch(dsStructure, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DsDoorIsStructure)));
+			var flAnchored = Target("Flourish.Everyday.JobAnimationWorker_Anchored:Evaluate");
+			var flDefType = AccessTools.TypeByName("Flourish.Everyday.JobAnimationDef");
+			flAnchor = flDefType == null ? null : AccessTools.Field(flDefType, "anchor");
+			flAnchorFacing = flDefType == null ? null : AccessTools.Field(flDefType, "anchorFacing");
+			if (flAnchored != null && flAnchor != null && flAnchorFacing != null)
+				harmony.Patch(flAnchored, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FlMirrorAnchorTranspiler)));
+		}
+
+		// ---- Flourish - Everyday Animations: anchored pose ignores the target's mirrored art ---------------------
+		// JobAnimationWorker_Anchored (only Flourish_Watch_Telescope uses it) draws the pawn at the target's
+		// TrueCenter + def.anchor, facing def.anchorFacing, both fixed world values. The vanilla telescope is
+		// Graphic_Single with drawRotated false, so vanilla mirrors its art when it is rotated West (Graphic.WestFlipped)
+		// and the eyepiece swaps sides. Flourish's values fit the unmirrored art (pawn east of it, facing West, on the
+		// interaction-cell side); when the target is drawn mirrored, Evaluate's reads of def.anchor.x and
+		// def.anchorFacing get the mirror image (x negated, East <-> West).
+		// The body/hand tracks are facing-relative, so they follow. Swaps the reads instead of writing the shared def,
+		// because pawn rendering can run on several threads.
+		static FieldInfo flAnchor, flAnchorFacing;
+
+		static IEnumerable<CodeInstruction> FlMirrorAnchorTranspiler(IEnumerable<CodeInstruction> instructions)
+		{
+			var codes = instructions.ToList();
+			var x = AccessTools.Field(typeof(Vector2), nameof(Vector2.x));
+			var y = AccessTools.Field(typeof(Vector2), nameof(Vector2.y));
+			int anchors = 0, facings = 0;
+			for (int i = 0; i < codes.Count; i++)
+			{
+				if (codes[i].opcode == OpCodes.Ldflda && Equals(codes[i].operand, flAnchor) && i + 1 < codes.Count
+					&& codes[i + 1].opcode == OpCodes.Ldfld && (Equals(codes[i + 1].operand, x) || Equals(codes[i + 1].operand, y)))
+				{
+					// stack: def -> def, pawn -> float
+					var getter = Equals(codes[i + 1].operand, x) ? nameof(FlAnchorX) : nameof(FlAnchorY);
+					codes[i] = new CodeInstruction(OpCodes.Ldarg_1).MoveLabelsFrom(codes[i]);
+					codes[i + 1] = new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(Harmony3StrictCompatMod), getter)).MoveLabelsFrom(codes[i + 1]);
+					anchors++;
+				}
+				else if (codes[i].opcode == OpCodes.Ldfld && Equals(codes[i].operand, flAnchorFacing))
+				{
+					codes[i] = new CodeInstruction(OpCodes.Ldarg_1).MoveLabelsFrom(codes[i]);
+					codes.Insert(i + 1, new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(FlAnchorFacing))));
+					facings++;
+				}
+			}
+			if (anchors != 2 || facings != 2)
+			{
+				Log.Error($"[Harmony3StrictCompat] Flourish anchored pose: expected 2 anchor and 2 facing reads, found {anchors}/{facings}; telescope pose left unmirrored");
+				return instructions;
+			}
+			return codes;
+		}
+
+		static bool FlTargetMirrored(Pawn pawn)
+		{
+			var thing = pawn?.CurJob?.targetA.Thing;
+			if (thing == null) return false;
+			var rot = thing.Rotation;
+			var graphic = thing.Graphic;
+			return graphic != null && ((rot == Rot4.West && graphic.WestFlipped) || (rot == Rot4.East && graphic.EastFlipped));
+		}
+
+		static float FlAnchorX(object def, Pawn pawn)
+		{
+			float ax = ((Vector2)flAnchor.GetValue(def)).x;
+			return FlTargetMirrored(pawn) ? -ax : ax;
+		}
+
+		static float FlAnchorY(object def, Pawn pawn) => ((Vector2)flAnchor.GetValue(def)).y;
+
+		static Rot4 FlAnchorFacing(object def, Pawn pawn)
+		{
+			var facing = (Rot4)flAnchorFacing.GetValue(def);
+			return FlTargetMirrored(pawn) && facing.IsHorizontal ? facing.Opposite : facing;
 		}
 
 		// ---- Designator Shapes flood fill runs through doors -----------------------------------------------------
@@ -812,6 +884,7 @@ namespace Harmony3StrictCompat
 			["PrisonerRealism.JobGiver_CleanCell:ShouldClean"] = 0xD2061DA02821F6FC,                          // Prisoner Realism 1.7, 2026-11-06
 			["CleaningAreaRelaunched.CleaningAreaRelaunched_Util:GetCleanArea"] = 0xD9B02D52DE61B82C,          // CAR 1.6 build, 2025-11-12
 			["Merthsoft.DesignatorShapes.Shapes.FloodFill:IsStructure"] = 0x01F3F2D215BA16DB,                 // Designator Shapes 1.7, 2026-11-02
+			["Flourish.Everyday.JobAnimationWorker_Anchored:Evaluate"] = 0x817B489F5395FF01,                // Flourish Everyday 1.7, 2026-10-25
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an

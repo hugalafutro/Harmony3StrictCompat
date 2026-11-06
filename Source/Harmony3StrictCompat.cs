@@ -99,6 +99,14 @@ namespace Harmony3StrictCompat
 			var hcSlots = Target("HospitalityCasino.JobGiver_PlaySlotMachines:TryGiveJob");
 			if (hcSlots != null)
 				harmony.Patch(hcSlots, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HcSlotsOnlyIdleVisitors)));
+			var hcInsert = Target("HospitalityCasino.VendingMachineJobHelper:InsertCoin");
+			hcCompType = AccessTools.TypeByName("HospitalityCasino.CompVendingMachine");
+			if (hcInsert != null && hcCompType != null)
+			{
+				hcInsertCoin = (Func<Pawn, Thing, bool>)hcInsert.CreateDelegate(typeof(Func<Pawn, Thing, bool>));
+				harmony.Patch(AccessTools.Method(typeof(JoyUtility), nameof(JoyUtility.JoyTickCheckEnd)),
+					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HcChargeOtherTables)));
+			}
 			var hospPocket = Target("Hospitality.Utilities.ItemUtility:PocketHeadgear");
 			if (hospPocket != null)
 				harmony.Patch(hospPocket, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospKeepCasketHelmet)));
@@ -515,6 +523,28 @@ namespace Harmony3StrictCompat
 				|| lord?.LordJob is LordJob_TradeWithColony && lord.CurLordToil?.GetType().Name == "LordToil_DefendTraderCaravan";
 		}
 
+		// ---- Hospitality: Casino: charge for table games that keep their own job driver ---------------------------
+		// Casino charges only from its own drivers (poker, VFE roulette, slots): they call InsertCoin when play starts.
+		// LocalTweaks gives other tables Casino's CompVendingMachine (Det's Boglegs tongo table, vanilla billiards)
+		// but keeps their drivers: the tongo driver draws the tongo cards, billiards loops 600-tick shots (a per-toil
+		// charge would bill every shot). So charge once per job on the first joy tick at any building that has the
+		// comp, unless the driver is Casino's own. InsertCoin itself only charges pawns of another faction.
+		static Type hcCompType;
+		static Func<Pawn, Thing, bool> hcInsertCoin;
+		static readonly Dictionary<ThingDef, bool> hcHasComp = new();
+		static readonly Dictionary<int, int> hcChargedJob = new();   // pawn thingIDNumber -> job loadID
+
+		static void HcChargeOtherTables(Pawn pawn, Building joySource)
+		{
+			if (joySource == null || pawn?.CurJob is not { } job) return;
+			if (!hcHasComp.TryGetValue(joySource.def, out bool has))
+				hcHasComp[joySource.def] = has = joySource.def.comps.Any(p => p.compClass == hcCompType);
+			if (!has || pawn.jobs.curDriver?.GetType().Namespace == "HospitalityCasino") return;
+			if (hcChargedJob.TryGetValue(pawn.thingIDNumber, out int charged) && charged == job.loadID) return;
+			hcChargedJob[pawn.thingIDNumber] = job.loadID;
+			hcInsertCoin(pawn, joySource);
+		}
+
 		static bool IsCasketPiece(Apparel a) => a?.GetType().Name == "Apparel_Warcasket";
 		static bool WearsCasket(Pawn p) => p?.apparel?.WornApparel.Any(IsCasketPiece) == true;
 
@@ -705,6 +735,7 @@ namespace Harmony3StrictCompat
 			["Hospitality.Utilities.SpawnGroupUtility:GenerateNewGearFor"] = 0x9968B91075E1A216,                  // Hospitality 1.7, 2026-11-02
 			["Hospitality.Utilities.ItemUtility:PocketHeadgear"] = 0x5500E1A13797F143,                       // Hospitality 1.7, 2026-11-02
 			["HospitalityCasino.JobGiver_PlaySlotMachines:TryGiveJob"] = 0x886CDC4608E3C02D,                 // Casino 1.7, 2026-11-05
+			["HospitalityCasino.VendingMachineJobHelper:InsertCoin"] = 0xDD3ACDA377763174,                   // Casino 1.7, 2026-11-06
 			["FinitePopulationVeterans.WorldPopulationManager:IsPawnAvailableForDispatch"] = 0x5A8A111FF41E04D8, // Eternal Pawns 1.6 build, 2026-04-13
 			["FinitePopulationVeterans.WorldPopulationManager:PawnMatchesRequest"] = 0xAF54B4F3884BC77E, // Eternal Pawns 1.6 build, 2026-04-13
 			["FinitePopulationVeterans.WorldPopulationManager:TryGetVeteran"] = 0xEEC0813511A23153,      // Eternal Pawns 1.6 build, 2026-04-13

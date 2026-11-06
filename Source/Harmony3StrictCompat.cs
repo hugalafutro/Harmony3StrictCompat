@@ -202,6 +202,46 @@ namespace Harmony3StrictCompat
 			flAnchorFacing = flDefType == null ? null : AccessTools.Field(flDefType, "anchorFacing");
 			if (flAnchored != null && flAnchor != null && flAnchorFacing != null)
 				harmony.Patch(flAnchored, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FlMirrorAnchorTranspiler)));
+			var flDataFor = Target("YayoAnimation.HarmonyPatches.PawnPatches.ParallelGetPreRenderResultsPatch:DataFor");
+			var flDataType = AccessTools.TypeByName("YayoAnimation.Data.PawnDrawData");
+			flPddDef = flDataType == null ? null : AccessTools.Field(flDataType, "def");
+			flPddTimelineStart = flDataType == null ? null : AccessTools.Field(flDataType, "timelineStart");
+			flDefWorkerClass = flDefType == null ? null : AccessTools.Field(flDefType, "workerClass");
+			flAnchoredWorker = flAnchored?.DeclaringType;
+			if (flDataFor != null && flPddDef != null && flPddTimelineStart != null && flDefWorkerClass != null && flAnchoredWorker != null)
+			{
+				flDataForCall = (Func<Pawn, object>)flDataFor.CreateDelegate(typeof(Func<Pawn, object>));
+				harmony.Patch(AccessTools.Method(typeof(PawnRenderUtility), nameof(PawnRenderUtility.DrawEquipmentAndApparelExtras)),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FlDrawAnchorTargetOverPawn)));
+			}
+		}
+
+		// ---- Flourish - Everyday Animations: telescope drawn under the posed pawn, not between body and hands ----
+		// A building always draws below pawns, so in the anchored telescope pose the pawn's body covers the telescope
+		// and the hands hold nothing visible. Flourish draws the hands from a postfix on
+		// PawnRenderUtility.DrawEquipmentAndApparelExtras, whose drawPos is the body at pawn layer 90 (above every
+		// body/head/apparel node), at +0.001..0.0015. While the anchored pose is running (pose reached, not the walk
+		// there), draw the pose target's graphic again at +0.0005: over the pawn, under the hands. Mesh and material
+		// only, so the building's shadow is not repeated on top of the pawn. The real building still draws below.
+		static FieldInfo flPddDef, flPddTimelineStart, flDefWorkerClass;
+		static Type flAnchoredWorker;
+		static Func<Pawn, object> flDataForCall;
+
+		static void FlDrawAnchorTargetOverPawn(Pawn pawn, Vector3 drawPos, Rot4 facing, PawnRenderFlags flags)
+		{
+			if (pawn == null || !facing.IsHorizontal || (flags & (PawnRenderFlags.Portrait | PawnRenderFlags.Cache | PawnRenderFlags.Invisible | PawnRenderFlags.Statue)) != 0) return;
+			var thing = pawn.CurJob?.targetA.Thing;
+			if (thing == null || !thing.Spawned || thing.Map != pawn.Map || pawn.pather?.Moving == true) return;
+			var data = flDataForCall(pawn);
+			if (data == null || (int)flPddTimelineStart.GetValue(data) == int.MinValue) return;
+			var def = flPddDef.GetValue(data);
+			if (def == null || !flAnchoredWorker.IsAssignableFrom(flDefWorkerClass.GetValue(def) as Type)) return;
+			var graphic = thing.Graphic;
+			if (graphic == null) return;
+			var rot = thing.Rotation;
+			var loc = thing.DrawPos + graphic.DrawOffset(rot);
+			loc.y = drawPos.y + 0.0005f;
+			GenDraw.DrawMeshNowOrLater(graphic.MeshAt(rot), loc, graphic.QuatFromRot(rot), graphic.MatAt(rot, thing), drawNow: false);
 		}
 
 		// ---- Flourish - Everyday Animations: anchored pose ignores the target's mirrored art ---------------------
@@ -884,6 +924,7 @@ namespace Harmony3StrictCompat
 			["PrisonerRealism.JobGiver_CleanCell:ShouldClean"] = 0xD2061DA02821F6FC,                          // Prisoner Realism 1.7, 2026-11-06
 			["CleaningAreaRelaunched.CleaningAreaRelaunched_Util:GetCleanArea"] = 0xD9B02D52DE61B82C,          // CAR 1.6 build, 2025-11-12
 			["Merthsoft.DesignatorShapes.Shapes.FloodFill:IsStructure"] = 0x01F3F2D215BA16DB,                 // Designator Shapes 1.7, 2026-11-02
+			["YayoAnimation.HarmonyPatches.PawnPatches.ParallelGetPreRenderResultsPatch:DataFor"] = 0x70EEFE43592C82C3, // Flourish Everyday 1.7, 2026-10-25
 			["Flourish.Everyday.JobAnimationWorker_Anchored:Evaluate"] = 0x817B489F5395FF01,                // Flourish Everyday 1.7, 2026-10-25
 		};
 

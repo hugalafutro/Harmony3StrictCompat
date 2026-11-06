@@ -193,6 +193,21 @@ namespace Harmony3StrictCompat
 				harmony.Patch(hdInit, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdBridgeKeepApi)));
 				harmony.Patch(hdWanted, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdWantedUnits)));
 			}
+			var dsStructure = Target("Merthsoft.DesignatorShapes.Shapes.FloodFill:IsStructure");
+			if (dsStructure != null)
+				harmony.Patch(dsStructure, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DsDoorIsStructure)));
+		}
+
+		// ---- Designator Shapes flood fill runs through doors -----------------------------------------------------
+		// Shapes' flood fill stops at a thing (or blueprint of one) that covers the floor or whose architect category
+		// is literally "Structure" (private FloodFill.IsStructure). Better Architect Menu moves DoorBase to
+		// Ferny_Doors, so doors stop counting and a floor fill leaks through every door. Walls still stop it because
+		// they cover the floor. Count doors as structure again: Building_Door subclasses, plus anything BAM files under
+		// Ferny_Doors. IsStructure is private and only Shapes' flood fill calls it, so nothing else sees this.
+		static void DsDoorIsStructure(Def d, ref bool __result)
+		{
+			if (!__result && d is ThingDef td && (td.IsDoor || td.designationCategory?.defName == "Ferny_Doors"))
+				__result = true;
 		}
 
 		// ---- Hauler's Dream x Compositable Loadouts: loadout items not kept during surplus unload ---------------
@@ -792,6 +807,7 @@ namespace Harmony3StrictCompat
 			["RimPacts.WorldComponent_RimPacts:DismissExilePawn"] = 0xEC9FEB84EB993051,                        // RimPacts 1.7, 2026-11-06
 			["PrisonerRealism.JobGiver_CleanCell:ShouldClean"] = 0xD2061DA02821F6FC,                          // Prisoner Realism 1.7, 2026-11-06
 			["CleaningAreaRelaunched.CleaningAreaRelaunched_Util:GetCleanArea"] = 0xD9B02D52DE61B82C,          // CAR 1.6 build, 2025-11-12
+			["Merthsoft.DesignatorShapes.Shapes.FloodFill:IsStructure"] = 0x01F3F2D215BA16DB,                 // Designator Shapes 1.7, 2026-11-02
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an

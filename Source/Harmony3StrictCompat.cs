@@ -137,6 +137,9 @@ namespace Harmony3StrictCompat
 			var bwmFilters = Target("ImprovedWorkbenches.BillConfig_DoWindowContents_Patch:DrawFilters");
 			if (bwmFilters != null)
 				harmony.Patch(bwmFilters, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(BwmClearStyleButton)));
+			var bwmNav = Target("ImprovedWorkbenches.BillConfig_DoWindowContents_Patch:DrawWorkTableNavigation");
+			if (bwmNav != null)
+				harmony.Patch(bwmNav, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(BwmNavArrowsUp)));
 			var lcBwm = Target("Inventory.BWM_DoWindowContentsPatch_Patch:Transpiler");
 			lcCountAway = Target("Inventory.BWM_DoWindowContentsPatch_Patch:ShouldCountAway");
 			if (lcBwm != null && lcCountAway != null && bwmFilters != null)
@@ -252,6 +255,10 @@ namespace Harmony3StrictCompat
 		static void LtoBusyworkUpperMark(Rect rect, Pawn colonist) => bwUpperMark(null, rect, colonist);
 
 		// ---- Better Workbench Management: bill options overlap the Ideology style button -------------------------
+		// Personal tweak: BWM's previous/next bill arrows sit at inRect.yMin + 4 and overlap the top of the ingredient
+		// filter by a few pixels. inRect is only used for that rect, so shift it 7 px up.
+		static void BwmNavArrowsUp(ref Rect inRect) => inRect.y -= 7f;
+
 		// BWM draws its block (output filter, count away, restrict workbench) in the bill dialog's left column at
 		// inRect.height - 50 - 100, about 99 px tall, so it ends ~51 px above the bottom. Vanilla puts the "Use global
 		// style" dropdown (or "No styles available") at height - 90 .. -60 in the same column when Ideology is in classic
@@ -703,6 +710,7 @@ namespace Harmony3StrictCompat
 			["Inventory.BWM_DoWindowContentsPatch_Patch:Transpiler"] = 0x1208A46933A47D41,                     // Loadout Compositing 1.7, 2026-10-28
 			["Inventory.BWM_DoWindowContentsPatch_Patch:ShouldCountAway"] = 0xA22693055B6314E7,                // Loadout Compositing 1.7, 2026-10-28
 			["ImprovedWorkbenches.BillConfig_DoWindowContents_Patch:DrawFilters"] = 0x5FFF926429D5F4D6,        // BWM 1.7 Waylith (Debug build), 2026-11-03
+			["ImprovedWorkbenches.BillConfig_DoWindowContents_Patch:DrawWorkTableNavigation"] = 0x638B64048A13DB3E,
 			["VanillaRacesExpandedSanguophage.JobGiver_GetCorpseHemogen:TryGiveJob"] = 0x00285EA300E503C6,   // VRE Sanguophage 1.6 build, 2026-10-01
 			["ModSettingsFramework.PatchOperationSliderFloat:ApplyWorker"] = 0x7D3F07C2C28B20A5,              // VEF 1.7 0ModSettingsFramework.dll, 2026-10-13
 			["ModSettingsFramework.PatchOperationSliderInt:ApplyWorker"] = 0x03DFA38BA62A830B,

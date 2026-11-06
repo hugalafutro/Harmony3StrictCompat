@@ -264,27 +264,74 @@ namespace Harmony3StrictCompat
 				foreach (var driver in new[] { typeof(JobDriver_Mine), typeof(JobDriver_ConstructFinishFrame) })
 					harmony.Patch(AccessTools.DeclaredMethod(driver, "MakeNewToils"),
 						postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AcStonecallWhenWorking)));
+				Target("AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix");
+				Target("AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPostfix");
+				acAutoTex = AccessTools.Field(AccessTools.TypeByName("AutoCastSpecialistCommands.Patch_Pawn_GetGizmos"), "AutoCastTex");
+				var gizmoGui = AccessTools.Method(typeof(Command), "GizmoOnGUIInt");
+				harmony.Patch(gizmoGui, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AcStonecallRightClick)),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AcStonecallAutoIcon)));
+				harmony.Patch(AccessTools.Method(typeof(Command_Ability), nameof(Command_Ability.ProcessInput)),
+					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AcStonecallNoRightClickCast)));
 			}
 		}
 
 		// ---- Auto-Cast Specialist Commands + Det's Xenotypes - Stoneborn: auto-cast Stonecall when mining or building ----
 		// Auto-Cast only knows the vanilla/SO/VME command AbilityDefs by name. Stonecall (DV_Stonecall, Stoneborn gene
 		// ability) is a self-only +30% mining/construction speed buff, so on a mine job hand it to Auto-Cast's own
-		// public toil injector, gated by its "Auto-Cast Mining Command" setting. The same goes for finishing a construction
+		// public toil injector, gated by its "Auto-Cast Mining Command" setting (shared, not a separate switch). The same goes for finishing a construction
 		// frame (the job ConstructionSpeed drives). The injector casts on the pawn itself
-		// when the ability is off cooldown. Its right-click gizmo toggle does not cover Stonecall; use the setting.
+		// when the ability is off cooldown.
 		delegate void AcInject(JobDriver driver, ref IEnumerable<Toil> result, AbilityDef def, bool enabled);
 		static AcInject acInjectCall;
 		static FieldInfo acSettings, acMiningOn;
 		static AbilityDef acStonecall;
 		static bool acStonecallLooked;
 
+		static AbilityDef Stonecall
+		{
+			get
+			{
+				if (!acStonecallLooked) { acStonecall = DefDatabase<AbilityDef>.GetNamedSilentFail("DV_Stonecall"); acStonecallLooked = true; }
+				return acStonecall;
+			}
+		}
+
 		static void AcStonecallWhenWorking(JobDriver __instance, ref IEnumerable<Toil> __result)
 		{
-			if (!acStonecallLooked) { acStonecall = DefDatabase<AbilityDef>.GetNamedSilentFail("DV_Stonecall"); acStonecallLooked = true; }
 			var settings = acSettings.GetValue(null);
-			if (acStonecall != null && settings != null) acInjectCall(__instance, ref __result, acStonecall, (bool)acMiningOn.GetValue(settings));
+			if (Stonecall != null && settings != null) acInjectCall(__instance, ref __result, Stonecall, (bool)acMiningOn.GetValue(settings));
 		}
+
+		// Gizmo, as Auto-Cast does for its own commands (its checks list only those defs): right-click on the Stonecall
+		// gizmo toggles the shared Mining Command setting instead of casting, and the setting's state shows as
+		// Auto-Cast's own check icon in the gizmo's top-right corner.
+		static FieldInfo acAutoTex;
+
+		static bool IsStonecall(Command command) => command is Command_Ability ca && ca.Ability?.def != null && ca.Ability.def == Stonecall;
+
+		static bool AcStonecallRightClick(Command __instance, Rect butRect, ref GizmoResult __result)
+		{
+			var ev = Event.current;
+			if (ev == null || ev.button != 1 || ev.type != EventType.MouseDown || !Mouse.IsOver(butRect) || !IsStonecall(__instance)) return true;
+			var settings = acSettings.GetValue(null);
+			if (settings == null) return true;
+			acMiningOn.SetValue(settings, !(bool)acMiningOn.GetValue(settings));
+			Verse.Sound.SoundStarter.PlayOneShotOnCamera(SoundDefOf.Tick_Tiny);
+			__result = new GizmoResult(GizmoState.Clear);
+			return false;
+		}
+
+		static void AcStonecallAutoIcon(Command __instance, Rect butRect, GizmoRenderParms parms)
+		{
+			if (!IsStonecall(__instance)) return;
+			var settings = acSettings.GetValue(null);
+			if (settings == null || !(bool)acMiningOn.GetValue(settings) || acAutoTex?.GetValue(null) is not Texture2D tex) return;
+			float size = parms.shrunk ? 12f : 24f;
+			GUI.DrawTexture(new Rect(butRect.xMax - size, butRect.y, size, size), tex);
+		}
+
+		static bool AcStonecallNoRightClickCast(Command_Ability __instance, Event ev)
+			=> !((ev?.button == 1 || Event.current?.button == 1) && __instance.Ability?.def != null && __instance.Ability.def == Stonecall);
 
 		// ---- VFE Tribals + UI Rethemed - Factions: Cornerstones button in the theme's style ----
 		// VFE Tribals draws its Cornerstones button from a postfix on FactionUIUtility.DoWindowContents as a vanilla
@@ -1109,6 +1156,8 @@ namespace Harmony3StrictCompat
 			["ModernNotifications.CardChrome:AccentLeft"] = 0xA1873A79B150CA47,
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
+			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,
+			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPostfix"] = 0xEAEA3D4FF6046A94,
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an

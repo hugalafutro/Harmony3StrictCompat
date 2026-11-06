@@ -155,6 +155,13 @@ namespace Harmony3StrictCompat
 			foreach (var csClean in new[] { "CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__0", "CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__1" })
 				if (Target(csClean) is { } csToil)
 					harmony.Patch(csToil, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(CsFilthGone)));
+			var prClean = Target("PrisonerRealism.JobGiver_CleanCell:ShouldClean");
+			var carArea = Target("CleaningAreaRelaunched.CleaningAreaRelaunched_Util:GetCleanArea");
+			if (prClean != null && carArea != null)
+			{
+				carCleanArea = (Func<Map, Area>)carArea.CreateDelegate(typeof(Func<Map, Area>));
+				harmony.Patch(prClean, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PrCleanOnlyInCleanArea)));
+			}
 			var hdInit = Target("HaulersDream.CompositableLoadoutsCompat:InitKeepApi");
 			var hdWanted = Target("HaulersDream.CompositableLoadoutsCompat:LoadoutWantedUnits");
 			hdItemDefs = AccessTools.PropertyGetter(AccessTools.TypeByName("Inventory.Item"), "Defs");
@@ -193,6 +200,19 @@ namespace Harmony3StrictCompat
 				if (item != null && hdItemDefs.Invoke(item, null) is IEnumerable<ThingDef> defs && defs.Contains(def))
 					__result += Math.Max((int)___itemQtyGetter.Invoke(item, null), 0);
 			return false;
+		}
+
+		// ---- Prisoner Realism x Cleaning Area Relaunched: prisoner cleaning loop -----------------------------------
+		// Prisoner Realism's JobGiver_CleanCell queues filth in the prisoner's room that lies in the Home area. Cleaning
+		// Area Relaunched replaces the Clean job driver, and that driver skips every target outside its own Clean area.
+		// With all targets skipped the job succeeds on its first tick and the giver hands out the same job again: the
+		// prisoner stands still forever. Seen with Miriam: dirt under a 2-tile door (hidden by the door sprite) in Home
+		// but not in Clean. Only queue filth that the driver will actually clean.
+		static Func<Map, Area> carCleanArea;
+
+		static void PrCleanOnlyInCleanArea(Thing t, ref bool __result)
+		{
+			if (__result && carCleanArea(t.Map) is { } area && !area[t.Position]) __result = false;
 		}
 
 		// ---- Common Sense: clean-before-eating crashes when the filth vanishes -----------------------------------
@@ -699,6 +719,8 @@ namespace Harmony3StrictCompat
 			["SensibleBedOwnership.Utility:AllAssignedBedsAndDeathrestCaskets"] = 0x8560CE17C9797D18,
 			["VEF.Buildings.CompRandomBuildingGraphic:ChangeGraphic"] = 0xC22ADB911FDB5E90,                  // VEF 1.7, 2026-11-04
 			["AdaptiveStorage.StorageGraphicWorker:GetGraphicFor"] = 0x2899906440FC5118,                     // ASF 1.6 build, 2025-11-12
+			["PrisonerRealism.JobGiver_CleanCell:ShouldClean"] = 0xD2061DA02821F6FC,                          // Prisoner Realism 1.7, 2026-11-06
+			["CleaningAreaRelaunched.CleaningAreaRelaunched_Util:GetCleanArea"] = 0xD9B02D52DE61B82C,          // CAR 1.6 build, 2025-11-12
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an

@@ -239,15 +239,17 @@ namespace Harmony3StrictCompat
 			if (acInject != null && acSettings != null && acMiningOn != null)
 			{
 				acInjectCall = (AcInject)acInject.CreateDelegate(typeof(AcInject));
-				harmony.Patch(AccessTools.Method(typeof(JobDriver_Mine), "MakeNewToils"),
-					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AcStonecallWhenMining)));
+				foreach (var driver in new[] { typeof(JobDriver_Mine), typeof(JobDriver_ConstructFinishFrame) })
+					harmony.Patch(AccessTools.DeclaredMethod(driver, "MakeNewToils"),
+						postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AcStonecallWhenWorking)));
 			}
 		}
 
-		// ---- Auto-Cast Specialist Commands + Det's Xenotypes - Stoneborn: auto-cast Stonecall when mining ----
+		// ---- Auto-Cast Specialist Commands + Det's Xenotypes - Stoneborn: auto-cast Stonecall when mining or building ----
 		// Auto-Cast only knows the vanilla/SO/VME command AbilityDefs by name. Stonecall (DV_Stonecall, Stoneborn gene
 		// ability) is a self-only +30% mining/construction speed buff, so on a mine job hand it to Auto-Cast's own
-		// public toil injector, gated by its "Auto-Cast Mining Command" setting. The injector casts on the pawn itself
+		// public toil injector, gated by its "Auto-Cast Mining Command" setting. The same goes for finishing a construction
+		// frame (the job ConstructionSpeed drives). The injector casts on the pawn itself
 		// when the ability is off cooldown. Its right-click gizmo toggle does not cover Stonecall; use the setting.
 		delegate void AcInject(JobDriver driver, ref IEnumerable<Toil> result, AbilityDef def, bool enabled);
 		static AcInject acInjectCall;
@@ -255,7 +257,7 @@ namespace Harmony3StrictCompat
 		static AbilityDef acStonecall;
 		static bool acStonecallLooked;
 
-		static void AcStonecallWhenMining(JobDriver_Mine __instance, ref IEnumerable<Toil> __result)
+		static void AcStonecallWhenWorking(JobDriver __instance, ref IEnumerable<Toil> __result)
 		{
 			if (!acStonecallLooked) { acStonecall = DefDatabase<AbilityDef>.GetNamedSilentFail("DV_Stonecall"); acStonecallLooked = true; }
 			var settings = acSettings.GetValue(null);

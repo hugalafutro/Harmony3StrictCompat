@@ -1448,6 +1448,34 @@ namespace Harmony3StrictCompat
 		static bool HasRecipe(ThingDef def) => def == null || products.Contains(def);
 	}
 
+	// ---- Surgery menu icons (personal tweak, not a fix) -------------------------------------------------------
+	// The operations float menu (HealthCardUtility.GenerateSurgeryOption) shows recipe.UIIconThing for everything
+	// except drugs and body part removal, and that is only set when the recipe declares uiIconThing or makes exactly
+	// one product. Install and implant removal recipes almost never do, so they get vanilla's grey placeholder.
+	// Fill the icon once at startup: the non-medicine fixed ingredient (the implant being installed), else the
+	// item the removed/added hediff drops. Recipes that already have an icon are left alone.
+	[StaticConstructorOnStartup]
+	static class SurgeryIcons
+	{
+		static SurgeryIcons()
+		{
+			var iconThing = AccessTools.FieldRefAccess<RecipeDef, ThingDef>("uiIconThing");
+			int filled = 0;
+			foreach (var recipe in DefDatabase<RecipeDef>.AllDefsListForReading)
+			{
+				if (!recipe.IsSurgery || recipe.UIIconThing != null || recipe.UIIcon != null || recipe.workerClass == null) continue;
+				if (typeof(Recipe_AdministerIngestible).IsAssignableFrom(recipe.workerClass)
+					|| typeof(Recipe_RemoveBodyPart).IsAssignableFrom(recipe.workerClass)) continue;   // own icon source
+				var icon = recipe.ingredients?.FirstOrDefault(i => i.IsFixedIngredient && !i.FixedIngredient.IsMedicine)?.FixedIngredient
+					?? recipe.removesHediff?.spawnThingOnRemoved ?? recipe.addsHediff?.spawnThingOnRemoved;
+				if (icon == null) continue;
+				iconThing(recipe) = icon;
+				filled++;
+			}
+			Log.Message($"[Harmony3StrictCompat] Surgery icons filled for {filled} recipes");
+		}
+	}
+
 	// ---- Hospitality vending machine works as a fridge (personal tweak, not a fix) ---------------------------
 	// 1.7/Patches/VendingMachine_Fridge.xml raises its draw to 100 W. While it has power, items stored in it read
 	// the same temperature as in [sbz] Fridge's fridges (ambient - 100, floored at -10 C), so food freezes and stops

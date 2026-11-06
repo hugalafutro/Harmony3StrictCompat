@@ -55,6 +55,7 @@ that fail loudly the same way.
 | ReGrowth plant patches | Duplicate wild plant records abort the world-gen Landmarks / Mutators steps | Dedupes `BiomeDef.wildPlants` |
 | Vanilla | Pawns deep-saved in quests are built before the world exists (MechEnergy null-ref) | No needs while no world exists; saved needs load right after |
 | Vanilla / unknown | Trade ship slave also saved as a world pawn loads twice | World copy dropped after load |
+| Vanilla | Personal tweak, not a fix: install and implant-removal operations show a grey placeholder square in the operations menu (no `uiIconThing`, no product) | Fills the icon once at startup for surgery recipes without one: the implant item they consume, else the item the hediff drops |
 
 Companion XML tweaks: [LocalTweaks](https://github.com/hugalafutro/LocalTweaks).
 

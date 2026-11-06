@@ -231,6 +231,28 @@ namespace Harmony3StrictCompat
 				uirIconFor = (Func<string, Texture2D>)uirIcon.CreateDelegate(typeof(Func<string, Texture2D>));
 				uirBlueColor = (Func<Color>)uirBlue.CreateDelegate(typeof(Func<Color>));
 				harmony.Patch(vfetButton, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(VfetThemedCornerstones)));
+				if (Target("UIRethemed.Core.CoreWidgets:ButtonWidth") is { } uirWidth)
+					uirButtonWidth = (Func<string, bool, GameFont, float>)uirWidth.CreateDelegate(typeof(Func<string, bool, GameFont, float>));
+				Target("UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth");
+				uirHeaderWidthCache = AccessTools.Field(AccessTools.TypeByName("UIRethemed.Factions.ModCompat"), "headerButtonsWidth");
+				uirSpaceDefType = AccessTools.TypeByName("UIRethemed.Factions.TitleBarSpaceDef");
+				uirSpaceWidth = uirSpaceDefType == null ? null : AccessTools.Field(uirSpaceDefType, "width");
+			}
+			var uirFace = Target("UIRethemed.MainBar.MenuWindow:Face");
+			if (uirIconFor == null && AccessTools.Method("UIRethemed.Core.CoreWidgets:Icon") is { } iconFor)
+				uirIconFor = (Func<string, Texture2D>)iconFor.CreateDelegate(typeof(Func<string, Texture2D>));
+			if (uirFace != null && uirIconFor != null)
+				harmony.Patch(uirFace, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirMenuModButtonIcon)));
+			var mnPlate = Target("ModernNotifications.CardChrome:Plate", args: new[] { typeof(Rect), typeof(Color) });
+			var mnAccent = Target("ModernNotifications.CardChrome:AccentLeft");
+			uirRoundedFill = Target("UIRethemed.Core.Rounded:Fill");
+			var uirBg = Target("UIRethemed.Core.Theme:get_BG");
+			if (mnPlate != null && mnAccent != null && uirRoundedFill != null && uirBg != null)
+			{
+				uirBgColor = (Func<Color>)uirBg.CreateDelegate(typeof(Func<Color>));
+				uirAllCorners = uirRoundedFill.GetParameters()[2].DefaultValue;
+				harmony.Patch(mnPlate, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(MnRoundedPlate)));
+				harmony.Patch(mnAccent, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(MnInsetAccent)));
 			}
 			var acInject = Target("AutoCastSpecialistCommands.AutoCastToilInjector:Inject");
 			Target("AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix");
@@ -276,16 +298,81 @@ namespace Harmony3StrictCompat
 		static Func<Color> uirBlueColor;
 		static Texture2D vfetIcon;
 		static Type vfetWindow;
+		// Button sized to its label (UIR's ButtonWidth) and the title bar gap resized to match: the def's width is
+		// summed once into ModCompat.headerButtonsWidth, so that cache is cleared after the change.
+		static Func<string, bool, GameFont, float> uirButtonWidth;
+		static FieldInfo uirHeaderWidthCache, uirSpaceWidth;
+		static Type uirSpaceDefType;
+		static float vfetWidth;
 
 		static bool VfetThemedCornerstones()
 		{
 			var tab = Find.WindowStack.WindowOfType<MainTabWindow_Factions>();
 			if (tab == null || !uirFactionsThemed(tab)) return true;
 			vfetIcon ??= uirIconFor("campfire");
+			string label = "VFET.Cornerstones".Translate();
+			if (vfetWidth == 0f)
+			{
+				vfetWidth = uirButtonWidth?.Invoke(label, true, GameFont.Small) ?? 120f;
+				var space = uirSpaceDefType == null ? null : GenDefDatabase.GetDefSilentFail(uirSpaceDefType, "UIRethemedFactions_VFETribals_Cornerstones", false);
+				if (space != null && uirSpaceWidth != null && uirHeaderWidthCache != null)
+				{
+					uirSpaceWidth.SetValue(space, vfetWidth + 15f);
+					uirHeaderWidthCache.SetValue(null, null);
+				}
+				else vfetWidth = 120f;
+			}
 			float x = (ModsConfig.IsActive("OskarPotocki.VFE.Classical") ? 135f : 0f) + 12f;
-			if (uirThemedButton(new Rect(x, 12f, 120f, 28f), "VFET.Cornerstones".Translate(), vfetIcon, uirBlueColor(), true,
+			if (uirThemedButton(new Rect(x, 12f, vfetWidth, 28f), label, vfetIcon, uirBlueColor(), true,
 				"VFET.CustomizeCornerstones".Translate(), GameFont.Small, null, false, true))
 				Find.WindowStack.Add((Window)Activator.CreateInstance(vfetWindow));
+			return false;
+		}
+
+		// ---- Show Mod Updates + UI Rethemed - Main Bar: icon on the "N updated mods" menu button ----
+		// UIR's menu gives icons only to the vanilla options it knows (KnownOptions); other mods' buttons are drawn by
+		// MenuWindow.Face with no icon. Match Show Mod Updates' label ("{0} updated mod(s)", in the active language)
+		// and hand Face a Phosphor icon from UIR Core.
+		static System.Text.RegularExpressions.Regex smuLabel;
+		static LoadedLanguage smuLanguage;
+		static Texture2D smuIcon;
+
+		static void UirMenuModButtonIcon(string text, ref Texture2D iconTex)
+		{
+			if (iconTex != null || text.NullOrEmpty()) return;
+			if (smuLanguage != LanguageDatabase.activeLanguage)
+			{
+				smuLanguage = LanguageDatabase.activeLanguage;
+				var forms = new List<string>();
+				foreach (var key in new[] { "SMU.CurrentUpdate", "SMU.CurrentUpdates" })
+					if (smuLanguage.TryGetTextFromKey(key, out var form))
+						forms.Add(System.Text.RegularExpressions.Regex.Escape(form.RawText).Replace(@"\{0}", @"\d+"));
+				smuLabel = forms.Count == 0 ? null : new System.Text.RegularExpressions.Regex("^(?:" + string.Join("|", forms) + ")$");
+			}
+			if (smuLabel == null || !smuLabel.IsMatch(text)) return;
+			iconTex = smuIcon ??= uirIconFor("arrow-clockwise");
+		}
+
+		// ---- Modern Notifications + UI Rethemed: message cards in the theme's chrome ----
+		// With only MN's docked messages on (its letters, alerts and panel are off in favour of UIR), its cards are flat
+		// square near-black plates with a full-height accent bar. Draw them as UIR's notification rows do
+		// (StatusRow.Draw): a rounded Theme.BG plate at 0.6 alpha, scaled by MN's own fade; the type colour stays as a
+		// slim inset bar instead of the edge bar. CardChrome is shared by all MN surfaces, so any re-enabled MN surface
+		// gets the same chrome.
+		static MethodInfo uirRoundedFill;
+		static object uirAllCorners;
+		static Func<Color> uirBgColor;
+
+		static bool MnRoundedPlate(Rect r, Color fill)
+		{
+			var bg = uirBgColor();
+			uirRoundedFill.Invoke(null, new object[] { r, new Color(bg.r, bg.g, bg.b, fill.a * 0.68f), uirAllCorners });
+			return false;
+		}
+
+		static bool MnInsetAccent(Rect r, Color accent, float alpha)
+		{
+			Widgets.DrawBoxSolid(new Rect(r.x + 5f, r.y + 5f, 2f, r.height - 10f), new Color(accent.r, accent.g, accent.b, alpha));
 			return false;
 		}
 
@@ -1013,6 +1100,13 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Factions.FactionsTab:Themed"] = 0x6464010BFAB662C3,                               // UI Rethemed 1.7, 2026-11-06
 			["UIRethemed.Core.CoreWidgets:Button"] = 0x96B9EA4E631E845B,
 			["UIRethemed.Core.CoreWidgets:Icon"] = 0x2094A97723860CBE,
+			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0xFEC5735778B040A7,
+			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0xC62AB6FF16C5404C,
+			["UIRethemed.MainBar.MenuWindow:Face"] = 0x1F0FBC8E540DFA3D,
+			["UIRethemed.Core.Rounded:Fill"] = 0xB0F1152608DD0D9B,
+			["UIRethemed.Core.Theme:get_BG"] = 0x319AE935C44F0C78,
+			["ModernNotifications.CardChrome:Plate"] = 0xEF7990C8CF50250D,                                  // Modern Notifications 1.7, 2026-10-18; (Rect, Color)
+			["ModernNotifications.CardChrome:AccentLeft"] = 0xA1873A79B150CA47,
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 		};

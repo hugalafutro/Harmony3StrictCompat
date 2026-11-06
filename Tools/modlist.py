@@ -64,7 +64,9 @@ def table(active, mods):
 
 def main():
     active = [li.text.strip().lower() for li in ET.parse(CONFIG).getroot().find("activeMods")]
-    version = ET.parse(CONFIG).getroot().findtext("version", "").strip()
+    # ModsConfig's <version> is only rewritten when the game saves ModsConfig, so it lags game updates; the
+    # installed build is in Version.txt.
+    version = (GAME / "Version.txt").read_text(encoding="utf-8").strip()
     if all(p.startswith("ludeon.") for p in active):
         # the game resets ModsConfig to Core + DLC after a failed load; never publish that
         sys.exit("ModsConfig.xml holds only Core/DLC (reset by a failed load?), README left alone")

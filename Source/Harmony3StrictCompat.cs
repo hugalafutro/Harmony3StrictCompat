@@ -799,6 +799,10 @@ namespace Harmony3StrictCompat
 			["CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__1"] = 0x61D455F6E62CAD49,
 			["HaulersDream.CompositableLoadoutsCompat:InitKeepApi"] = 0x3F15140E9ED2D991,                    // Hauler's Dream 1.6 build, 2026-11-05
 			["HaulersDream.CompositableLoadoutsCompat:LoadoutWantedUnits"] = 0x89C4B3F40C058F43,
+			["HaulersDream.StorageCommitments:get_InsideSpaceScan"] = 0x212C16560ED8173E,                     // Hauler's Dream 1.6 build, 2026-11-06
+			["HaulersDream.JobDriver_UnloadHauledInventory:FindTargetOrDrop"] = 0x124B6AF8B6F91AFF,
+			["HaulersDream.JobDriver_UnloadHauledInventory+<>c__DisplayClass15_0:<FindTargetOrDrop>b__0"] = 0xF8A1275757B89E49,
+			["KanbanStockpileContinue.KanbanStockpileAPI:TryGetSettings"] = 0xFB4378E38CFA29D3,               // Kanban Stockpile Continue 1.6 build, 2025-08-12
 			["SensibleBedOwnership.Patch_Pawn_Ownership_get_OwnedBed:Prefix"] = 0x696E7432D36527D8,       // SBO 1.6 build, 2026-11-05
 			["SensibleBedOwnership.Utility:GetMainBed"] = 0xAE5863A6DF81EAD6,                                // (Pawn) overload
 			["SensibleBedOwnership.Utility:AllAssignedBedsAndDeathrestCaskets"] = 0x8560CE17C9797D18,
@@ -1515,6 +1519,93 @@ namespace Harmony3StrictCompat
 			if (__instance.Map.edificeGrid[__instance.Position] is not Building b || b.def != machine) return;
 			if (b.GetComp<CompPowerTrader>() is { PowerOn: false }) return;
 			__result = Mathf.Max(__result - 100f, -10f);
+		}
+	}
+
+	// ---- Hauler's Dream x Kanban Stockpile Continue: HD overfills Kanban's max stack size --------------------
+	// Kanban caps a storage's stacks (max stack size) by clamping vanilla HaulToCellStorageJob / HaulToStorageJob and
+	// by refusing to absorb into a stack already at the cap. HD plans its bulk pick-up from vanilla
+	// GetItemStackSpaceLeftFor (a full stackLimit per slot) and its inventory unload drops the whole carried stack on
+	// the cell it found, so vending machines capped at 25 held stacks of 248 and 48 insect cheese. Kanban's "remove
+	// excess" then hauls the surplus out and HD hauls it back whenever there is room: churn, and HD's net-zero
+	// warnings. While HD measures storage space, each slot of a capped storage counts at the cap. When HD unloads onto
+	// a capped cell it drops only what that cell may still take; the rest stays in inventory and HD's unload loop
+	// finds it the next cell. Storage without a Kanban max stack size is untouched.
+	[StaticConstructorOnStartup]
+	static class HdKanbanStackCap
+	{
+		delegate bool KanbanGet(IStoreSettingsParent owner, out int srt, out int ssl, out int mss);
+
+		static readonly KanbanGet kanbanGet;
+		static readonly Func<bool> hdInsideSpaceScan;
+		static readonly FieldInfo countToDrop;
+
+		static HdKanbanStackCap()
+		{
+			var get = Harmony3StrictCompatMod.Target("KanbanStockpileContinue.KanbanStockpileAPI:TryGetSettings");
+			var scan = Harmony3StrictCompatMod.Target("HaulersDream.StorageCommitments:get_InsideSpaceScan");
+			var find = Harmony3StrictCompatMod.Target("HaulersDream.JobDriver_UnloadHauledInventory:FindTargetOrDrop");
+			Harmony3StrictCompatMod.Target("HaulersDream.JobDriver_UnloadHauledInventory+<>c__DisplayClass15_0:<FindTargetOrDrop>b__0"); // fingerprint only: the toil body wrapped below
+			if (get == null || scan == null || find == null) return;
+			countToDrop = AccessTools.Field(find.DeclaringType, "countToDrop");
+			if (countToDrop == null)
+			{
+				Log.Error("[Harmony3StrictCompat] HaulersDream.JobDriver_UnloadHauledInventory.countToDrop no longer exists: its mod updated, remove or redo this fix");
+				return;
+			}
+			kanbanGet = (KanbanGet)get.CreateDelegate(typeof(KanbanGet));
+			hdInsideSpaceScan = (Func<bool>)scan.CreateDelegate(typeof(Func<bool>));
+			var harmony = new Harmony("sammael.harmony3strictcompat");
+			harmony.Patch(AccessTools.Method(typeof(GridsUtility), nameof(GridsUtility.GetItemStackSpaceLeftFor)),
+				postfix: new HarmonyMethod(typeof(HdKanbanStackCap), nameof(CapSpace)));
+			harmony.Patch(find, postfix: new HarmonyMethod(typeof(HdKanbanStackCap), nameof(WrapFindToil)));
+		}
+
+		// Same sum as vanilla (room in same-def stacks + free slots), with mss in place of stackLimit. New stacks per
+		// cell are also capped at the similar stack limit; Kanban's own cell check enforces it group-wide.
+		static void CapSpace(IntVec3 c, Map map, ThingDef itemDef, ref int __result)
+		{
+			if (__result <= 0 || !hdInsideSpaceScan() || map.haulDestinationManager.SlotGroupAt(c) is not { } group
+				|| !kanbanGet(group.Settings.owner, out _, out int ssl, out int mss) || mss <= 0 || mss >= itemDef.stackLimit) return;
+			int room = 0, items = 0;
+			foreach (var t in map.thingGrid.ThingsListAt(c))
+			{
+				if (t.def.category == ThingCategory.Item) items++;
+				if (t.def == itemDef) room += Math.Max(mss - t.stackCount, 0);
+			}
+			int newStacks = Math.Max(c.GetMaxItemsAllowedInCell(map) - items, 0);
+			if (ssl > 0) newStacks = Math.Min(newStacks, ssl);
+			__result = Math.Min(__result, room + newStacks * mss);
+		}
+
+		static void WrapFindToil(JobDriver __instance, Toil __result)
+		{
+			var find = __result.initAction;
+			__result.initAction = () =>
+			{
+				find();
+				CapDrop(__instance);
+			};
+		}
+
+		// The drop lands in the first stack below the cap (Kanban refuses to absorb into one at the cap), else as a
+		// new stack.
+		static void CapDrop(JobDriver driver)
+		{
+			var job = driver.job;
+			if (driver.ended || job.targetB.HasThing || !job.targetB.Cell.IsValid || job.targetA.Thing is not { } thing) return;
+			var map = driver.pawn.Map;
+			int count = (int)countToDrop.GetValue(driver);
+			if (count <= 0 || map?.haulDestinationManager.SlotGroupAt(job.targetB.Cell) is not { } group
+				|| !kanbanGet(group.Settings.owner, out _, out _, out int mss) || mss <= 0) return;
+			int cap = Math.Min(thing.def.stackLimit, mss), room = cap;
+			foreach (var t in map.thingGrid.ThingsListAt(job.targetB.Cell))
+				if (t != thing && t.CanStackWith(thing) && t.stackCount < cap)
+				{
+					room = cap - t.stackCount;
+					break;
+				}
+			if (room < count) countToDrop.SetValue(driver, room);
 		}
 	}
 

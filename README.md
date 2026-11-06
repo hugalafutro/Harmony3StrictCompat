@@ -40,6 +40,7 @@ that fail loudly the same way.
 | Hospitality | Guests with a claimed bed sleep on the floor elsewhere | Diagnostic only: when such a guest starts a floor `LayDown`, logs which think node issued it, its duty, rest level and what is wrong with the bed (remove once the cause is known) |
 | Giddy-Up 2 | Dismounted caravan animals park where the rider stepped off, so the caravan never arrives or leaves | Keeps lord animals' travel/follow focus across `Dismount` |
 | Vanilla / unknown | Trade caravan whose trader has a non-trader pawn kind: dismiss does nothing, caravan never exits | A guard holding a trader kind counts as the Trader |
+| RimPacts | A government in exile that leaves or is dismissed deletes the fallen faction's leader without a successor: "Faction leader for X is null" every session | A new leader is picked right away (and after load for any faction that should have one but doesn't), as vanilla does when a leader dies |
 | VEF (MVCF) | Multi-verb weapons get 100% accuracy and 1 s cooldown; duplicate stat rows; "Range 1" | Unset verb stats fall back to the weapon's own; duplicate rows hidden; Range row rebuilt |
 | VEF | Verb range factor mutates the shared verb def and can stick (29.85 instead of 19.9) | Factor applied to the result instead |
 | Simple Leadership | Faction leaders join raids whose points can't cover them | Leaders only join when the raid points allow it |

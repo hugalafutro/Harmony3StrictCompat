@@ -41,6 +41,11 @@ namespace Harmony3StrictCompat
 				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(NoNeedsBeforeWorld)) { priority = Priority.First });
 			harmony.Patch(AccessTools.Method(typeof(Game), nameof(Game.FinalizeInit)),
 				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DropWorldCopiesOfShipPawns)));
+			harmony.Patch(AccessTools.Method(typeof(Game), nameof(Game.FinalizeInit)),
+				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RepairMissingLeaders)));
+			var rpDismiss = Target("RimPacts.WorldComponent_RimPacts:DismissExilePawn");
+			if (rpDismiss != null)
+				harmony.Patch(rpDismiss, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpReplaceDismissedLeader)));
 			var btApply = Target("TraitTracker.TraitHediffApplier:ApplyHediffsToPawnsWithTraits");
 			if (btApply != null)
 				harmony.Patch(btApply, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DropLogMessages)));
@@ -727,6 +732,7 @@ namespace Harmony3StrictCompat
 			["SensibleBedOwnership.Utility:AllAssignedBedsAndDeathrestCaskets"] = 0x8560CE17C9797D18,
 			["VEF.Buildings.CompRandomBuildingGraphic:ChangeGraphic"] = 0xC22ADB911FDB5E90,                  // VEF 1.7, 2026-11-04
 			["AdaptiveStorage.StorageGraphicWorker:GetGraphicFor"] = 0x2899906440FC5118,                     // ASF 1.6 build, 2025-11-12
+			["RimPacts.WorldComponent_RimPacts:DismissExilePawn"] = 0xEC9FEB84EB993051,                        // RimPacts 1.7, 2026-11-06
 			["PrisonerRealism.JobGiver_CleanCell:ShouldClean"] = 0xD2061DA02821F6FC,                          // Prisoner Realism 1.7, 2026-11-06
 			["CleaningAreaRelaunched.CleaningAreaRelaunched_Util:GetCleanArea"] = 0xD9B02D52DE61B82C,          // CAR 1.6 build, 2025-11-12
 		};
@@ -888,6 +894,30 @@ namespace Harmony3StrictCompat
 			if (Current.Game?.World != null || Current.CreatingWorld != null) return true;
 			__result = false;
 			return false;
+		}
+
+		// ---- Factions left without a leader -----------------------------------------------------------------
+		// RimPacts' government in exile takes a fallen faction's leader in. When the exile leaves (15 days without a
+		// restoration) or is dismissed, DismissExilePawn discards the pawn but never tells its faction, so the
+		// faction keeps a discarded leader, saved as null: vanilla FactionTick then logs "Faction leader for X is
+		// null" (Iremar). Vanilla picks a successor whenever a leader dies or leaves; do the same, silently: right
+		// after RimPacts discards a leader, and after every load for any faction that should have one but doesn't.
+		static bool NeedsLeader(Faction f) =>
+			!f.IsPlayer && !f.Hidden && !f.temporary && f.def.humanlikeFaction && (f.leader == null || f.leader.Discarded);
+
+		static void RepairMissingLeaders()
+		{
+			foreach (var f in Find.FactionManager.AllFactionsListForReading)
+				if (NeedsLeader(f) && f.TryGenerateNewLeader())
+					Log.Message($"[Harmony3StrictCompat] {f.Name} had no leader, new leader {f.leader.LabelShort}");
+		}
+
+		static void RpReplaceDismissedLeader(Pawn p)
+		{
+			if (p == null) return;
+			foreach (var f in Find.FactionManager.AllFactionsListForReading)
+				if (f.leader == p && f.TryGenerateNewLeader())
+					Log.Message($"[Harmony3StrictCompat] RimPacts discarded exiled leader {p.LabelShort}; {f.Name}'s new leader is {f.leader.LabelShort}");
 		}
 
 		// ---- Trade ship pawns duplicated into world pawns ------------------------------------------------

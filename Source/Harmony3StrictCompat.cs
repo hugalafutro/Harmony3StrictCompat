@@ -277,6 +277,20 @@ namespace Harmony3StrictCompat
 				uirGlanceApplies = (Func<IInspectPane, bool>)uirGlance.CreateDelegate(typeof(Func<IInspectPane, bool>));
 				harmony.Patch(uirExtraFor, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCardMinHeight)));
 			}
+			var uirCardDraw = Target("UIRethemed.ColonistCard.CardInfo:Draw");
+			var uirActLine = Target("UIRethemed.ColonistCard.CardInfo:ActivityLine");
+			var uirCardInfo = AccessTools.TypeByName("UIRethemed.ColonistCard.CardInfo");
+			uirActivityText = uirCardInfo == null ? null : AccessTools.Field(uirCardInfo, "activityText");
+			uirInfoLines = uirCardInfo == null ? null : AccessTools.Field(uirCardInfo, "lines");
+			if (uirCardDraw != null && uirActLine != null && uirActivityText != null && uirInfoLines != null)
+			{
+				uirActivityLine = (Func<Pawn, string>)uirActLine.CreateDelegate(typeof(Func<Pawn, string>));
+				harmony.Patch(uirCardDraw, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirActivityProbe)));
+				harmony.Patch(uirActLine, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirActivityFirstLine)));
+				harmony.Patch(AccessTools.Method(typeof(Pawn), nameof(Pawn.GetJobReport)),
+					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(JobReportPerFrame)),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(JobReportRemember)));
+			}
 			var acInject = Target("AutoCastSpecialistCommands.AutoCastToilInjector:Inject");
 			Target("AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix");
 			acSettings = AccessTools.Field(AccessTools.TypeByName("AutoCastSpecialistCommands.AutoCastSpecialistCommands"), "settings");
@@ -571,6 +585,65 @@ namespace Harmony3StrictCompat
 			}
 			if (height >= uirHeld) uirHeldUntil = now + UirCardHold;
 			__result = uirHeld;
+		}
+
+		// ---- UI Rethemed - Colonist Card: activity row blanking on every job change ----
+		// CardInfo.Draw reads the pawn's inspect text (Pawn.GetInspectString, which embeds GetJobReport) and then
+		// computes the job line itself (ActivityLine, GetJobReport again) and removes it from the text by exact
+		// string; Card.Draw blanks the row first (BeginCard), so a miss shows an empty row with the old job line left
+		// in the info list. On 1.7 the two reads disagree whenever the job changes between them (the inspect text is
+		// one job behind at every miss; no mod caches it), so hand GetJobReport one answer per frame: the first
+		// report computed for a pawn in a frame is reused for the rest of that frame, and both reads agree.
+		// Also: a multi-line report (meditation: "Meditating at: X.\nPsyfocus gain rate: N%/d.") can never equal a
+		// single line, so ActivityLine keeps its first line; the rest stay info rows.
+		static int jobReportFrame;
+		static readonly Dictionary<Pawn, string> jobReports = new();
+
+		static bool JobReportPerFrame(Pawn __instance, ref string __result)
+		{
+			if (RealTime.frameCount != jobReportFrame) { jobReportFrame = RealTime.frameCount; jobReports.Clear(); }
+			if (!jobReports.TryGetValue(__instance, out var report)) return true;
+			__result = report;
+			return false;
+		}
+
+		static void JobReportRemember(Pawn __instance, string __result)
+		{
+			if (!jobReports.ContainsKey(__instance)) jobReports[__instance] = __result;
+		}
+
+		static void UirActivityFirstLine(ref string __result)
+		{
+			if (__result == null) return;
+			int nl = __result.IndexOf('\n');
+			if (nl >= 0) __result = __result.Substring(0, nl).TrimEnd('\r');
+		}
+
+		// Diagnostic (dev mode only): log each distinct remaining miss with both strings, and once the patch owners.
+		static FieldInfo uirActivityText, uirInfoLines;
+		static Func<Pawn, string> uirActivityLine;
+		static readonly HashSet<string> uirProbeSeen = new();
+		static bool uirProbeOwnersLogged;
+
+		static void UirActivityProbe(ISelectable sel, bool __result)
+		{
+			if (!Prefs.DevMode || !__result || sel is not Pawn pawn) return;
+			if (!uirProbeOwnersLogged)
+			{
+				uirProbeOwnersLogged = true;
+				Log.Message("[Harmony3StrictCompat] activity probe: patch owners. Pawn.GetInspectString [" + PatchOwners(AccessTools.Method(typeof(Pawn), nameof(Pawn.GetInspectString))) +
+					"], Pawn.GetJobReport [" + PatchOwners(AccessTools.Method(typeof(Pawn), nameof(Pawn.GetJobReport))) +
+					"], JobDriver.GetReport [" + PatchOwners(AccessTools.Method(typeof(JobDriver), nameof(JobDriver.GetReport))) +
+					"], InspectPaneFiller.DrawInspectStringFor [" + PatchOwners(AccessTools.Method(typeof(InspectPaneFiller), nameof(InspectPaneFiller.DrawInspectStringFor))) + "]");
+			}
+			string line = uirActivityLine(pawn);
+			string shown = (string)uirActivityText.GetValue(null);
+			string want = line?.TrimEnd('.');
+			if (want == shown) return;
+			string key = (want ?? "<null>") + "|" + (shown ?? "<null>");
+			if (uirProbeSeen.Count > 60 || !uirProbeSeen.Add(key)) return;
+			var lines = uirInfoLines.GetValue(null) as List<string>;
+			Log.Message($"[Harmony3StrictCompat] activity probe: {pawn.LabelShort}: ActivityLine='{line}' row shows='{shown}' inspect lines=[{(lines == null ? "?" : string.Join(" | ", lines))}]");
 		}
 
 		// ---- Flourish - Everyday Animations: telescope drawn under the posed pawn, not between body and hands ----
@@ -1310,6 +1383,8 @@ namespace Harmony3StrictCompat
 			["UIRethemed.ColonistCard.Card:ExtraHeightFor"] = 0xA9E487931D68C6B5,                             // UI Rethemed - Colonist Card 1.7, 2026-11-06
 			["UIRethemed.ColonistCard.Card:get_ExtraHeight"] = 0xA5EE322395D01792,
 			["UIRethemed.ColonistCard.Glance:Applies"] = 0xCDD2961107EDA4DC,
+			["UIRethemed.ColonistCard.CardInfo:Draw"] = 0xC4AF7EE316AAFD25,
+			["UIRethemed.ColonistCard.CardInfo:ActivityLine"] = 0x3497536919373E63,
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,

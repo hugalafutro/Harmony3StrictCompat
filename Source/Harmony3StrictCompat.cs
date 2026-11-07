@@ -265,6 +265,15 @@ namespace Harmony3StrictCompat
 				uirStyleType = uirStyle; uirWidgetsType = uirWidgets; uirColorOfCall = uirColorOf;
 				harmony.Patch(AccessTools.Method(typeof(Messages), nameof(Messages.MessagesDoGUI)),
 					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirMessagesInStack)));
+				harmony.Patch(AccessTools.PropertyGetter(typeof(Message), "TimeLeft"),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirLongerMessages)));
+			}
+			var uirExtraFor = Target("UIRethemed.ColonistCard.Card:ExtraHeightFor");
+			var uirExtra = Target("UIRethemed.ColonistCard.Card:get_ExtraHeight");
+			if (uirExtraFor != null && uirExtra != null)
+			{
+				uirCardExtraHeight = (Func<float>)uirExtra.CreateDelegate(typeof(Func<float>));
+				harmony.Patch(uirExtraFor, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCardMinHeight)));
 			}
 			var acInject = Target("AutoCastSpecialistCommands.AutoCastToilInjector:Inject");
 			Target("AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix");
@@ -422,7 +431,9 @@ namespace Harmony3StrictCompat
 		// vanilla Message.Draw: left-click jumps or opens the quest, right-click dismisses, hover highlights the target;
 		// a Flash() reads as the row's hover glow. ponytail: no 0.6 s fade-out (StatusRow sets its own colours), rows
 		// vanish at expiry as UIR's alerts do. Any other column position leaves the game's messages alone.
-		const float UirRowHeight = 24f, UirRowStep = 26f, UirStackGap = 10f;
+		// Vanilla keeps a message 13 s; in a stack of five the last ones were gone before they were read, so add
+		// 17 s (30 s total), and a hovered row restarts its timer so it never vanishes under the cursor.
+		const float UirRowHeight = 24f, UirRowStep = 26f, UirStackGap = 10f, UirMessageExtraLife = 17f;
 		static MethodInfo uirRowDrawCall, uirPositionCall;
 		static Func<string, float> uirRowWidthCall;
 		static Func<float, float> uirColumnXCall;
@@ -498,6 +509,7 @@ namespace Harmony3StrictCompat
 				}
 				if (over)
 				{
+					msg.ResetTimer();
 					Messages.Notify_Mouseover(msg);
 					Text.Font = GameFont.Small;
 					if (Text.CalcSize(msg.text).x > width - 38f) TooltipHandler.TipRegion(rect, msg.text);
@@ -518,6 +530,19 @@ namespace Harmony3StrictCompat
 			}
 			return false;
 		}
+
+		static void UirLongerMessages(ref float __result) => __result += UirMessageExtraLife;
+
+		// ---- UI Rethemed - Colonist Card: the Card Height slider is a minimum when needs and skills are at a glance ----
+		// With "Needs and skills at a glance" on, Card.ExtraHeightFor sizes the card to its content (header + info
+		// rows + glance block) and ignores the slider, so the card grows by a row whenever a line such as
+		// "Carrying: X" appears in the pawn's inspect string and shrinks when it goes, moving the tabs with it. Take
+		// the larger of the fitted height and the slider's (Card.ExtraHeight): at 100 % nothing changes, above it the
+		// slider buys headroom and the card stays put. The glance block is pinned to the bottom and the info list
+		// paints only its rows, so the spare room is a gap above the glance block.
+		static Func<float> uirCardExtraHeight;
+
+		static void UirCardMinHeight(ref float __result) => __result = Mathf.Max(__result, uirCardExtraHeight());
 
 		// ---- Flourish - Everyday Animations: telescope drawn under the posed pawn, not between body and hands ----
 		// A building always draws below pawns, so in the anchored telescope pose the pawn's body covers the telescope
@@ -1253,6 +1278,8 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Notifications.Placement:get_Position"] = 0x7B404D78F1D65665,
 			["UIRethemed.Notifications.Motion:Hover"] = 0xFB7ED9A581BF4F1B,
 			["UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler"] = 0x8F948D82A4AB2A5A,
+			["UIRethemed.ColonistCard.Card:ExtraHeightFor"] = 0xA9E487931D68C6B5,                             // UI Rethemed - Colonist Card 1.7, 2026-11-06
+			["UIRethemed.ColonistCard.Card:get_ExtraHeight"] = 0xA5EE322395D01792,
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,

@@ -604,27 +604,36 @@ namespace Harmony3StrictCompat
 		static FieldInfo uirActivityPawn, uirActivityText, uirActivityQueued, uirInfoLines, uirDeferredRect;
 		static Func<Pawn, string> uirActivityLine;
 		static Action<string, Rect> uirDeferCall;
-		static Pawn lastActivityPawn;
-		static string lastActivityShown;
+		// The stale line is one of the pawn's recent reports (not always the one shown last frame), so keep the last
+		// few job lines seen for the selected pawn and drop any leftover that matches one of them.
+		const int UirRecentJobLines = 8;
+		static Pawn recentPawn;
+		static readonly List<string> recentJobLines = new();
 		static readonly HashSet<string> uirProbeSeen = new();
+
+		static void RememberJobLine(Pawn pawn, string jobLine)
+		{
+			if (recentPawn != pawn) { recentPawn = pawn; recentJobLines.Clear(); }
+			if (jobLine == null) return;
+			recentJobLines.Remove(jobLine);
+			recentJobLines.Add(jobLine);
+			if (recentJobLines.Count > UirRecentJobLines) recentJobLines.RemoveAt(0);
+		}
 
 		static void UirFillActivityRow(ISelectable sel, bool __result)
 		{
 			if (!__result || sel is not Pawn pawn) return;
 			string shown = (string)uirActivityText.GetValue(null);
-			if (shown != null)
-			{
-				lastActivityPawn = pawn; lastActivityShown = shown;
-				return;
-			}
+			if (shown != null) { RememberJobLine(pawn, shown + "."); return; }
 			string line = uirActivityLine(pawn);
-			if (line.NullOrEmpty()) { lastActivityPawn = null; lastActivityShown = null; return; }
+			if (line.NullOrEmpty()) { RememberJobLine(pawn, null); return; }
 			var lines = uirInfoLines.GetValue(null) as List<string>;
 			if (lines == null) return;
-			string stale = lastActivityPawn == pawn && lastActivityShown != null ? lastActivityShown + "." : null;
-			bool changed = stale != null && lines.Remove(stale);
+			bool changed = false;
+			for (int i = lines.Count - 1; i >= 0 && !changed; i--)
+				if (lines[i] != line && recentJobLines.Contains(lines[i])) { lines.RemoveAt(i); changed = true; }
 			if (Prefs.DevMode && !changed && uirProbeSeen.Count < 60 && uirProbeSeen.Add(line))
-				Log.Message($"[Harmony3StrictCompat] activity row filled without a stale line to drop: {pawn.LabelShort}: '{line}' last shown '{lastActivityShown}' lines=[{string.Join(" | ", lines)}]");
+				Log.Message($"[Harmony3StrictCompat] activity row filled without a stale line to drop: {pawn.LabelShort}: '{line}' recent=[{string.Join(" | ", recentJobLines)}] lines=[{string.Join(" | ", lines)}]");
 			string queuedPrefix = "Queued".Translate() + ": ";
 			int q = lines.FindIndex(l => l.StartsWith(queuedPrefix, StringComparison.Ordinal));
 			string queued = null;
@@ -632,7 +641,7 @@ namespace Harmony3StrictCompat
 			uirActivityPawn.SetValue(null, pawn);
 			uirActivityText.SetValue(null, line.TrimEnd('.'));
 			uirActivityQueued.SetValue(null, queued);
-			lastActivityPawn = pawn; lastActivityShown = line.TrimEnd('.');
+			RememberJobLine(pawn, line);
 			if (changed) uirDeferCall(string.Join("\n", lines), (Rect)uirDeferredRect.GetValue(null));
 		}
 

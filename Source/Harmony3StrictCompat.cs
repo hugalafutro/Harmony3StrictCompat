@@ -359,7 +359,7 @@ namespace Harmony3StrictCompat
 		static Func<Rect, string, Texture, Color?, bool, string, GameFont, string, bool, bool, bool> uirThemedButton;
 		static Func<string, Texture2D> uirIconFor;
 		static Func<Color> uirBlueColor;
-		static Texture vfetIcon;
+		static object vfetIcon;   // object, not Texture: the game's dev-mode check flags Texture statics without StaticConstructorOnStartup
 		static Type vfetWindow;
 		// Button sized to its label (UIR's ButtonWidth) and the title bar gap resized to match: the def's width is
 		// summed once into ModCompat.headerButtonsWidth, so that cache is cleared after the change.
@@ -386,7 +386,7 @@ namespace Harmony3StrictCompat
 				else vfetWidth = 120f;
 			}
 			float x = (ModsConfig.IsActive("OskarPotocki.VFE.Classical") ? 135f : 0f) + 12f;
-			if (uirThemedButton(new Rect(x, 12f, vfetWidth, 28f), label, vfetIcon, uirBlueColor(), true,
+			if (uirThemedButton(new Rect(x, 12f, vfetWidth, 28f), label, (Texture)vfetIcon, uirBlueColor(), true,
 				"VFET.CustomizeCornerstones".Translate(), GameFont.Small, null, false, true))
 				Find.WindowStack.Add((Window)Activator.CreateInstance(vfetWindow));
 			return false;
@@ -398,7 +398,7 @@ namespace Harmony3StrictCompat
 		// and hand Face a Phosphor icon from UIR Core.
 		static System.Text.RegularExpressions.Regex smuLabel;
 		static LoadedLanguage smuLanguage;
-		static Texture smuIcon;
+		static object smuIcon;
 
 		static void UirMenuModButtonIcon(string text, ref Texture2D iconTex)
 		{

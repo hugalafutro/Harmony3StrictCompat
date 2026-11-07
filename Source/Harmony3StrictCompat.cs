@@ -262,38 +262,13 @@ namespace Harmony3StrictCompat
 				uirHoverCall = (Func<Rect, int, bool, float>)uirHover.CreateDelegate(typeof(Func<Rect, int, bool, float>));
 				uirPositionCall = uirPosition;
 				uirBottomRight = (int)Enum.Parse(uirPosition.ReturnType, "BottomRight");
+				if (Target("UIRethemed.Notifications.HoverCard:FromText") is { } uirHoverCard)
+					uirHoverFromText = (Action<Rect, string, Color?>)uirHoverCard.CreateDelegate(typeof(Action<Rect, string, Color?>));
 				uirStyleType = uirStyle; uirWidgetsType = uirWidgets; uirColorOfCall = uirColorOf;
 				harmony.Patch(AccessTools.Method(typeof(Messages), nameof(Messages.MessagesDoGUI)),
 					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirMessagesInStack)));
 				harmony.Patch(AccessTools.PropertyGetter(typeof(Message), "TimeLeft"),
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirLongerMessages)));
-			}
-			var uirExtraFor = Target("UIRethemed.ColonistCard.Card:ExtraHeightFor");
-			var uirExtra = Target("UIRethemed.ColonistCard.Card:get_ExtraHeight");
-			var uirGlance = Target("UIRethemed.ColonistCard.Glance:Applies");
-			if (uirExtraFor != null && uirExtra != null && uirGlance != null)
-			{
-				uirCardExtraHeight = (Func<float>)uirExtra.CreateDelegate(typeof(Func<float>));
-				uirGlanceApplies = (Func<IInspectPane, bool>)uirGlance.CreateDelegate(typeof(Func<IInspectPane, bool>));
-				harmony.Patch(uirExtraFor, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCardMinHeight)));
-			}
-			var uirCardDraw = Target("UIRethemed.ColonistCard.CardInfo:Draw");
-			var uirActLine = Target("UIRethemed.ColonistCard.CardInfo:ActivityLine");
-			var uirCardInfo = AccessTools.TypeByName("UIRethemed.ColonistCard.CardInfo");
-			var uirInfoList = AccessTools.TypeByName("UIRethemed.ColonistCard.InfoList");
-			uirActivityPawn = uirCardInfo == null ? null : AccessTools.Field(uirCardInfo, "activityPawn");
-			uirActivityText = uirCardInfo == null ? null : AccessTools.Field(uirCardInfo, "activityText");
-			uirActivityQueued = uirCardInfo == null ? null : AccessTools.Field(uirCardInfo, "activityQueued");
-			uirInfoLines = uirCardInfo == null ? null : AccessTools.Field(uirCardInfo, "lines");
-			uirDeferredRect = uirInfoList == null ? null : AccessTools.Field(uirInfoList, "deferredRect");
-			var uirDefer = uirInfoList == null ? null : AccessTools.Method(uirInfoList, "Defer", new[] { typeof(string), typeof(Rect) });
-			if (uirCardDraw != null && uirActLine != null && uirActivityPawn != null && uirActivityText != null && uirActivityQueued != null
-				&& uirInfoLines != null && uirDeferredRect != null && uirDefer != null)
-			{
-				uirActivityLine = (Func<Pawn, string>)uirActLine.CreateDelegate(typeof(Func<Pawn, string>));
-				uirDeferCall = (Action<string, Rect>)uirDefer.CreateDelegate(typeof(Action<string, Rect>));
-				harmony.Patch(uirCardDraw, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirFillActivityRow)));
-				harmony.Patch(uirActLine, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirActivityFirstLine)));
 			}
 			var acInject = Target("AutoCastSpecialistCommands.AutoCastToilInjector:Inject");
 			Target("AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix");
@@ -449,8 +424,9 @@ namespace Harmony3StrictCompat
 		// message as a StatusRow, the widget its alert rows use, stacked upward from the top of the alerts
 		// (LetterStack.LastTopY - AlertsReadout.AlertsHeight, which UIR keeps vanilla in that position), newest nearest
 		// the stack. Colour and icon come from UIR's own four kinds, so they match the alert rows below. Behaviour is
-		// vanilla Message.Draw: left-click jumps or opens the quest, right-click dismisses, hover highlights the target;
-		// a Flash() reads as the row's hover glow. ponytail: no 0.6 s fade-out (StatusRow sets its own colours), rows
+		// vanilla Message.Draw: left-click jumps or opens the quest, right-click dismisses, hover highlights the target
+		// and shows the full text as UIR's own hover card (HoverCard.FromText, the card its alerts use) in the row's
+		// colour; a Flash() reads as the row's hover glow. ponytail: no 0.6 s fade-out (StatusRow sets its own colours), rows
 		// vanish at expiry as UIR's alerts do. Any other column position leaves the game's messages alone.
 		// Vanilla keeps a message 13 s; in a stack of five the last ones were gone before they were read, so add
 		// 17 s (30 s total), and a hovered row restarts its timer so it never vanishes under the cursor.
@@ -466,6 +442,8 @@ namespace Harmony3StrictCompat
 		static Type uirStyleType, uirWidgetsType;
 		static MethodInfo uirColorOfCall;
 		static object[] uirMessageStyles;
+		static readonly Color?[] uirMessageAccents = new Color?[4];
+		static Action<Rect, string, Color?> uirHoverFromText;
 		static Dictionary<MessageTypeDef, int> uirMessageKinds;
 		static readonly AccessTools.FieldRef<List<Message>> liveMessages = AccessTools.StaticFieldRefAccess<List<Message>>(AccessTools.Field(typeof(Messages), "liveMessages"));
 		static readonly AccessTools.FieldRef<Message, float> messageStart = AccessTools.FieldRefAccess<Message, float>("startingTime");
@@ -497,6 +475,8 @@ namespace Harmony3StrictCompat
 				AccessTools.Field(uirStyleType, "icon").SetValue(style, AccessTools.Field(uirWidgetsType, texNames[kind]).GetValue(null));
 				AccessTools.Field(uirStyleType, "tintIcon").SetValue(style, true);
 				styles[kind] = style;
+				var colorDef = AccessTools.Field(uirStyleType, "color").GetValue(style);
+				uirMessageAccents[kind] = colorDef == null ? null : (Color?)AccessTools.Field(colorDef.GetType(), "accent").GetValue(colorDef);
 			}
 			return uirMessageStyles = styles;
 		}
@@ -532,8 +512,12 @@ namespace Harmony3StrictCompat
 				{
 					msg.ResetTimer();
 					Messages.Notify_Mouseover(msg);
-					Text.Font = GameFont.Small;
-					if (Text.CalcSize(msg.text).x > width - 38f) TooltipHandler.TipRegion(rect, msg.text);
+					if (uirHoverFromText != null) uirHoverFromText(rect, msg.text, uirMessageAccents[UirKindOf(msg.def)]);
+					else
+					{
+						Text.Font = GameFont.Small;
+						if (Text.CalcSize(msg.text).x > width - 38f) TooltipHandler.TipRegion(rect, msg.text);
+					}
 				}
 				if (!Widgets.ButtonInvisible(rect)) continue;
 				if (Event.current.button == 1) messageStart(msg) = -99999f;
@@ -553,113 +537,6 @@ namespace Harmony3StrictCompat
 		}
 
 		static void UirLongerMessages(ref float __result) => __result += UirMessageExtraLife;
-
-		// ---- UI Rethemed - Colonist Card: the Card Height slider is a minimum when needs and skills are at a glance ----
-		// With "Needs and skills at a glance" on, Card.ExtraHeightFor sizes the card to its content (header + info
-		// rows + glance block) and ignores the slider, so the card grows by a row whenever a line such as
-		// "Carrying: X" appears in the pawn's inspect string and shrinks when it goes, moving the tabs with it. Take
-		// the larger of the fitted height and the slider's (Card.ExtraHeight): at 100 % nothing changes, above it the
-		// slider buys headroom and the card stays put. The glance block is pinned to the bottom and the info list
-		// paints only its rows, so the spare room is a gap above the glance block.
-		// The floor is snapped up to UIR's row grid: its fitted height is round(126 + (rows*24 + 4) + 4 + 174 + 8 + 4) - 165
-		// = 155 + rows*24 (147 with no rows; InfoList.Layout pads 2 px top and bottom), so a floor of 155 + k*24 is
-		// exactly "k spare rows" and one row more or fewer never moves the card. A floor between grid points moved it
-		// by the remainder (2 px at one slider step, a whole row at the next).
-		// The floor is absolute (k rows in all), so a pawn with a permanent row (a royal title) spends it and a
-		// transient row still grows the card; and whether a short row shares a line with another flips with the text
-		// widths of the moment. So the card also holds its last larger height for UirCardHold seconds before it may
-		// shrink: it grows once when a real row appears and never twitches on the way back.
-		const float UirCardHold = 2f;
-		static Func<float> uirCardExtraHeight;
-		static Func<IInspectPane, bool> uirGlanceApplies;
-		static object uirHeldFor;
-		static float uirHeld, uirHeldUntil;
-
-		static void UirCardMinHeight(IInspectPane pane, ref float __result)
-		{
-			if (!uirGlanceApplies(pane)) return;
-			float floor = uirCardExtraHeight();
-			if (floor > 155f) floor = 155f + 24f * Mathf.Ceil((floor - 155f) / 24f);
-			float height = Mathf.Max(__result, floor);
-			var selected = Find.Selector.SingleSelectedThing;
-			float now = Time.realtimeSinceStartup;
-			if (selected != uirHeldFor || height >= uirHeld || now >= uirHeldUntil)
-			{
-				uirHeldFor = selected;
-				uirHeld = height;
-			}
-			if (height >= uirHeld) uirHeldUntil = now + UirCardHold;
-			__result = uirHeld;
-		}
-
-		// ---- UI Rethemed - Colonist Card: activity row blanking on every job change ----
-		// CardInfo.Draw reads the pawn's inspect text, computes the job line itself (ActivityLine) and removes it from
-		// the text by exact string; Card.Draw blanks the row first (BeginCard), so a miss shows an empty row with the
-		// old job line left in the info list. On 1.7 the text that leaves Pawn.GetInspectString carries the PREVIOUS
-		// job report at every job change while GetJobReport is current (dev-mode probes, 2026-11-07: the IL appends
-		// GetJobReport's value and no patch rewrites the line; cause not found). Fix the outcome instead: after Draw,
-		// when the row is empty but the pawn has a job line, fill the row from the live line and drop the stale
-		// duplicate, which is the text the row showed last frame, from the deferred info text; a "Queued: " line
-		// moves to the row as UIR does. Multi-line reports (meditation) use their first line in ActivityLine.
-		static FieldInfo uirActivityPawn, uirActivityText, uirActivityQueued, uirInfoLines, uirDeferredRect;
-		static Func<Pawn, string> uirActivityLine;
-		static Action<string, Rect> uirDeferCall;
-		// The stale line is one of the pawn's recent reports (not always the one shown last frame), so keep the last
-		// few job lines seen for the selected pawn and drop any leftover that matches one of them.
-		const int UirRecentJobLines = 8;
-		static Pawn recentPawn;
-		static readonly List<string> recentJobLines = new();
-		static readonly HashSet<string> uirProbeSeen = new();
-
-		static void RememberJobLine(Pawn pawn, string jobLine)
-		{
-			if (recentPawn != pawn) { recentPawn = pawn; recentJobLines.Clear(); }
-			if (jobLine == null) return;
-			recentJobLines.Remove(jobLine);
-			recentJobLines.Add(jobLine);
-			if (recentJobLines.Count > UirRecentJobLines) recentJobLines.RemoveAt(0);
-		}
-
-		static void UirFillActivityRow(ISelectable sel, bool __result)
-		{
-			if (!__result || sel is not Pawn pawn) return;
-			string shown = (string)uirActivityText.GetValue(null);
-			if (shown != null) { RememberJobLine(pawn, shown + "."); return; }
-			string line = uirActivityLine(pawn);
-			if (line.NullOrEmpty()) { RememberJobLine(pawn, null); return; }
-			var lines = uirInfoLines.GetValue(null) as List<string>;
-			if (lines == null) return;
-			bool changed = false;
-			for (int i = lines.Count - 1; i >= 0 && !changed; i--)
-				if (lines[i] != line && recentJobLines.Contains(lines[i])) { lines.RemoveAt(i); changed = true; }
-			// No recent match (pawn just selected): vanilla puts the job line last, before any "Queued: " line; drop
-			// that line when it reads as a plain sentence rather than a "key: value" info line.
-			if (!changed && lines.Count > 0)
-			{
-				string queuedKey = "Queued".Translate() + ": ";
-				int at = lines.FindIndex(l => l.StartsWith(queuedKey, StringComparison.Ordinal));
-				at = at > 0 ? at - 1 : (at < 0 ? lines.Count - 1 : -1);
-				if (at >= 0 && lines[at] != line && !lines[at].Contains(": ")) { lines.RemoveAt(at); changed = true; }
-			}
-			if (Prefs.DevMode && !changed && uirProbeSeen.Count < 60 && uirProbeSeen.Add(line))
-				Log.Message($"[Harmony3StrictCompat] activity row filled without a stale line to drop: {pawn.LabelShort}: '{line}' recent=[{string.Join(" | ", recentJobLines)}] lines=[{string.Join(" | ", lines)}]");
-			string queuedPrefix = "Queued".Translate() + ": ";
-			int q = lines.FindIndex(l => l.StartsWith(queuedPrefix, StringComparison.Ordinal));
-			string queued = null;
-			if (q >= 0) { queued = lines[q]; lines.RemoveAt(q); changed = true; }
-			uirActivityPawn.SetValue(null, pawn);
-			uirActivityText.SetValue(null, line.TrimEnd('.'));
-			uirActivityQueued.SetValue(null, queued);
-			RememberJobLine(pawn, line);
-			if (changed) uirDeferCall(string.Join("\n", lines), (Rect)uirDeferredRect.GetValue(null));
-		}
-
-		static void UirActivityFirstLine(ref string __result)
-		{
-			if (__result == null) return;
-			int nl = __result.IndexOf('\n');
-			if (nl >= 0) __result = __result.Substring(0, nl).TrimEnd('\r');
-		}
 
 		// ---- Flourish - Everyday Animations: telescope drawn under the posed pawn, not between body and hands ----
 		// A building always draws below pawns, so in the anchored telescope pose the pawn's body covers the telescope
@@ -1395,11 +1272,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Notifications.Placement:get_Position"] = 0x7B404D78F1D65665,
 			["UIRethemed.Notifications.Motion:Hover"] = 0xFB7ED9A581BF4F1B,
 			["UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler"] = 0x8F948D82A4AB2A5A,
-			["UIRethemed.ColonistCard.Card:ExtraHeightFor"] = 0xA9E487931D68C6B5,                             // UI Rethemed - Colonist Card 1.7, 2026-11-06
-			["UIRethemed.ColonistCard.Card:get_ExtraHeight"] = 0xA5EE322395D01792,
-			["UIRethemed.ColonistCard.Glance:Applies"] = 0xCDD2961107EDA4DC,
-			["UIRethemed.ColonistCard.CardInfo:Draw"] = 0xC4AF7EE316AAFD25,
-			["UIRethemed.ColonistCard.CardInfo:ActivityLine"] = 0x3497536919373E63,
+			["UIRethemed.Notifications.HoverCard:FromText"] = 0x0D39AB40565EA056,
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,

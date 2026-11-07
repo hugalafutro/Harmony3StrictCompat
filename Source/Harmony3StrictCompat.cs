@@ -1264,7 +1264,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Core.CoreWidgets:Icon"] = 0x2094A97723860CBE,
 			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0xFEC5735778B040A7,
 			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0xC62AB6FF16C5404C,
-			["UIRethemed.MainBar.MenuWindow:Face"] = 0x1F0FBC8E540DFA3D,
+			["UIRethemed.MainBar.MenuWindow:Face"] = 0x7970824AD7079EAA,                               // UI Rethemed - Main Bar 1.7, 2026-11-07
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0xE09CE1569F50CDDA,                               // UI Rethemed - Notifications 1.7, 2026-11-06
 			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0xBBB2A3AD2402186E,
 			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0x095FCC7B0F8047CE,

@@ -1321,17 +1321,17 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0xFEC5735778B040A7,
 			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0xC62AB6FF16C5404C,
 			["UIRethemed.MainBar.MenuWindow:Face"] = 0x7970824AD7079EAA,                               // UI Rethemed - Main Bar 1.7, 2026-11-07
-			["UIRethemed.Notifications.StatusRow:Draw"] = 0xE09CE1569F50CDDA,                               // UI Rethemed - Notifications 1.7, 2026-11-06
-			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0xBBB2A3AD2402186E,
-			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0x095FCC7B0F8047CE,
-			["UIRethemed.Notifications.Placement:ColumnX"] = 0xD7D40FE538C34D02,
-			["UIRethemed.Notifications.Placement:get_Position"] = 0x7B404D78F1D65665,
-			["UIRethemed.Notifications.Motion:Hover"] = 0xFB7ED9A581BF4F1B,
-			["UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler"] = 0x8F948D82A4AB2A5A,
-			["UIRethemed.Notifications.HoverCard:Region"] = 0xD0A0905F849E38FF,
-			["UIRethemed.Notifications.HoverCard:DrawPlaced"] = 0x3EF123CABED59F7F,
-			["UIRethemed.Notifications.HoverCard:PlacedSize"] = 0x45BA184243D45930,
-			["UIRethemed.Notifications.Placement:BesideX"] = 0x2A748DD83598C679,
+			["UIRethemed.Notifications.StatusRow:Draw"] = 0x7F317F9F8340B035,                               // UI Rethemed - Notifications 1.7, 2026-11-07
+			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0x95E1F6B21DC2F25D,
+			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0xA5D732B3B2CD1FCA,
+			["UIRethemed.Notifications.Placement:ColumnX"] = 0x95BE89098D4E6615,
+			["UIRethemed.Notifications.Placement:get_Position"] = 0xCEBF6B0EC52E3188,
+			["UIRethemed.Notifications.Motion:Hover"] = 0x01F35F0EF29E6B71,
+			["UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler"] = 0x18789A5E5CBC222A,
+			["UIRethemed.Notifications.HoverCard:Region"] = 0xE932FF574E0F04AF,
+			["UIRethemed.Notifications.HoverCard:DrawPlaced"] = 0x4E7FA05CEB8F2745,
+			["UIRethemed.Notifications.HoverCard:PlacedSize"] = 0xB7EED1C91B032FD9,
+			["UIRethemed.Notifications.Placement:BesideX"] = 0x3A39746715C38789,
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,
@@ -2238,6 +2238,40 @@ namespace Harmony3StrictCompat
 				else if (!File.ReadAllBytes(theirs).SequenceEqual(File.ReadAllBytes(ours)))
 					Log.Error($"[Harmony3StrictCompat] More Phytokin Xenotypes changed Modules/Anomaly/Defs/{f}.xml: its mod updated, refresh the copy {ours}");
 			}
+		}
+	}
+
+	// ---- Det's Xenotypes - Buzzers: compound eyes texture ------------------------------------------------------
+	// DV_Eyes_Compound points at HeadAttachments/CompoundEyes/CompoundEyes, which no mod ships (magenta square);
+	// LocalTweaks/Patches/Buzzers_CompoundEyesTexture.xml points it at VRE Insector's compound eyes. Reported upstream,
+	// so flag the update that may fix it: Buzzers shipping that texture, a changed gene def file, or the patch no
+	// longer applying.
+	[StaticConstructorOnStartup]
+	static class BuzzersCompoundEyesCheck
+	{
+		const string InsectorPath = "Things/Pawn/Humanlike/HeadAttachments/CompoundEyes";
+		const ulong GeneDefHash = 0x74F4C8C94C88A5B2; // Det's Xenotypes - Buzzers 1.7/Defs/GeneDefs/Gene_Def.xml, 2026-11-07
+
+		static BuzzersCompoundEyesCheck()
+		{
+			var buzzers = LoadedModManager.RunningMods.FirstOrDefault(m => m.PackageId == "det.buzzers");
+			if (buzzers == null || !ModsConfig.IsActive("vanillaracesexpanded.insector")) return;
+			const string fix = "remove or redo LocalTweaks Patches/Buzzers_CompoundEyesTexture.xml";
+			if (Directory.Exists(Path.Combine(buzzers.RootDir, "Textures", "Things", "Pawn", "Humanlike", "HeadAttachments", "CompoundEyes")))
+				Log.Error($"[Harmony3StrictCompat] Det's Xenotypes - Buzzers now ships its compound eyes texture: its mod updated, {fix}");
+			var file = Path.Combine(buzzers.RootDir, "1.7", "Defs", "GeneDefs", "Gene_Def.xml");
+			if (!File.Exists(file))
+				Log.Error($"[Harmony3StrictCompat] Det's Xenotypes - Buzzers no longer ships 1.7/Defs/GeneDefs/Gene_Def.xml: its mod updated, {fix}");
+			else
+			{
+				ulong hash = 14695981039346656037;
+				foreach (var b in File.ReadAllBytes(file)) hash = (hash ^ b) * 1099511628211;
+				if (hash != GeneDefHash)
+					Log.Error($"[Harmony3StrictCompat] Det's Xenotypes - Buzzers changed 1.7/Defs/GeneDefs/Gene_Def.xml (0x{hash:X16}, recorded 0x{GeneDefHash:X16}): its mod updated, check whether {fix} is still needed");
+			}
+			var texPath = DefDatabase<GeneDef>.GetNamedSilentFail("DV_Eyes_Compound")?.renderNodeProperties?.FirstOrDefault()?.texPath;
+			if (texPath != InsectorPath)
+				Log.Error($"[Harmony3StrictCompat] Det's Xenotypes - Buzzers DV_Eyes_Compound texPath is \"{texPath}\", the LocalTweaks patch no longer applies: its mod updated, {fix}");
 		}
 	}
 }

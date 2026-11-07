@@ -2266,38 +2266,4 @@ namespace Harmony3StrictCompat
 			}
 		}
 	}
-
-	// ---- Det's Xenotypes - Buzzers: compound eyes texture ------------------------------------------------------
-	// DV_Eyes_Compound points at HeadAttachments/CompoundEyes/CompoundEyes, which no mod ships (magenta square);
-	// LocalTweaks/Patches/Buzzers_CompoundEyesTexture.xml points it at VRE Insector's compound eyes. Reported upstream,
-	// so flag the update that may fix it: Buzzers shipping that texture, a changed gene def file, or the patch no
-	// longer applying.
-	[StaticConstructorOnStartup]
-	static class BuzzersCompoundEyesCheck
-	{
-		const string InsectorPath = "Things/Pawn/Humanlike/HeadAttachments/CompoundEyes";
-		const ulong GeneDefHash = 0x74F4C8C94C88A5B2; // Det's Xenotypes - Buzzers 1.7/Defs/GeneDefs/Gene_Def.xml, 2026-11-07
-
-		static BuzzersCompoundEyesCheck()
-		{
-			var buzzers = LoadedModManager.RunningMods.FirstOrDefault(m => m.PackageId == "det.buzzers");
-			if (buzzers == null || !ModsConfig.IsActive("vanillaracesexpanded.insector")) return;
-			const string fix = "remove or redo LocalTweaks Patches/Buzzers_CompoundEyesTexture.xml";
-			if (Directory.Exists(Path.Combine(buzzers.RootDir, "Textures", "Things", "Pawn", "Humanlike", "HeadAttachments", "CompoundEyes")))
-				Log.Error($"[Harmony3StrictCompat] Det's Xenotypes - Buzzers now ships its compound eyes texture: its mod updated, {fix}");
-			var file = Path.Combine(buzzers.RootDir, "1.7", "Defs", "GeneDefs", "Gene_Def.xml");
-			if (!File.Exists(file))
-				Log.Error($"[Harmony3StrictCompat] Det's Xenotypes - Buzzers no longer ships 1.7/Defs/GeneDefs/Gene_Def.xml: its mod updated, {fix}");
-			else
-			{
-				ulong hash = 14695981039346656037;
-				foreach (var b in File.ReadAllBytes(file)) hash = (hash ^ b) * 1099511628211;
-				if (hash != GeneDefHash)
-					Log.Error($"[Harmony3StrictCompat] Det's Xenotypes - Buzzers changed 1.7/Defs/GeneDefs/Gene_Def.xml (0x{hash:X16}, recorded 0x{GeneDefHash:X16}): its mod updated, check whether {fix} is still needed");
-			}
-			var texPath = DefDatabase<GeneDef>.GetNamedSilentFail("DV_Eyes_Compound")?.renderNodeProperties?.FirstOrDefault()?.texPath;
-			if (texPath != InsectorPath)
-				Log.Error($"[Harmony3StrictCompat] Det's Xenotypes - Buzzers DV_Eyes_Compound texPath is \"{texPath}\", the LocalTweaks patch no longer applies: its mod updated, {fix}");
-		}
-	}
 }

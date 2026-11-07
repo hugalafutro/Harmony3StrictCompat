@@ -280,19 +280,20 @@ namespace Harmony3StrictCompat
 			var uirCardDraw = Target("UIRethemed.ColonistCard.CardInfo:Draw");
 			var uirActLine = Target("UIRethemed.ColonistCard.CardInfo:ActivityLine");
 			var uirCardInfo = AccessTools.TypeByName("UIRethemed.ColonistCard.CardInfo");
+			var uirInfoList = AccessTools.TypeByName("UIRethemed.ColonistCard.InfoList");
+			uirActivityPawn = uirCardInfo == null ? null : AccessTools.Field(uirCardInfo, "activityPawn");
 			uirActivityText = uirCardInfo == null ? null : AccessTools.Field(uirCardInfo, "activityText");
+			uirActivityQueued = uirCardInfo == null ? null : AccessTools.Field(uirCardInfo, "activityQueued");
 			uirInfoLines = uirCardInfo == null ? null : AccessTools.Field(uirCardInfo, "lines");
-			if (uirCardDraw != null && uirActLine != null && uirActivityText != null && uirInfoLines != null)
+			uirDeferredRect = uirInfoList == null ? null : AccessTools.Field(uirInfoList, "deferredRect");
+			var uirDefer = uirInfoList == null ? null : AccessTools.Method(uirInfoList, "Defer", new[] { typeof(string), typeof(Rect) });
+			if (uirCardDraw != null && uirActLine != null && uirActivityPawn != null && uirActivityText != null && uirActivityQueued != null
+				&& uirInfoLines != null && uirDeferredRect != null && uirDefer != null)
 			{
 				uirActivityLine = (Func<Pawn, string>)uirActLine.CreateDelegate(typeof(Func<Pawn, string>));
-				harmony.Patch(uirCardDraw, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCardDrawBegin)),
-					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirActivityProbe)));
+				uirDeferCall = (Action<string, Rect>)uirDefer.CreateDelegate(typeof(Action<string, Rect>));
+				harmony.Patch(uirCardDraw, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirFillActivityRow)));
 				harmony.Patch(uirActLine, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirActivityFirstLine)));
-				harmony.Patch(AccessTools.Method(typeof(Pawn), nameof(Pawn.GetJobReport)),
-					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(JobReportPerFrame)),
-					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(JobReportRemember)));
-				harmony.Patch(AccessTools.Method(typeof(Pawn), nameof(Pawn.GetInspectString)),
-					postfix: new HarmonyMethod(AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(UirCurrentJobLine))) { priority = Priority.Last });
 			}
 			var acInject = Target("AutoCastSpecialistCommands.AutoCastToilInjector:Inject");
 			Target("AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix");
@@ -592,54 +593,47 @@ namespace Harmony3StrictCompat
 		}
 
 		// ---- UI Rethemed - Colonist Card: activity row blanking on every job change ----
-		// CardInfo.Draw reads the pawn's inspect text (Pawn.GetInspectString, which appends GetJobReport), then
-		// computes the job line itself (ActivityLine, GetJobReport again) and removes it from the text by exact
-		// string; Card.Draw blanks the row first (BeginCard), so a miss shows an empty row with the old job line left
-		// in the info list. Observed on 1.7 (dev-mode probe, 2026-11-07): at every job change the text that leaves
-		// GetInspectString carries the PREVIOUS report while GetJobReport, called inside that same call, returns the
-		// current one; the IL appends GetJobReport's value and no patch rewrites the line, so the cause is unknown.
-		// Fix the state rather than the cause: while CardInfo.Draw runs, GetJobReport answers once per pawn (both
-		// reads agree), and a last postfix on GetInspectString replaces the line equal to the pawn's previous report
-		// with the current one. Multi-line reports (meditation) use their first line in ActivityLine.
-		static bool jobReportHold;
-		static readonly Dictionary<Pawn, string> jobReports = new();
-		static readonly Dictionary<Pawn, string> lastJobLines = new();
+		// CardInfo.Draw reads the pawn's inspect text, computes the job line itself (ActivityLine) and removes it from
+		// the text by exact string; Card.Draw blanks the row first (BeginCard), so a miss shows an empty row with the
+		// old job line left in the info list. On 1.7 the text that leaves Pawn.GetInspectString carries the PREVIOUS
+		// job report at every job change while GetJobReport is current (dev-mode probes, 2026-11-07: the IL appends
+		// GetJobReport's value and no patch rewrites the line; cause not found). Fix the outcome instead: after Draw,
+		// when the row is empty but the pawn has a job line, fill the row from the live line and drop the stale
+		// duplicate, which is the text the row showed last frame, from the deferred info text; a "Queued: " line
+		// moves to the row as UIR does. Multi-line reports (meditation) use their first line in ActivityLine.
+		static FieldInfo uirActivityPawn, uirActivityText, uirActivityQueued, uirInfoLines, uirDeferredRect;
+		static Func<Pawn, string> uirActivityLine;
+		static Action<string, Rect> uirDeferCall;
+		static Pawn lastActivityPawn;
+		static string lastActivityShown;
+		static readonly HashSet<string> uirProbeSeen = new();
 
-		static string JobLine(string report) => report.NullOrEmpty() ? null : report.CapitalizeFirst().EndWithPeriod();
-
-		static void UirCardDrawBegin()
+		static void UirFillActivityRow(ISelectable sel, bool __result)
 		{
-			jobReports.Clear();
-			jobReportHold = true;
-		}
-
-		static bool JobReportPerFrame(Pawn __instance, ref string __result)
-		{
-			if (!jobReportHold || !jobReports.TryGetValue(__instance, out var report)) return true;
-			__result = report;
-			return false;
-		}
-
-		static void JobReportRemember(Pawn __instance, string __result)
-		{
-			if (jobReportHold && !jobReports.ContainsKey(__instance)) jobReports[__instance] = __result;
-		}
-
-		static void UirCurrentJobLine(Pawn __instance, ref string __result)
-		{
-			if (!jobReportHold || __result == null) return;
-			string current = JobLine(__instance.GetJobReport());
-			lastJobLines.TryGetValue(__instance, out var previous);
-			if (current != null) lastJobLines[__instance] = current;
-			if (previous == null || current == null || previous == current) return;
-			var lines = __result.Split('\n');
-			for (int i = lines.Length - 1; i >= 0; i--)
+			if (!__result || sel is not Pawn pawn) return;
+			string shown = (string)uirActivityText.GetValue(null);
+			if (shown != null)
 			{
-				if (lines[i].TrimEnd('\r') != previous) continue;
-				lines[i] = current;
-				__result = string.Join("\n", lines);
+				lastActivityPawn = pawn; lastActivityShown = shown;
 				return;
 			}
+			string line = uirActivityLine(pawn);
+			if (line.NullOrEmpty()) { lastActivityPawn = null; lastActivityShown = null; return; }
+			var lines = uirInfoLines.GetValue(null) as List<string>;
+			if (lines == null) return;
+			string stale = lastActivityPawn == pawn && lastActivityShown != null ? lastActivityShown + "." : null;
+			bool changed = stale != null && lines.Remove(stale);
+			if (Prefs.DevMode && !changed && uirProbeSeen.Count < 60 && uirProbeSeen.Add(line))
+				Log.Message($"[Harmony3StrictCompat] activity row filled without a stale line to drop: {pawn.LabelShort}: '{line}' last shown '{lastActivityShown}' lines=[{string.Join(" | ", lines)}]");
+			string queuedPrefix = "Queued".Translate() + ": ";
+			int q = lines.FindIndex(l => l.StartsWith(queuedPrefix, StringComparison.Ordinal));
+			string queued = null;
+			if (q >= 0) { queued = lines[q]; lines.RemoveAt(q); changed = true; }
+			uirActivityPawn.SetValue(null, pawn);
+			uirActivityText.SetValue(null, line.TrimEnd('.'));
+			uirActivityQueued.SetValue(null, queued);
+			lastActivityPawn = pawn; lastActivityShown = line.TrimEnd('.');
+			if (changed) uirDeferCall(string.Join("\n", lines), (Rect)uirDeferredRect.GetValue(null));
 		}
 
 		static void UirActivityFirstLine(ref string __result)
@@ -647,25 +641,6 @@ namespace Harmony3StrictCompat
 			if (__result == null) return;
 			int nl = __result.IndexOf('\n');
 			if (nl >= 0) __result = __result.Substring(0, nl).TrimEnd('\r');
-		}
-
-		// Diagnostic (dev mode only): log each distinct remaining miss with both strings.
-		static FieldInfo uirActivityText, uirInfoLines;
-		static Func<Pawn, string> uirActivityLine;
-		static readonly HashSet<string> uirProbeSeen = new();
-
-		static void UirActivityProbe(ISelectable sel, bool __result)
-		{
-			jobReportHold = false;
-			if (!Prefs.DevMode || !__result || sel is not Pawn pawn) return;
-			string line = uirActivityLine(pawn);
-			string shown = (string)uirActivityText.GetValue(null);
-			string want = line?.TrimEnd('.');
-			if (want == shown) return;
-			string key = (want ?? "<null>") + "|" + (shown ?? "<null>");
-			if (uirProbeSeen.Count > 60 || !uirProbeSeen.Add(key)) return;
-			var lines = uirInfoLines.GetValue(null) as List<string>;
-			Log.Message($"[Harmony3StrictCompat] activity probe: {pawn.LabelShort}: ActivityLine='{line}' row shows='{shown}' inspect lines=[{(lines == null ? "?" : string.Join(" | ", lines))}]");
 		}
 
 		// ---- Flourish - Everyday Animations: telescope drawn under the posed pawn, not between body and hands ----

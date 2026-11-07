@@ -264,6 +264,17 @@ namespace Harmony3StrictCompat
 				uirBottomRight = (int)Enum.Parse(uirPosition.ReturnType, "BottomRight");
 				if (Target("UIRethemed.Notifications.HoverCard:Region") is { } uirHoverCard)
 					uirHoverRegion = (Action<Rect, string, string, string, Color?>)uirHoverCard.CreateDelegate(typeof(Action<Rect, string, string, string, Color?>));
+				uirPlacedDraw = Target("UIRethemed.Notifications.HoverCard:DrawPlaced");
+				var uirPlacedSize = Target("UIRethemed.Notifications.HoverCard:PlacedSize");
+				var uirBeside = Target("UIRethemed.Notifications.Placement:BesideX");
+				var uirPartType = AccessTools.TypeByName("UIRethemed.Notifications.NotificationPart");
+				if (uirPlacedDraw != null && uirPlacedSize != null && uirBeside != null && uirPartType != null)
+				{
+					uirPlacedSizeCall = (Func<string, string, Vector2>)uirPlacedSize.CreateDelegate(typeof(Func<string, string, Vector2>));
+					uirBesideCall = (Func<Rect, float, float, float>)uirBeside.CreateDelegate(typeof(Func<Rect, float, float, float>));
+					uirAlertsPart = Enum.Parse(uirPartType, "Alerts");
+				}
+				else uirPlacedDraw = null;
 				uirStyleType = uirStyle; uirWidgetsType = uirWidgets; uirColorOfCall = uirColorOf;
 				harmony.Patch(AccessTools.Method(typeof(Messages), nameof(Messages.MessagesDoGUI)),
 					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirMessagesInStack)));
@@ -425,9 +436,9 @@ namespace Harmony3StrictCompat
 		// (LetterStack.LastTopY - AlertsReadout.AlertsHeight, which UIR keeps vanilla in that position), newest nearest
 		// the stack. Colour and icon come from UIR's own four kinds, so they match the alert rows below. Behaviour is
 		// vanilla Message.Draw: left-click jumps or opens the quest, right-click dismisses, hover highlights the target
-		// and shows UIR's own hover card (HoverCard.Region, as its alerts: a header, its rule, then the body) in the
-		// row's colour, the header naming the message type (English, message types carry no label) and the body the
-		// full text; a Flash() reads as the row's hover glow. ponytail: no 0.6 s fade-out (StatusRow sets its own colours), rows
+		// and shows UIR's own hover card as its alerts do (HoverCard.DrawPlaced beside the column, at once, no tooltip
+		// delay: a header, its rule, then the body) in the row's colour, the header naming the message type (English,
+		// message types carry no label) and the body the full text; a Flash() reads as the row's hover glow. ponytail: no 0.6 s fade-out (StatusRow sets its own colours), rows
 		// vanish at expiry as UIR's alerts do. Any other column position leaves the game's messages alone.
 		// Vanilla keeps a message 13 s; in a stack of five the last ones were gone before they were read, so add
 		// 17 s (30 s total), and a hovered row restarts its timer so it never vanishes under the cursor.
@@ -445,6 +456,11 @@ namespace Harmony3StrictCompat
 		static object[] uirMessageStyles;
 		static readonly Color?[] uirMessageAccents = new Color?[4];
 		static Action<Rect, string, string, string, Color?> uirHoverRegion;
+		static MethodInfo uirPlacedDraw;
+		static Func<string, string, Vector2> uirPlacedSizeCall;
+		static Func<Rect, float, float, float> uirBesideCall;
+		static object uirAlertsPart;
+		const int UirMessageCardWindow = 0x5A1722;
 		static Dictionary<MessageTypeDef, string> uirMessageHeaders;
 
 		static string UirHeaderOf(MessageTypeDef def)
@@ -535,7 +551,19 @@ namespace Harmony3StrictCompat
 				{
 					msg.ResetTimer();
 					Messages.Notify_Mouseover(msg);
-					if (uirHoverRegion != null) uirHoverRegion(rect, UirHeaderOf(msg.def), msg.text, null, uirMessageAccents[UirKindOf(msg.def)]);
+					if (uirPlacedDraw != null)
+					{
+						if (Event.current.type == EventType.Repaint)
+						{
+							string header = UirHeaderOf(msg.def);
+							var size = uirPlacedSizeCall(header, msg.text);
+							float cardX = uirBesideCall(new Rect(x, 0f, width, 0f), size.x, 8f);
+							float cardY = Mathf.Round(Mathf.Clamp(Event.current.mousePosition.y, 0f, Mathf.Max(0f, UI.screenHeight - size.y)));
+							uirPlacedDraw.Invoke(null, new object[] { UirMessageCardWindow, new Vector2(cardX, cardY), header, msg.text,
+								uirMessageAccents[UirKindOf(msg.def)] ?? Color.white, uirAlertsPart });
+						}
+					}
+					else if (uirHoverRegion != null) uirHoverRegion(rect, UirHeaderOf(msg.def), msg.text, null, uirMessageAccents[UirKindOf(msg.def)]);
 					else
 					{
 						Text.Font = GameFont.Small;
@@ -1296,6 +1324,9 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Notifications.Motion:Hover"] = 0xFB7ED9A581BF4F1B,
 			["UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler"] = 0x8F948D82A4AB2A5A,
 			["UIRethemed.Notifications.HoverCard:Region"] = 0xD0A0905F849E38FF,
+			["UIRethemed.Notifications.HoverCard:DrawPlaced"] = 0x3EF123CABED59F7F,
+			["UIRethemed.Notifications.HoverCard:PlacedSize"] = 0x45BA184243D45930,
+			["UIRethemed.Notifications.Placement:BesideX"] = 0x2A748DD83598C679,
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,

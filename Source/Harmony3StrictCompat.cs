@@ -285,7 +285,8 @@ namespace Harmony3StrictCompat
 			if (uirCardDraw != null && uirActLine != null && uirActivityText != null && uirInfoLines != null)
 			{
 				uirActivityLine = (Func<Pawn, string>)uirActLine.CreateDelegate(typeof(Func<Pawn, string>));
-				harmony.Patch(uirCardDraw, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirActivityProbe)));
+				harmony.Patch(uirCardDraw, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCardDrawBegin)),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirActivityProbe)));
 				harmony.Patch(uirActLine, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirActivityFirstLine)));
 				harmony.Patch(AccessTools.Method(typeof(Pawn), nameof(Pawn.GetJobReport)),
 					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(JobReportPerFrame)),
@@ -380,7 +381,7 @@ namespace Harmony3StrictCompat
 		static Func<Rect, string, Texture, Color?, bool, string, GameFont, string, bool, bool, bool> uirThemedButton;
 		static Func<string, Texture2D> uirIconFor;
 		static Func<Color> uirBlueColor;
-		static Texture2D vfetIcon;
+		static Texture vfetIcon;
 		static Type vfetWindow;
 		// Button sized to its label (UIR's ButtonWidth) and the title bar gap resized to match: the def's width is
 		// summed once into ModCompat.headerButtonsWidth, so that cache is cleared after the change.
@@ -419,7 +420,7 @@ namespace Harmony3StrictCompat
 		// and hand Face a Phosphor icon from UIR Core.
 		static System.Text.RegularExpressions.Regex smuLabel;
 		static LoadedLanguage smuLanguage;
-		static Texture2D smuIcon;
+		static Texture smuIcon;
 
 		static void UirMenuModButtonIcon(string text, ref Texture2D iconTex)
 		{
@@ -434,7 +435,8 @@ namespace Harmony3StrictCompat
 				smuLabel = forms.Count == 0 ? null : new System.Text.RegularExpressions.Regex("^(?:" + string.Join("|", forms) + ")$");
 			}
 			if (smuLabel == null || !smuLabel.IsMatch(text)) return;
-			iconTex = smuIcon ??= uirIconFor("arrow-clockwise");
+			smuIcon ??= uirIconFor("arrow-clockwise");
+			iconTex = (Texture2D)smuIcon;
 		}
 
 		// ---- UI Rethemed - Notifications: the top-left messages drawn as rows in its notification stack ----
@@ -592,24 +594,30 @@ namespace Harmony3StrictCompat
 		// computes the job line itself (ActivityLine, GetJobReport again) and removes it from the text by exact
 		// string; Card.Draw blanks the row first (BeginCard), so a miss shows an empty row with the old job line left
 		// in the info list. On 1.7 the two reads disagree whenever the job changes between them (the inspect text is
-		// one job behind at every miss; no mod caches it), so hand GetJobReport one answer per frame: the first
-		// report computed for a pawn in a frame is reused for the rest of that frame, and both reads agree.
+		// one job behind at every miss; no mod caches it, and RealTime.frameCount is no stable "same frame" marker
+		// under Waylith), so while CardInfo.Draw runs GetJobReport answers once per pawn: the first report computed
+		// in that call (inside GetInspectString) is reused by ActivityLine, and both reads agree.
 		// Also: a multi-line report (meditation: "Meditating at: X.\nPsyfocus gain rate: N%/d.") can never equal a
 		// single line, so ActivityLine keeps its first line; the rest stay info rows.
-		static int jobReportFrame;
+		static bool jobReportHold;
 		static readonly Dictionary<Pawn, string> jobReports = new();
+
+		static void UirCardDrawBegin()
+		{
+			jobReports.Clear();
+			jobReportHold = true;
+		}
 
 		static bool JobReportPerFrame(Pawn __instance, ref string __result)
 		{
-			if (RealTime.frameCount != jobReportFrame) { jobReportFrame = RealTime.frameCount; jobReports.Clear(); }
-			if (!jobReports.TryGetValue(__instance, out var report)) return true;
+			if (!jobReportHold || !jobReports.TryGetValue(__instance, out var report)) return true;
 			__result = report;
 			return false;
 		}
 
 		static void JobReportRemember(Pawn __instance, string __result)
 		{
-			if (!jobReports.ContainsKey(__instance)) jobReports[__instance] = __result;
+			if (jobReportHold && !jobReports.ContainsKey(__instance)) jobReports[__instance] = __result;
 		}
 
 		static void UirActivityFirstLine(ref string __result)
@@ -627,6 +635,7 @@ namespace Harmony3StrictCompat
 
 		static void UirActivityProbe(ISelectable sel, bool __result)
 		{
+			jobReportHold = false;
 			if (!Prefs.DevMode || !__result || sel is not Pawn pawn) return;
 			if (!uirProbeOwnersLogged)
 			{

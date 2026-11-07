@@ -1332,7 +1332,7 @@ namespace Harmony3StrictCompat
 			["SensibleBedOwnership.Utility:AllAssignedBedsAndDeathrestCaskets"] = 0x8560CE17C9797D18,
 			["VEF.Buildings.CompRandomBuildingGraphic:ChangeGraphic"] = 0xC22ADB911FDB5E90,                  // VEF 1.7, 2026-11-04
 			["AdaptiveStorage.StorageGraphicWorker:GetGraphicFor"] = 0x2899906440FC5118,                     // ASF 1.6 build, 2025-11-12
-			["RimPacts.WorldComponent_RimPacts:DismissExilePawn"] = 0xEC9FEB84EB993051,                        // RimPacts 1.7, 2026-11-06
+			["RimPacts.WorldComponent_RimPacts:DismissExilePawn"] = 0x2FC46E10652807CE,                        // RimPacts 1.7, 2026-11-07 (added Discarded guard; still no successor)
 			["PrisonerRealism.JobGiver_CleanCell:ShouldClean"] = 0xD2061DA02821F6FC,                          // Prisoner Realism 1.7, 2026-11-06
 			["CleaningAreaRelaunched.CleaningAreaRelaunched_Util:GetCleanArea"] = 0xD9B02D52DE61B82C,          // CAR 1.6 build, 2025-11-12
 			["aRandomKiwi.HFM.JobGiver_AnimalHunt:TryGiveJob"] = 0x865CBA567579063A,                            // Hunt For Me 1.6 build, 2025-12-25
@@ -1527,8 +1527,10 @@ namespace Harmony3StrictCompat
 		// RimPacts' government in exile takes a fallen faction's leader in. When the exile leaves (15 days without a
 		// restoration) or is dismissed, DismissExilePawn discards the pawn but never tells its faction, so the
 		// faction keeps a discarded leader, saved as null: vanilla FactionTick then logs "Faction leader for X is
-		// null" (Iremar). Vanilla picks a successor whenever a leader dies or leaves; do the same, silently: right
-		// after RimPacts discards a leader, and after every load for any faction that should have one but doesn't.
+		// null" (Iremar). RimPacts 2026-11-07 added its own daily RptLeaderRepair, but it skips defeated factions, so
+		// a fallen faction whose exiled leader was discarded still ends up leaderless. Vanilla picks a successor
+		// whenever a leader dies or leaves; do the same, silently: right after RimPacts discards a leader, and
+		// after every load for any faction that should have one but doesn't.
 		static bool NeedsLeader(Faction f) =>
 			!f.IsPlayer && !f.Hidden && !f.temporary && f.def.humanlikeFaction && (f.leader == null || f.leader.Discarded);
 

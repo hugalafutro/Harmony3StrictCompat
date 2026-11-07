@@ -270,9 +270,11 @@ namespace Harmony3StrictCompat
 			}
 			var uirExtraFor = Target("UIRethemed.ColonistCard.Card:ExtraHeightFor");
 			var uirExtra = Target("UIRethemed.ColonistCard.Card:get_ExtraHeight");
-			if (uirExtraFor != null && uirExtra != null)
+			var uirGlance = Target("UIRethemed.ColonistCard.Glance:Applies");
+			if (uirExtraFor != null && uirExtra != null && uirGlance != null)
 			{
 				uirCardExtraHeight = (Func<float>)uirExtra.CreateDelegate(typeof(Func<float>));
+				uirGlanceApplies = (Func<IInspectPane, bool>)uirGlance.CreateDelegate(typeof(Func<IInspectPane, bool>));
 				harmony.Patch(uirExtraFor, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCardMinHeight)));
 			}
 			var acInject = Target("AutoCastSpecialistCommands.AutoCastToilInjector:Inject");
@@ -540,9 +542,20 @@ namespace Harmony3StrictCompat
 		// the larger of the fitted height and the slider's (Card.ExtraHeight): at 100 % nothing changes, above it the
 		// slider buys headroom and the card stays put. The glance block is pinned to the bottom and the info list
 		// paints only its rows, so the spare room is a gap above the glance block.
+		// The floor is snapped up to UIR's row grid: its fitted height is round(126 + rows*24 + 4 + 174 + 8 + 4) - 165
+		// = 151 + rows*24 (147 with no rows), so a floor of 151 + k*24 is exactly "k spare rows", and one row more or
+		// fewer never moves the card. A floor between grid points moved it by the remainder (2 px at one slider step,
+		// a whole row at the next).
 		static Func<float> uirCardExtraHeight;
+		static Func<IInspectPane, bool> uirGlanceApplies;
 
-		static void UirCardMinHeight(ref float __result) => __result = Mathf.Max(__result, uirCardExtraHeight());
+		static void UirCardMinHeight(IInspectPane pane, ref float __result)
+		{
+			if (!uirGlanceApplies(pane)) return;
+			float floor = uirCardExtraHeight();
+			if (floor > 151f) floor = 151f + 24f * Mathf.Ceil((floor - 151f) / 24f);
+			__result = Mathf.Max(__result, floor);
+		}
 
 		// ---- Flourish - Everyday Animations: telescope drawn under the posed pawn, not between body and hands ----
 		// A building always draws below pawns, so in the anchored telescope pose the pawn's body covers the telescope
@@ -1280,6 +1293,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler"] = 0x8F948D82A4AB2A5A,
 			["UIRethemed.ColonistCard.Card:ExtraHeightFor"] = 0xA9E487931D68C6B5,                             // UI Rethemed - Colonist Card 1.7, 2026-11-06
 			["UIRethemed.ColonistCard.Card:get_ExtraHeight"] = 0xA5EE322395D01792,
+			["UIRethemed.ColonistCard.Glance:Applies"] = 0xCDD2961107EDA4DC,
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,

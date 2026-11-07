@@ -73,5 +73,5 @@
 - ReGrowth plant patches: duplicate wild plant records removed from biomes (world-gen Landmarks/Mutators steps).
 - Vanilla: no needs while no world exists (quest pawns built before the world loads).
 - Vanilla/unknown: trade ship slave also saved as a world pawn no longer loads twice.
-- Vanilla (personal tweak): install and implant-removal operations get the implant item as their menu icon instead of a grey square.
+- Vanilla (personal tweak): install and implant-removal operations get the implant item as their menu icon instead of a grey square.</description>
 </ModMetaData>

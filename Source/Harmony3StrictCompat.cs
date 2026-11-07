@@ -546,15 +546,31 @@ namespace Harmony3StrictCompat
 		// = 155 + rows*24 (147 with no rows; InfoList.Layout pads 2 px top and bottom), so a floor of 155 + k*24 is
 		// exactly "k spare rows" and one row more or fewer never moves the card. A floor between grid points moved it
 		// by the remainder (2 px at one slider step, a whole row at the next).
+		// The floor is absolute (k rows in all), so a pawn with a permanent row (a royal title) spends it and a
+		// transient row still grows the card; and whether a short row shares a line with another flips with the text
+		// widths of the moment. So the card also holds its last larger height for UirCardHold seconds before it may
+		// shrink: it grows once when a real row appears and never twitches on the way back.
+		const float UirCardHold = 2f;
 		static Func<float> uirCardExtraHeight;
 		static Func<IInspectPane, bool> uirGlanceApplies;
+		static object uirHeldFor;
+		static float uirHeld, uirHeldUntil;
 
 		static void UirCardMinHeight(IInspectPane pane, ref float __result)
 		{
 			if (!uirGlanceApplies(pane)) return;
 			float floor = uirCardExtraHeight();
 			if (floor > 155f) floor = 155f + 24f * Mathf.Ceil((floor - 155f) / 24f);
-			__result = Mathf.Max(__result, floor);
+			float height = Mathf.Max(__result, floor);
+			var selected = Find.Selector.SingleSelectedThing;
+			float now = Time.realtimeSinceStartup;
+			if (selected != uirHeldFor || height >= uirHeld || now >= uirHeldUntil)
+			{
+				uirHeldFor = selected;
+				uirHeld = height;
+			}
+			if (height >= uirHeld) uirHeldUntil = now + UirCardHold;
+			__result = uirHeld;
 		}
 
 		// ---- Flourish - Everyday Animations: telescope drawn under the posed pawn, not between body and hands ----

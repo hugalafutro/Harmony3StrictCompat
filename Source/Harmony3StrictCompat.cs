@@ -632,6 +632,15 @@ namespace Harmony3StrictCompat
 			bool changed = false;
 			for (int i = lines.Count - 1; i >= 0 && !changed; i--)
 				if (lines[i] != line && recentJobLines.Contains(lines[i])) { lines.RemoveAt(i); changed = true; }
+			// No recent match (pawn just selected): vanilla puts the job line last, before any "Queued: " line; drop
+			// that line when it reads as a plain sentence rather than a "key: value" info line.
+			if (!changed && lines.Count > 0)
+			{
+				string queuedKey = "Queued".Translate() + ": ";
+				int at = lines.FindIndex(l => l.StartsWith(queuedKey, StringComparison.Ordinal));
+				at = at > 0 ? at - 1 : (at < 0 ? lines.Count - 1 : -1);
+				if (at >= 0 && lines[at] != line && !lines[at].Contains(": ")) { lines.RemoveAt(at); changed = true; }
+			}
 			if (Prefs.DevMode && !changed && uirProbeSeen.Count < 60 && uirProbeSeen.Add(line))
 				Log.Message($"[Harmony3StrictCompat] activity row filled without a stale line to drop: {pawn.LabelShort}: '{line}' recent=[{string.Join(" | ", recentJobLines)}] lines=[{string.Join(" | ", lines)}]");
 			string queuedPrefix = "Queued".Translate() + ": ";

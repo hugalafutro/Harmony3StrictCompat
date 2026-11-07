@@ -245,6 +245,13 @@ namespace Harmony3StrictCompat
 				uirIconFor = (Func<string, Texture2D>)iconFor.CreateDelegate(typeof(Func<string, Texture2D>));
 			if (uirFace != null && uirIconFor != null)
 				harmony.Patch(uirFace, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirMenuModButtonIcon)));
+			var uirReadoutFace = Target("UIRethemed.MainBar.BarControls:ReadoutFace");
+			uirReadoutCard = uirReadoutFace == null ? null : AccessTools.Field(uirReadoutFace.GetParameters()[1].ParameterType, "card");
+			if (uirReadoutCard != null)
+			{
+				uirTemperatureCard = Enum.Parse(uirReadoutCard.FieldType, "Temperature");
+				harmony.Patch(uirReadoutFace, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirTemperatureOverlayClick)));
+			}
 			var uirRowDraw = Target("UIRethemed.Notifications.StatusRow:Draw");
 			var uirRowWidth = Target("UIRethemed.Notifications.StatusRow:WidthFor");
 			var uirColorOf = Target("UIRethemed.Notifications.NotificationStyles:ColorOf");
@@ -427,6 +434,24 @@ namespace Harmony3StrictCompat
 			if (smuLabel == null || !smuLabel.IsMatch(text)) return;
 			smuIcon ??= uirIconFor("arrow-clockwise");
 			iconTex = (Texture2D)smuIcon;
+		}
+
+		// ---- UI Rethemed - Main Bar: click the temperature readout to toggle the temperature overlay ----
+		// UIR's temperature readout only shows a hover card; its ReadoutFace swallows every mouse-down on the face
+		// (MainBar.TakeClick). Before that, a left or right click on a Temperature readout (text or tile) flips the
+		// vanilla overlay flag, the same one Heat Map's key binding and outdoor thermometer toggle, with the checkbox sounds.
+		static FieldInfo uirReadoutCard;
+		static object uirTemperatureCard;
+
+		static void UirTemperatureOverlayClick(Rect face, object[] __args)
+		{
+			var ev = Event.current;
+			if (ev.type != EventType.MouseDown || ev.button > 1 || !Mouse.IsOver(face) || Find.CurrentMap == null) return;
+			if (!uirTemperatureCard.Equals(uirReadoutCard.GetValue(__args[1]))) return;
+			var settings = Find.PlaySettings;
+			settings.showTemperatureOverlay = !settings.showTemperatureOverlay;
+			Verse.Sound.SoundStarter.PlayOneShotOnCamera(settings.showTemperatureOverlay ? SoundDefOf.Checkbox_TurnedOn : SoundDefOf.Checkbox_TurnedOff);
+			ev.Use();
 		}
 
 		// ---- UI Rethemed - Notifications: the top-left messages drawn as rows in its notification stack ----
@@ -1321,6 +1346,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0xFEC5735778B040A7,
 			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0xC62AB6FF16C5404C,
 			["UIRethemed.MainBar.MenuWindow:Face"] = 0x7970824AD7079EAA,                               // UI Rethemed - Main Bar 1.7, 2026-11-07
+			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0xB6635F04BB1CC9CC,
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0x7F317F9F8340B035,                               // UI Rethemed - Notifications 1.7, 2026-11-07
 			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0x95E1F6B21DC2F25D,
 			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0xA5D732B3B2CD1FCA,

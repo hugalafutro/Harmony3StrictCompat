@@ -436,7 +436,7 @@ namespace Harmony3StrictCompat
 		// message as a StatusRow, the widget its alert rows use, stacked upward from the top of the alerts
 		// (LetterStack.LastTopY - AlertsReadout.AlertsHeight, which UIR keeps vanilla in that position), newest nearest
 		// the stack. Colour and icon come from UIR's own four kinds, so they match the alert rows below. Behaviour is
-		// vanilla Message.Draw: left-click jumps or opens the quest, right-click dismisses, hover highlights the target
+		// vanilla Message.Draw: left-click jumps or opens the quest, right-click dismisses (with UIR's card click sound), hover highlights the target
 		// and shows UIR's own hover card as its alerts do (HoverCard.DrawPlaced beside the column, at once, no tooltip
 		// delay: a header, its rule, then the body) in the row's colour, the header naming the message type (English,
 		// message types carry no label) and the body the full text; a Flash() reads as the row's hover glow. ponytail: no 0.6 s fade-out (StatusRow sets its own colours), rows
@@ -572,7 +572,11 @@ namespace Harmony3StrictCompat
 					}
 				}
 				if (!Widgets.ButtonInvisible(rect)) continue;
-				if (Event.current.button == 1) messageStart(msg) = -99999f;
+				if (Event.current.button == 1)
+				{
+					messageStart(msg) = -99999f;
+					Verse.Sound.SoundStarter.PlayOneShotOnCamera(SoundDefOf.Click);   // what UIR's LetterCards.DrawButtonAt plays
+				}
 				else if (canJump)
 				{
 					CameraJumper.TryJumpAndSelect(target);

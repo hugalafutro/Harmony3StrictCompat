@@ -262,15 +262,7 @@ namespace Harmony3StrictCompat
 				uirHoverCall = (Func<Rect, int, bool, float>)uirHover.CreateDelegate(typeof(Func<Rect, int, bool, float>));
 				uirPositionCall = uirPosition;
 				uirBottomRight = (int)Enum.Parse(uirPosition.ReturnType, "BottomRight");
-				var texNames = new[] { "NeutralTex", "GoodTex", "WarningTex", "BadTex" };
-				for (int kind = 0; kind < 4; kind++)
-				{
-					var style = Activator.CreateInstance(uirStyle);
-					AccessTools.Field(uirStyle, "color").SetValue(style, uirColorOf.Invoke(null, new object[] { kind }));
-					AccessTools.Field(uirStyle, "icon").SetValue(style, AccessTools.Field(uirWidgets, texNames[kind]).GetValue(null));
-					AccessTools.Field(uirStyle, "tintIcon").SetValue(style, true);
-					uirMessageStyles[kind] = style;
-				}
+				uirStyleType = uirStyle; uirWidgetsType = uirWidgets; uirColorOfCall = uirColorOf;
 				harmony.Patch(AccessTools.Method(typeof(Messages), nameof(Messages.MessagesDoGUI)),
 					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirMessagesInStack)));
 			}
@@ -436,7 +428,12 @@ namespace Harmony3StrictCompat
 		static Func<float, float> uirColumnXCall;
 		static Func<Rect, int, bool, float> uirHoverCall;
 		static int uirBottomRight;
-		static readonly object[] uirMessageStyles = new object[4];
+		// Styles are built on first draw (main thread, defs loaded): touching NotificationsWidgets' texture fields or
+		// NotificationColorDefOf from the mod constructor runs UIR's texture loading off the main thread (and sees null
+		// DefOfs).
+		static Type uirStyleType, uirWidgetsType;
+		static MethodInfo uirColorOfCall;
+		static object[] uirMessageStyles;
 		static Dictionary<MessageTypeDef, int> uirMessageKinds;
 		static readonly AccessTools.FieldRef<List<Message>> liveMessages = AccessTools.StaticFieldRefAccess<List<Message>>(AccessTools.Field(typeof(Messages), "liveMessages"));
 		static readonly AccessTools.FieldRef<Message, float> messageStart = AccessTools.FieldRefAccess<Message, float>("startingTime");
@@ -456,6 +453,22 @@ namespace Harmony3StrictCompat
 			return def != null && uirMessageKinds.TryGetValue(def, out var k) ? k : 0;
 		}
 
+		static object[] UirStyles()
+		{
+			if (uirMessageStyles != null) return uirMessageStyles;
+			var styles = new object[4];
+			var texNames = new[] { "NeutralTex", "GoodTex", "WarningTex", "BadTex" };
+			for (int kind = 0; kind < 4; kind++)
+			{
+				var style = Activator.CreateInstance(uirStyleType);
+				AccessTools.Field(uirStyleType, "color").SetValue(style, uirColorOfCall.Invoke(null, new object[] { kind }));
+				AccessTools.Field(uirStyleType, "icon").SetValue(style, AccessTools.Field(uirWidgetsType, texNames[kind]).GetValue(null));
+				AccessTools.Field(uirStyleType, "tintIcon").SetValue(style, true);
+				styles[kind] = style;
+			}
+			return uirMessageStyles = styles;
+		}
+
 		static bool UirMessagesInStack()
 		{
 			if (Current.ProgramState != ProgramState.Playing || Find.LetterStack == null || Find.Alerts == null
@@ -463,6 +476,7 @@ namespace Harmony3StrictCompat
 				return true;
 			var messages = liveMessages();
 			if (messages.Count == 0) return false;
+			var styles = UirStyles();
 			float width = 0f;
 			foreach (var msg in messages) width = Mathf.Max(width, uirRowWidthCall(msg.text));
 			float x = uirColumnXCall(width);
@@ -479,7 +493,7 @@ namespace Harmony3StrictCompat
 				bool canJump = CameraJumper.CanJump(target), hasQuest = msg.quest != null && !msg.quest.hidden;
 				if (Event.current.type == EventType.Repaint)
 				{
-					uirRowDrawCall.Invoke(null, new object[] { rect, uirMessageStyles[UirKindOf(msg.def)], msg.text, hover, default(Color), -1f, false });
+					uirRowDrawCall.Invoke(null, new object[] { rect, styles[UirKindOf(msg.def)], msg.text, hover, default(Color), -1f, false });
 					if (canJump || hasQuest) UIHighlighter.HighlightOpportunity(rect, "Messages");
 				}
 				if (over)

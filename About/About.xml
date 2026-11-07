@@ -40,6 +40,7 @@
 - Flourish - Everyday Animations: in the telescope pose the telescope is drawn over the pawn and under its hands.
 - VFE Tribals + UI Rethemed - Factions (visual tweak): the Cornerstones button is drawn as a UI Rethemed button in the themed Factions title bar.
 - Show Mod Updates + UI Rethemed - Main Bar (visual tweak): the "N updated mods" menu button gets an icon.
+- UI Rethemed - Notifications (visual tweak): the top-left messages are drawn as rows in its bottom-right notification stack.
 - Auto-Cast Specialist Commands + Det's Xenotypes - Stoneborn (personal tweak): Stonecall is auto-cast when mining or finishing construction, following the Auto-Cast Mining Command setting, which right-click on the Stonecall gizmo toggles (check icon shown).
 - Vanilla (found through Modern Needs Tab): an emptied minified thing has a label again, so job reports no longer throw and MNT keeps recording job history.
 - Stem's VWE Industrial Expansion, Fortification Industrial - Citadel: missing weapon sounds pointed at existing ones (pistol equip, sawn-off repeater shot, flame bunker).

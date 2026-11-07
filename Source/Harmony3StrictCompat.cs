@@ -6,6 +6,7 @@ using System.Reflection.Emit;
 using System.Text;
 using HarmonyLib;
 using RimWorld;
+using RimWorld.Planet;
 using UnityEngine;
 using Verse;
 using Verse.AI;
@@ -243,6 +244,36 @@ namespace Harmony3StrictCompat
 				uirIconFor = (Func<string, Texture2D>)iconFor.CreateDelegate(typeof(Func<string, Texture2D>));
 			if (uirFace != null && uirIconFor != null)
 				harmony.Patch(uirFace, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirMenuModButtonIcon)));
+			var uirRowDraw = Target("UIRethemed.Notifications.StatusRow:Draw");
+			var uirRowWidth = Target("UIRethemed.Notifications.StatusRow:WidthFor");
+			var uirColorOf = Target("UIRethemed.Notifications.NotificationStyles:ColorOf");
+			var uirColumnX = Target("UIRethemed.Notifications.Placement:ColumnX");
+			var uirPosition = Target("UIRethemed.Notifications.Placement:get_Position");
+			var uirHover = Target("UIRethemed.Notifications.Motion:Hover");
+			Target("UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler");
+			var uirStyle = AccessTools.TypeByName("UIRethemed.Notifications.NotificationStyle");
+			var uirWidgets = AccessTools.TypeByName("UIRethemed.Notifications.NotificationsWidgets");
+			if (uirRowDraw != null && uirRowWidth != null && uirColorOf != null && uirColumnX != null && uirPosition != null && uirHover != null
+				&& uirStyle != null && uirWidgets != null)
+			{
+				uirRowDrawCall = uirRowDraw;
+				uirRowWidthCall = (Func<string, float>)uirRowWidth.CreateDelegate(typeof(Func<string, float>));
+				uirColumnXCall = (Func<float, float>)uirColumnX.CreateDelegate(typeof(Func<float, float>));
+				uirHoverCall = (Func<Rect, int, bool, float>)uirHover.CreateDelegate(typeof(Func<Rect, int, bool, float>));
+				uirPositionCall = uirPosition;
+				uirBottomRight = (int)Enum.Parse(uirPosition.ReturnType, "BottomRight");
+				var texNames = new[] { "NeutralTex", "GoodTex", "WarningTex", "BadTex" };
+				for (int kind = 0; kind < 4; kind++)
+				{
+					var style = Activator.CreateInstance(uirStyle);
+					AccessTools.Field(uirStyle, "color").SetValue(style, uirColorOf.Invoke(null, new object[] { kind }));
+					AccessTools.Field(uirStyle, "icon").SetValue(style, AccessTools.Field(uirWidgets, texNames[kind]).GetValue(null));
+					AccessTools.Field(uirStyle, "tintIcon").SetValue(style, true);
+					uirMessageStyles[kind] = style;
+				}
+				harmony.Patch(AccessTools.Method(typeof(Messages), nameof(Messages.MessagesDoGUI)),
+					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirMessagesInStack)));
+			}
 			var acInject = Target("AutoCastSpecialistCommands.AutoCastToilInjector:Inject");
 			Target("AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix");
 			acSettings = AccessTools.Field(AccessTools.TypeByName("AutoCastSpecialistCommands.AutoCastSpecialistCommands"), "settings");
@@ -387,6 +418,91 @@ namespace Harmony3StrictCompat
 			}
 			if (smuLabel == null || !smuLabel.IsMatch(text)) return;
 			iconTex = smuIcon ??= uirIconFor("arrow-clockwise");
+		}
+
+		// ---- UI Rethemed - Notifications: the top-left messages drawn as rows in its notification stack ----
+		// UIR restyles letters, conditions and alerts into one column but leaves the game's transient messages
+		// (Messages.MessagesDoGUI) as plain text in the top-left; its own patch there only shifts them sideways when
+		// its column sits top-left. While a game is loaded and the column is bottom-right (its default), draw each live
+		// message as a StatusRow, the widget its alert rows use, stacked upward from the top of the alerts
+		// (LetterStack.LastTopY - AlertsReadout.AlertsHeight, which UIR keeps vanilla in that position), newest nearest
+		// the stack. Colour and icon come from UIR's own four kinds, so they match the alert rows below. Behaviour is
+		// vanilla Message.Draw: left-click jumps or opens the quest, right-click dismisses, hover highlights the target;
+		// a Flash() reads as the row's hover glow. ponytail: no 0.6 s fade-out (StatusRow sets its own colours), rows
+		// vanish at expiry as UIR's alerts do. Any other column position leaves the game's messages alone.
+		const float UirRowHeight = 24f, UirRowStep = 26f, UirStackGap = 10f;
+		static MethodInfo uirRowDrawCall, uirPositionCall;
+		static Func<string, float> uirRowWidthCall;
+		static Func<float, float> uirColumnXCall;
+		static Func<Rect, int, bool, float> uirHoverCall;
+		static int uirBottomRight;
+		static readonly object[] uirMessageStyles = new object[4];
+		static Dictionary<MessageTypeDef, int> uirMessageKinds;
+		static readonly AccessTools.FieldRef<List<Message>> liveMessages = AccessTools.StaticFieldRefAccess<List<Message>>(AccessTools.Field(typeof(Messages), "liveMessages"));
+		static readonly AccessTools.FieldRef<Message, float> messageStart = AccessTools.FieldRefAccess<Message, float>("startingTime");
+		static readonly AccessTools.FieldRef<Message, float> messageFlash = AccessTools.FieldRefAccess<Message, float>("flashTime");
+		static readonly AccessTools.FieldRef<Message, int> messageId = AccessTools.FieldRefAccess<Message, int>("ID");
+
+		static int UirKindOf(MessageTypeDef def)
+		{
+			if (uirMessageKinds == null)
+			{
+				uirMessageKinds = new Dictionary<MessageTypeDef, int>();
+				void Kind(int kind, params MessageTypeDef[] defs) { foreach (var d in defs) if (d != null) uirMessageKinds[d] = kind; }
+				Kind(3, MessageTypeDefOf.ThreatBig, MessageTypeDefOf.PawnDeath);
+				Kind(2, MessageTypeDefOf.ThreatSmall, MessageTypeDefOf.NegativeEvent, MessageTypeDefOf.NegativeHealthEvent, MessageTypeDefOf.CautionInput, MessageTypeDefOf.RejectInput);
+				Kind(1, MessageTypeDefOf.PositiveEvent, MessageTypeDefOf.TaskCompletion, MessageTypeDefOf.SituationResolved);
+			}
+			return def != null && uirMessageKinds.TryGetValue(def, out var k) ? k : 0;
+		}
+
+		static bool UirMessagesInStack()
+		{
+			if (Current.ProgramState != ProgramState.Playing || Find.LetterStack == null || Find.Alerts == null
+				|| (int)uirPositionCall.Invoke(null, null) != uirBottomRight)
+				return true;
+			var messages = liveMessages();
+			if (messages.Count == 0) return false;
+			float width = 0f;
+			foreach (var msg in messages) width = Mathf.Max(width, uirRowWidthCall(msg.text));
+			float x = uirColumnXCall(width);
+			float y = Find.LetterStack.LastTopY - Find.Alerts.AlertsHeight - UirStackGap;
+			for (int i = messages.Count - 1; i >= 0; i--, y -= UirRowStep)
+			{
+				var msg = messages[i];
+				var rect = new Rect(x, Mathf.Round(y - UirRowHeight), width, UirRowHeight);
+				msg.lastDrawRect = rect;
+				bool over = Mouse.IsOver(rect);
+				float hover = uirHoverCall(rect, Gen.HashCombineInt(messageId(msg), 0x5A17), over);
+				if (messageFlash(msg) + 0.6f > RealTime.LastRealTime) hover = 1f;
+				var target = msg.lookTargets != null ? msg.lookTargets.TryGetPrimaryTarget() : GlobalTargetInfo.Invalid;
+				bool canJump = CameraJumper.CanJump(target), hasQuest = msg.quest != null && !msg.quest.hidden;
+				if (Event.current.type == EventType.Repaint)
+				{
+					uirRowDrawCall.Invoke(null, new object[] { rect, uirMessageStyles[UirKindOf(msg.def)], msg.text, hover, default(Color), -1f, false });
+					if (canJump || hasQuest) UIHighlighter.HighlightOpportunity(rect, "Messages");
+				}
+				if (over)
+				{
+					Messages.Notify_Mouseover(msg);
+					Text.Font = GameFont.Small;
+					if (Text.CalcSize(msg.text).x > width - 38f) TooltipHandler.TipRegion(rect, msg.text);
+				}
+				if (!Widgets.ButtonInvisible(rect)) continue;
+				if (Event.current.button == 1) messageStart(msg) = -99999f;
+				else if (canJump)
+				{
+					CameraJumper.TryJumpAndSelect(target);
+					PlayerKnowledgeDatabase.KnowledgeDemonstrated(ConceptDefOf.ClickingMessages, KnowledgeAmount.Total);
+				}
+				else if (hasQuest)
+				{
+					if (Find.MainTabsRoot.OpenTab == MainButtonDefOf.Quests) Verse.Sound.SoundStarter.PlayOneShotOnCamera(SoundDefOf.Click);
+					else Find.MainTabsRoot.SetCurrentTab(MainButtonDefOf.Quests);
+					((MainTabWindow_Quests)MainButtonDefOf.Quests.TabWindow).Select(msg.quest);
+				}
+			}
+			return false;
 		}
 
 		// ---- Flourish - Everyday Animations: telescope drawn under the posed pawn, not between body and hands ----
@@ -1116,6 +1232,13 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0xFEC5735778B040A7,
 			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0xC62AB6FF16C5404C,
 			["UIRethemed.MainBar.MenuWindow:Face"] = 0x1F0FBC8E540DFA3D,
+			["UIRethemed.Notifications.StatusRow:Draw"] = 0xE09CE1569F50CDDA,                               // UI Rethemed - Notifications 1.7, 2026-11-06
+			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0xBBB2A3AD2402186E,
+			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0x095FCC7B0F8047CE,
+			["UIRethemed.Notifications.Placement:ColumnX"] = 0xD7D40FE538C34D02,
+			["UIRethemed.Notifications.Placement:get_Position"] = 0x7B404D78F1D65665,
+			["UIRethemed.Notifications.Motion:Hover"] = 0xFB7ED9A581BF4F1B,
+			["UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler"] = 0x8F948D82A4AB2A5A,
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,

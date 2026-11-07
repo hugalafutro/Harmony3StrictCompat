@@ -542,10 +542,10 @@ namespace Harmony3StrictCompat
 		// the larger of the fitted height and the slider's (Card.ExtraHeight): at 100 % nothing changes, above it the
 		// slider buys headroom and the card stays put. The glance block is pinned to the bottom and the info list
 		// paints only its rows, so the spare room is a gap above the glance block.
-		// The floor is snapped up to UIR's row grid: its fitted height is round(126 + rows*24 + 4 + 174 + 8 + 4) - 165
-		// = 151 + rows*24 (147 with no rows), so a floor of 151 + k*24 is exactly "k spare rows", and one row more or
-		// fewer never moves the card. A floor between grid points moved it by the remainder (2 px at one slider step,
-		// a whole row at the next).
+		// The floor is snapped up to UIR's row grid: its fitted height is round(126 + (rows*24 + 4) + 4 + 174 + 8 + 4) - 165
+		// = 155 + rows*24 (147 with no rows; InfoList.Layout pads 2 px top and bottom), so a floor of 155 + k*24 is
+		// exactly "k spare rows" and one row more or fewer never moves the card. A floor between grid points moved it
+		// by the remainder (2 px at one slider step, a whole row at the next).
 		static Func<float> uirCardExtraHeight;
 		static Func<IInspectPane, bool> uirGlanceApplies;
 
@@ -553,7 +553,7 @@ namespace Harmony3StrictCompat
 		{
 			if (!uirGlanceApplies(pane)) return;
 			float floor = uirCardExtraHeight();
-			if (floor > 151f) floor = 151f + 24f * Mathf.Ceil((floor - 151f) / 24f);
+			if (floor > 155f) floor = 155f + 24f * Mathf.Ceil((floor - 155f) / 24f);
 			__result = Mathf.Max(__result, floor);
 		}
 

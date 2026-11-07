@@ -291,6 +291,8 @@ namespace Harmony3StrictCompat
 				harmony.Patch(AccessTools.Method(typeof(Pawn), nameof(Pawn.GetJobReport)),
 					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(JobReportPerFrame)),
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(JobReportRemember)));
+				harmony.Patch(AccessTools.Method(typeof(Pawn), nameof(Pawn.GetInspectString)),
+					postfix: new HarmonyMethod(AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(UirCurrentJobLine))) { priority = Priority.Last });
 			}
 			var acInject = Target("AutoCastSpecialistCommands.AutoCastToilInjector:Inject");
 			Target("AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix");
@@ -590,17 +592,20 @@ namespace Harmony3StrictCompat
 		}
 
 		// ---- UI Rethemed - Colonist Card: activity row blanking on every job change ----
-		// CardInfo.Draw reads the pawn's inspect text (Pawn.GetInspectString, which embeds GetJobReport) and then
+		// CardInfo.Draw reads the pawn's inspect text (Pawn.GetInspectString, which appends GetJobReport), then
 		// computes the job line itself (ActivityLine, GetJobReport again) and removes it from the text by exact
 		// string; Card.Draw blanks the row first (BeginCard), so a miss shows an empty row with the old job line left
-		// in the info list. On 1.7 the two reads disagree whenever the job changes between them (the inspect text is
-		// one job behind at every miss; no mod caches it, and RealTime.frameCount is no stable "same frame" marker
-		// under Waylith), so while CardInfo.Draw runs GetJobReport answers once per pawn: the first report computed
-		// in that call (inside GetInspectString) is reused by ActivityLine, and both reads agree.
-		// Also: a multi-line report (meditation: "Meditating at: X.\nPsyfocus gain rate: N%/d.") can never equal a
-		// single line, so ActivityLine keeps its first line; the rest stay info rows.
+		// in the info list. Observed on 1.7 (dev-mode probe, 2026-11-07): at every job change the text that leaves
+		// GetInspectString carries the PREVIOUS report while GetJobReport, called inside that same call, returns the
+		// current one; the IL appends GetJobReport's value and no patch rewrites the line, so the cause is unknown.
+		// Fix the state rather than the cause: while CardInfo.Draw runs, GetJobReport answers once per pawn (both
+		// reads agree), and a last postfix on GetInspectString replaces the line equal to the pawn's previous report
+		// with the current one. Multi-line reports (meditation) use their first line in ActivityLine.
 		static bool jobReportHold;
 		static readonly Dictionary<Pawn, string> jobReports = new();
+		static readonly Dictionary<Pawn, string> lastJobLines = new();
+
+		static string JobLine(string report) => report.NullOrEmpty() ? null : report.CapitalizeFirst().EndWithPeriod();
 
 		static void UirCardDrawBegin()
 		{
@@ -620,6 +625,23 @@ namespace Harmony3StrictCompat
 			if (jobReportHold && !jobReports.ContainsKey(__instance)) jobReports[__instance] = __result;
 		}
 
+		static void UirCurrentJobLine(Pawn __instance, ref string __result)
+		{
+			if (!jobReportHold || __result == null) return;
+			string current = JobLine(__instance.GetJobReport());
+			lastJobLines.TryGetValue(__instance, out var previous);
+			if (current != null) lastJobLines[__instance] = current;
+			if (previous == null || current == null || previous == current) return;
+			var lines = __result.Split('\n');
+			for (int i = lines.Length - 1; i >= 0; i--)
+			{
+				if (lines[i].TrimEnd('\r') != previous) continue;
+				lines[i] = current;
+				__result = string.Join("\n", lines);
+				return;
+			}
+		}
+
 		static void UirActivityFirstLine(ref string __result)
 		{
 			if (__result == null) return;
@@ -627,24 +649,15 @@ namespace Harmony3StrictCompat
 			if (nl >= 0) __result = __result.Substring(0, nl).TrimEnd('\r');
 		}
 
-		// Diagnostic (dev mode only): log each distinct remaining miss with both strings, and once the patch owners.
+		// Diagnostic (dev mode only): log each distinct remaining miss with both strings.
 		static FieldInfo uirActivityText, uirInfoLines;
 		static Func<Pawn, string> uirActivityLine;
 		static readonly HashSet<string> uirProbeSeen = new();
-		static bool uirProbeOwnersLogged;
 
 		static void UirActivityProbe(ISelectable sel, bool __result)
 		{
 			jobReportHold = false;
 			if (!Prefs.DevMode || !__result || sel is not Pawn pawn) return;
-			if (!uirProbeOwnersLogged)
-			{
-				uirProbeOwnersLogged = true;
-				Log.Message("[Harmony3StrictCompat] activity probe: patch owners. Pawn.GetInspectString [" + PatchOwners(AccessTools.Method(typeof(Pawn), nameof(Pawn.GetInspectString))) +
-					"], Pawn.GetJobReport [" + PatchOwners(AccessTools.Method(typeof(Pawn), nameof(Pawn.GetJobReport))) +
-					"], JobDriver.GetReport [" + PatchOwners(AccessTools.Method(typeof(JobDriver), nameof(JobDriver.GetReport))) +
-					"], InspectPaneFiller.DrawInspectStringFor [" + PatchOwners(AccessTools.Method(typeof(InspectPaneFiller), nameof(InspectPaneFiller.DrawInspectStringFor))) + "]");
-			}
 			string line = uirActivityLine(pawn);
 			string shown = (string)uirActivityText.GetValue(null);
 			string want = line?.TrimEnd('.');

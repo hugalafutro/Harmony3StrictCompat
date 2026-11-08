@@ -37,6 +37,8 @@
 - Prisoner Realism + Cleaning Area Relaunched: prisoners only clean filth inside the Clean area, no more standing-still Clean job loop.
 - Hunt For Me: only player animals take hunting jobs (a released animal marked for hunting no longer hunts itself).
 - Designator Shapes + Better Architect Menu: flood fill stops at doors again.
+- Vanilla Social Interactions Expanded: "cured my friend" thought label resolves for implied relatives (no more template errors or Social tab fallback).
+- UI Rethemed - Inspector Tabs: long opinion rows in hover cards wrap instead of overlapping.
 - Flourish - Everyday Animations: the telescope pose mirrors with the telescope's art, so a West-rotated telescope is used from the eyepiece side too.
 - Flourish - Everyday Animations: in the telescope pose the telescope is drawn over the pawn and under its hands.
 - VFE Tribals + UI Rethemed - Factions (visual tweak): the Cornerstones button is drawn as a UI Rethemed button in the themed Factions title bar.

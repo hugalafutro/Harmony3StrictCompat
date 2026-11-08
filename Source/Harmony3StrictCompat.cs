@@ -198,6 +198,36 @@ namespace Harmony3StrictCompat
 				harmony.Patch(hdInit, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdBridgeKeepApi)));
 				harmony.Patch(hdWanted, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdWantedUnits)));
 			}
+			var hcLineHeight = Target("UIRethemed.InspectorTabs.HoverCard:LineHeight");
+			var hcDrawGroup = Target("UIRethemed.InspectorTabs.HoverCard:DrawGroup");
+			var hcStatLine = Target("UIRethemed.InspectorTabs.Theme:StatLine");
+			var hcBodyGetter = AccessTools.PropertyGetter(AccessTools.TypeByName("UIRethemed.InspectorTabs.HoverCard"), "GroupBodyWidth");
+			var hcLineType = AccessTools.TypeByName("UIRethemed.InspectorTabs.HoverCard+Line");
+			if (hcLineHeight != null && hcDrawGroup != null && hcStatLine != null && hcBodyGetter != null && hcLineType != null)
+			{
+				hcBodyWidth = (Func<float>)hcBodyGetter.CreateDelegate(typeof(Func<float>));
+				hcLabel = AccessTools.Field(hcLineType, "label");
+				hcValue = AccessTools.Field(hcLineType, "value");
+				hcIcon = AccessTools.Field(hcLineType, "icon");
+				hcBar = AccessTools.Field(hcLineType, "bar");
+				hcAccent = AccessTools.Field(hcLineType, "accent");
+				harmony.Patch(hcLineHeight, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HcLineHeight)));
+				harmony.Patch(hcDrawGroup, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HcGroupEnter)),
+					finalizer: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HcGroupExit)));
+				harmony.Patch(hcStatLine, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HcWrapStatLine)));
+			}
+			var vsieCured = Target("VanillaSocialInteractionsExpanded.Thought_CuredMyFriend:get_LabelCap");
+			var vsieTale = AccessTools.TypeByName("VanillaSocialInteractionsExpanded.Tale_TriplePawn");
+			var vsieNoticed = Target("VanillaSocialInteractionsExpanded.VSIE_Utils:HaveNoticedTale");
+			if (vsieCured != null && vsieTale != null && vsieNoticed != null)
+			{
+				vsieTaleType = vsieTale;
+				vsieFirst = AccessTools.Field(vsieTale, "firstPawnData");
+				vsieSecond = AccessTools.Field(vsieTale, "secondPawnData");
+				vsieThird = AccessTools.Field(vsieTale, "thirdPawnData");
+				vsieHaveNoticed = (Func<Pawn, Tale, bool>)vsieNoticed.CreateDelegate(typeof(Func<Pawn, Tale, bool>));
+				harmony.Patch(vsieCured, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(VsieCuredMyFriendLabel)));
+			}
 			var dsStructure = Target("Merthsoft.DesignatorShapes.Shapes.FloodFill:IsStructure");
 			if (dsStructure != null)
 				harmony.Patch(dsStructure, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DsDoorIsStructure)));
@@ -711,6 +741,101 @@ namespace Harmony3StrictCompat
 		{
 			var facing = (Rot4)flAnchorFacing.GetValue(def);
 			return FlTargetMirrored(pawn) && facing.IsHorizontal ? facing.Opposite : facing;
+		}
+
+		// ---- VSIE "cured my <relation>" thought shows an unresolved label --------------------------------------
+		// ThoughtWorker_CuredMyFriend grants the thought when the patient is a relative by pawn.GetRelations, which
+		// includes implied relations (sibling, cousin, grandparent...). Thought_CuredMyFriend.LabelCap only searches
+		// DirectRelations, so for those it falls back to base.LabelCap: the raw "{SECONDPAWN_nameDef} cured my {0}"
+		// template, a "Could not resolve symbol" error, and UI Rethemed then drops to the vanilla Social tab. It also
+		// genders the relation word by the observer instead of the patient. Same tale lookup, vanilla relation pick.
+		static Type vsieTaleType;
+		static FieldInfo vsieFirst, vsieSecond, vsieThird;
+		static Func<Pawn, Tale, bool> vsieHaveNoticed;
+
+		static bool VsieCuredMyFriendLabel(Thought_SituationalSocial __instance, ref string __result)
+		{
+			Pawn pawn = __instance.pawn, other = __instance.otherPawn, second = null, third = null;
+			Tale latest = null;
+			foreach (var tale in Find.TaleManager.AllTalesListForReading)
+			{
+				if (tale.def != __instance.def.taleDef || !vsieTaleType.IsInstanceOfType(tale) || !vsieHaveNoticed(pawn, tale)) continue;
+				if ((vsieFirst.GetValue(tale) as TaleData_Pawn)?.pawn != pawn) continue;
+				var s = (vsieSecond.GetValue(tale) as TaleData_Pawn)?.pawn;
+				if (s != other || (latest != null && tale.AgeTicks >= latest.AgeTicks)) continue;
+				latest = tale; second = s; third = (vsieThird.GetValue(tale) as TaleData_Pawn)?.pawn;
+			}
+			if (third == null) return true;
+			string relation = pawn.GetMostImportantRelation(third)?.GetGenderSpecificLabel(third) ?? "friend";
+			__result = __instance.CurStage.label.Formatted(relation, second.Named("SECONDPAWN"), third.Named("THIRDPAWN"), pawn.Named("PAWN"));
+			return false;
+		}
+
+		// ---- UI Rethemed hover card: long rows with a value overlap the next row ---------------------------------
+		// HoverCard.DrawGroup draws a row with a value through Theme.StatLine: label and value share one 22 px rect
+		// and LineHeight reserves a fixed 24, so a long label (VSIE's opinion thoughts are full sentences) wraps over
+		// the row below and over its own value. Rows that fit keep UIR's own drawing. A row that does not fit gets its
+		// label wrapped beside the value and a taller row. StatLine has other callers with fixed layouts, so only
+		// calls made from DrawGroup change.
+		static Func<float> hcBodyWidth;
+		static FieldInfo hcLabel, hcValue, hcIcon, hcBar, hcAccent;
+		static bool hcInGroup;
+
+		static void HcGroupEnter() => hcInGroup = true;
+		static void HcGroupExit() => hcInGroup = false;
+
+		// Height to add to a 22 px row, 0 when the label fits on one line beside the value.
+		static float HcExtraHeight(string label, string value, float width, out float labelWidth)
+		{
+			labelWidth = width;
+			if (label.NullOrEmpty() || value.NullOrEmpty()) return 0f;
+			var font = Text.Font;
+			bool wrap = Text.WordWrap;
+			Text.Font = GameFont.Small;
+			Text.WordWrap = false;
+			labelWidth = width - Text.CalcSize(value).x - 8f;
+			float extra = 0f;
+			if (Text.CalcSize(label).x > labelWidth)
+			{
+				Text.WordWrap = true;
+				extra = Mathf.Max(0f, Text.CalcHeight(label, labelWidth) - 22f);
+			}
+			Text.WordWrap = wrap;
+			Text.Font = font;
+			return extra;
+		}
+
+		static void HcLineHeight(object[] __args, ref float __result)
+		{
+			var line = __args[0];
+			if (hcIcon.GetValue(line) != null || hcBar.GetValue(line) != null || hcAccent.GetValue(line) != null) return;
+			__result += HcExtraHeight((string)hcLabel.GetValue(line), (string)hcValue.GetValue(line), hcBodyWidth(), out _);
+		}
+
+		static bool HcWrapStatLine(ref float y, float x, float width, Texture icon, string label, string value, Color? valueColor, float? bar, Color? labelColor)
+		{
+			if (!hcInGroup || icon != null || bar.HasValue) return true;
+			float extra = HcExtraHeight(label, value, width, out float labelWidth);
+			if (extra <= 0f) return true;
+			var font = Text.Font;
+			var anchor = Text.Anchor;
+			bool wrap = Text.WordWrap;
+			var color = GUI.color;
+			Text.Font = GameFont.Small;
+			Text.Anchor = TextAnchor.UpperLeft;
+			Text.WordWrap = true;
+			GUI.color = labelColor ?? new Color(0.9f, 0.9f, 0.9f); // UIR Theme.TextBright, StatLine's default
+			Widgets.Label(new Rect(x, y, labelWidth, 22f + extra), label);
+			Text.Anchor = TextAnchor.UpperRight;
+			Text.WordWrap = false;
+			GUI.color = valueColor ?? Color.white;
+			Widgets.Label(new Rect(x, y, width, 22f), value);
+			GUI.color = color;
+			Text.WordWrap = wrap;
+			Text.Anchor = anchor;
+			Text.Font = font;
+			y += 24f + extra;
+			return false;
 		}
 
 		// ---- Designator Shapes flood fill runs through doors -----------------------------------------------------
@@ -1337,6 +1462,8 @@ namespace Harmony3StrictCompat
 			["CleaningAreaRelaunched.CleaningAreaRelaunched_Util:GetCleanArea"] = 0xD9B02D52DE61B82C,          // CAR 1.6 build, 2025-11-12
 			["aRandomKiwi.HFM.JobGiver_AnimalHunt:TryGiveJob"] = 0x865CBA567579063A,                            // Hunt For Me 1.6 build, 2025-12-25
 			["Merthsoft.DesignatorShapes.Shapes.FloodFill:IsStructure"] = 0x01F3F2D215BA16DB,                 // Designator Shapes 1.7, 2026-11-02
+			["VanillaSocialInteractionsExpanded.Thought_CuredMyFriend:get_LabelCap"] = 0xF477C9F6906F455E,   // VSIE 1.7, 2026-11-06
+			["VanillaSocialInteractionsExpanded.VSIE_Utils:HaveNoticedTale"] = 0x006E2ED82BADE12D,
 			["YayoAnimation.HarmonyPatches.PawnPatches.ParallelGetPreRenderResultsPatch:DataFor"] = 0x70EEFE43592C82C3, // Flourish Everyday 1.7, 2026-10-25
 			["Flourish.Everyday.JobAnimationWorker_Anchored:Evaluate"] = 0x817B489F5395FF01,                // Flourish Everyday 1.7, 2026-10-25
 			["VFETribals.FactionUIUtility_DoWindowContents_Patch:Postfix"] = 0x8824F2B542A8AC6E,             // VFE Tribals 1.6 build, 2026-10-14
@@ -1345,6 +1472,9 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Core.CoreWidgets:Icon"] = 0x2094A97723860CBE,
 			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0xFEC5735778B040A7,
 			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0xC62AB6FF16C5404C,
+			["UIRethemed.InspectorTabs.HoverCard:LineHeight"] = 0xBC638E0C842420E6,                        // UI Rethemed - Inspector Tabs 1.7, 2026-11-06
+			["UIRethemed.InspectorTabs.HoverCard:DrawGroup"] = 0x983CB3913E7492E4,
+			["UIRethemed.InspectorTabs.Theme:StatLine"] = 0xE7BF59AB7C8A20D5,
 			["UIRethemed.MainBar.MenuWindow:Face"] = 0x7970824AD7079EAA,                               // UI Rethemed - Main Bar 1.7, 2026-11-07
 			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0xB6635F04BB1CC9CC,
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0x7F317F9F8340B035,                               // UI Rethemed - Notifications 1.7, 2026-11-07

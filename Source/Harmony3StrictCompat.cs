@@ -246,9 +246,6 @@ namespace Harmony3StrictCompat
 			var uirSlotLabel = Target("UIRethemed.InspectorTabs.GearTab:SlotLabel");
 			if (uirSlotLabel != null)
 				harmony.Patch(uirSlotLabel, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirShortSlotLabel)));
-			var rm2Rename = Target("ReinforcedMechanoids.Harmony.MainTabWindow_Inspect_Renaming:Postfix");
-			if (rm2Rename != null && ModsConfig.BiotechActive)
-				harmony.Patch(rm2Rename, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(Rm2SkipDuplicateRename)));
 			var dsStructure = Target("Merthsoft.DesignatorShapes.Shapes.FloodFill:IsStructure");
 			if (dsStructure != null)
 				harmony.Patch(dsStructure, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DsDoorIsStructure)));
@@ -912,10 +909,6 @@ namespace Harmony3StrictCompat
 				case "Ammunition": __result = "Ammo"; break;
 			}
 		}
-
-		// Biotech's inspect pane already draws "Rename mech" for colony mechs at rect.width - 78; RM2's postfix
-		// draws a second rename button on the same spot. Skip it whenever vanilla's shows.
-		static bool Rm2SkipDuplicateRename() => !(Find.Selector.SingleSelectedThing is Pawn p && p.IsColonyMech);
 
 		static void HcGroupEnter() => hcInGroup = true;
 		static void HcGroupExit() => hcInGroup = false;
@@ -1615,7 +1608,6 @@ namespace Harmony3StrictCompat
 			["UIRethemed.InspectorTabs.GearTab:SlotLabel"] = 0x26E089A47B83FA79,
 			["UIRethemed.InspectorTabs.GearTab:VanillaSlotFor"] = 0x685E5552BE5DC1B7,
 			["UIRethemed.InspectorTabs.GearTab:DrawStatsPanel"] = 0xEAA253E7421BEDB7,
-			["ReinforcedMechanoids.Harmony.MainTabWindow_Inspect_Renaming:Postfix"] = 0x1A675B0F2D9E8BB8, // Reinforced Mechanoid 2 (Continued) 1.6, 2026-11-08
 			["UIRethemed.MainBar.MenuWindow:Face"] = 0x7970824AD7079EAA,                               // UI Rethemed - Main Bar 1.7, 2026-11-07
 			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0xB6635F04BB1CC9CC,
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0x7F317F9F8340B035,                               // UI Rethemed - Notifications 1.7, 2026-11-07

@@ -362,6 +362,25 @@ namespace Harmony3StrictCompat
 				harmony.Patch(AccessTools.Method(typeof(Command_Ability), nameof(Command_Ability.ProcessInput)),
 					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AcStonecallNoRightClickCast)));
 			}
+			var umDialog = Target("UsefulMarks.Dialog_NamePawn_DoWindowContents_Patch:Postfix");
+			if (umDialog != null)
+			{
+				umNames = AccessTools.Field(typeof(Dialog_NamePawn), "names");
+				umTextboxName = AccessTools.Field(AccessTools.Inner(typeof(Dialog_NamePawn), "NameContext"), "textboxName");
+				if (umNames != null && umTextboxName != null)
+					harmony.Patch(umDialog, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UmMarksOnlyBesideTitleRow)));
+			}
+		}
+
+		// ---- Useful Marks: its two mark widgets (label-in-world checkbox, colour square) sit at a fixed offset from the
+		// bottom of Dialog_NamePawn, which lands beside the Title row when renaming a colonist but on top of the last-name
+		// "Suggested..." button in the newborn naming dialog (no Title row there). Drawn only when the bottom row is the Title row. ----
+		static FieldInfo umNames, umTextboxName;
+
+		static bool UmMarksOnlyBesideTitleRow([HarmonyArgument(2)] Dialog_NamePawn dialog)
+		{
+			if (dialog == null || umNames.GetValue(dialog) is not IList names || names.Count == 0) return true;
+			return (string)umTextboxName.GetValue(names[names.Count - 1]) == "BackstoryTitle";
 		}
 
 		// ---- Auto-Cast Specialist Commands + Det's Xenotypes - Stoneborn: auto-cast Stonecall when mining or building ----
@@ -1549,6 +1568,7 @@ namespace Harmony3StrictCompat
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPostfix"] = 0xEAEA3D4FF6046A94,
+			["UsefulMarks.Dialog_NamePawn_DoWindowContents_Patch:Postfix"] = 0xF33AD5F31EB56B3B,        // Useful Marks 1.7, DLL of 2026-10-22
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an

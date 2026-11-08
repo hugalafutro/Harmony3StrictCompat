@@ -177,6 +177,10 @@ namespace Harmony3StrictCompat
 			Target("ModernNeedsTab.Patch_Pawn_JobTracker_EndCurrentJob:Prefix");
 			harmony.Patch(AccessTools.PropertyGetter(typeof(MinifiedThing), nameof(MinifiedThing.LabelNoCount)),
 				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(EmptyMinifiedLabel)));
+			// Vanilla: CompShuttle evicts quest escorts whose last despawn is years old; fingerprinted so a vanilla change gets re-checked.
+			Target("RimWorld.CompShuttle:CompTick");
+			harmony.Patch(AccessTools.Method(typeof(CompTransporter), nameof(CompTransporter.Notify_ThingAdded)),
+				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ShuttleClockStartsAtBoarding)));
 			foreach (var csClean in new[] { "CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__0", "CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__1" })
 				if (Target(csClean) is { } csToil)
 					harmony.Patch(csToil, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(CsFilthGone)));
@@ -1070,6 +1074,18 @@ namespace Harmony3StrictCompat
 			return false;
 		}
 
+		// CompShuttle.CompTick (every 600 ticks) throws out any contained pawn whose despawnedTick is older than 60000
+		// and calls Notify_PawnLost(LeftVoluntarily) on its lord. The field means "last time this pawn left a map",
+		// not "time spent in the shuttle": quest escorts and bestowers are redressed world pawns who may have visited
+		// the colony years earlier, so they are evicted on the first check after landing, drop out of the escort lord,
+		// walk off the map as lordless non-colonists, and the shuttle then waits forever for them after the ceremony
+		// (the loop also removes while indexing ContainedPawns, so it hits every other pawn). Start the clock when
+		// the pawn enters the transporter, which is what the one-day eviction was written for.
+		static void ShuttleClockStartsAtBoarding(Thing t)
+		{
+			if (t is Pawn pawn) pawn.despawnedTick = Find.TickManager.TicksGame;
+		}
+
 		// ---- Busywork "Upper" job icon on LTO Colony Groups portraits -------------------------------------------
 		// In Upper mode Busywork stops feeding its job icon to Useful Marks (so "Useful Marks in Colony Groups" has
 		// nothing to draw) and draws it itself: over the pawn's head on the map, and in the portrait's top-left corner
@@ -1551,6 +1567,7 @@ namespace Harmony3StrictCompat
 		static readonly Dictionary<string, ulong> Fingerprints = new()
 		{
 			["SensibleBedOwnership.Patch_ReservationManager:Prefix"] = 0xC02F4F892C656903,                       // 2026-10-28
+			["RimWorld.CompShuttle:CompTick"] = 0x335012F801042105,                                              // game 1.7.5000, 2026-11-08
 			["SimpleLeadership.PawnGroupMakerUtility_GeneratePawns_Patch:Postfix"] = 0x931CDA2DA9F203ED,          // Steam 2026-10-27
 			["TraitTracker.TraitHediffApplier:ApplyHediffsToPawnsWithTraits"] = 0x67BDC9BB976E9B72,                // 2026-10-22
 			["SkilledRefueling.HarmonyPatches:JobDriverRefuelAtomic_MakeNewToils_Postfix"] = 0x80FDB19E16DDBC54,

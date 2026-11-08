@@ -229,9 +229,16 @@ namespace Harmony3StrictCompat
 				harmony.Patch(vsieCured, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(VsieCuredMyFriendLabel)));
 			}
 			var uirVacuum = Target("UIRethemed.InspectorTabs.GearTab:RefreshVacuumGauge");
+			var uirGearTab = AccessTools.TypeByName("UIRethemed.InspectorTabs.GearTab");
+			uirVacuumGauge = uirGearTab == null ? null : AccessTools.Field(uirGearTab, "vacuumGauge");
+			uirVacuumLabelWidth = uirGearTab == null ? null : AccessTools.Field(uirGearTab, "vacuumLabelWidth");
+			uirGaugeLabel = uirVacuumGauge == null ? null : AccessTools.Field(uirVacuumGauge.FieldType, "label");
 			if (uirVacuum != null)
 				harmony.Patch(uirVacuum, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirVacuumFontEnter)),
 					finalizer: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirVacuumFontExit)));
+			var uirSlotLabel = Target("UIRethemed.InspectorTabs.GearTab:SlotLabel");
+			if (uirSlotLabel != null)
+				harmony.Patch(uirSlotLabel, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirShortSlotLabel)));
 			var dsStructure = Target("Merthsoft.DesignatorShapes.Shapes.FloodFill:IsStructure");
 			if (dsStructure != null)
 				harmony.Patch(dsStructure, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DsDoorIsStructure)));
@@ -794,7 +801,25 @@ namespace Harmony3StrictCompat
 			__state = Text.Font;
 			Text.Font = GameFont.Small;
 		}
-		static void UirVacuumFontExit(GameFont __state) => Text.Font = __state;
+		// Personal tweak on top: the stat's own "Vacuum resistance" label leaves the bar a few pixels wide, so the
+		// gauge is relabelled "Vacuum res." and its label width remeasured (still in Small here).
+		static void UirVacuumFontExit(GameFont __state)
+		{
+			if (uirGaugeLabel != null && uirVacuumGauge.GetValue(null) is { } gauge)
+			{
+				uirGaugeLabel.SetValue(gauge, "Vacuum res.");
+				uirVacuumLabelWidth.SetValue(null, Text.CalcSize("Vacuum res.").x + 2f);
+			}
+			Text.Font = __state;
+		}
+		static FieldInfo uirVacuumGauge, uirVacuumLabelWidth, uirGaugeLabel;
+
+		// Personal tweak: empty doll slots are captioned in Tiny with the layer's label, and Packs Are Not Belts'
+		// "Mechanitor" layer is one letter too wide for the cell, so its "r" wraps onto a second line.
+		static void UirShortSlotLabel(ref string __result)
+		{
+			if (__result == "Mechanitor") __result = "Mech.";
+		}
 
 		static void HcGroupEnter() => hcInGroup = true;
 		static void HcGroupExit() => hcInGroup = false;
@@ -1491,6 +1516,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.InspectorTabs.HoverCard:DrawGroup"] = 0x983CB3913E7492E4,
 			["UIRethemed.InspectorTabs.Theme:StatLine"] = 0xE7BF59AB7C8A20D5,
 			["UIRethemed.InspectorTabs.GearTab:RefreshVacuumGauge"] = 0x8A89AD0AD75AD5FE,                // UI Rethemed - Inspector Tabs 1.7, 2026-11-08
+			["UIRethemed.InspectorTabs.GearTab:SlotLabel"] = 0x26E089A47B83FA79,
 			["UIRethemed.MainBar.MenuWindow:Face"] = 0x7970824AD7079EAA,                               // UI Rethemed - Main Bar 1.7, 2026-11-07
 			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0xB6635F04BB1CC9CC,
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0x7F317F9F8340B035,                               // UI Rethemed - Notifications 1.7, 2026-11-07

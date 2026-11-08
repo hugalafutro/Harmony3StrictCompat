@@ -246,6 +246,9 @@ namespace Harmony3StrictCompat
 			var uirSlotLabel = Target("UIRethemed.InspectorTabs.GearTab:SlotLabel");
 			if (uirSlotLabel != null)
 				harmony.Patch(uirSlotLabel, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirShortSlotLabel)));
+			var smStockUpFilter = Target("SmartMedicine.Dialog_StockUp:<DoWindowContents>b__10_0");
+			if (smStockUpFilter != null && ModsConfig.IsActive("vanillaracesexpanded.sanguophage"))
+				harmony.Patch(smStockUpFilter, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SmStockUpVrePacks)));
 			var dsStructure = Target("Merthsoft.DesignatorShapes.Shapes.FloodFill:IsStructure");
 			if (dsStructure != null)
 				harmony.Patch(dsStructure, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DsDoorIsStructure)));
@@ -908,6 +911,16 @@ namespace Harmony3StrictCompat
 				case "Exoskeleton": __result = "Exo."; break;
 				case "Ammunition": __result = "Ammo"; break;
 			}
+		}
+
+		// Smart Medicine's stock-up picker lists drugs, medicine and vanilla HemogenPack only; VRE Sanguophage's
+		// animal/corpse packs are plain Foods, so they never show. Postfix on the picker's filter lambda admits them.
+		static ThingDef[] smVrePacks;
+		static void SmStockUpVrePacks(ThingDef t, ref bool __result)
+		{
+			if (__result) return;
+			smVrePacks ??= new[] { DefDatabase<ThingDef>.GetNamedSilentFail("VRE_HemogenPack_Animal"), DefDatabase<ThingDef>.GetNamedSilentFail("VRE_HemogenPack_Corpse") };
+			__result = t == smVrePacks[0] || t == smVrePacks[1];
 		}
 
 		static void HcGroupEnter() => hcInGroup = true;
@@ -1608,6 +1621,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.InspectorTabs.GearTab:SlotLabel"] = 0x26E089A47B83FA79,
 			["UIRethemed.InspectorTabs.GearTab:VanillaSlotFor"] = 0x685E5552BE5DC1B7,
 			["UIRethemed.InspectorTabs.GearTab:DrawStatsPanel"] = 0xEAA253E7421BEDB7,
+			["SmartMedicine.Dialog_StockUp:<DoWindowContents>b__10_0"] = 0x287F2659618CDD5B,        // Smart Medicine - Continued 1.7, 2026-11-08 (DLL of 2026-11-02)
 			["UIRethemed.MainBar.MenuWindow:Face"] = 0x7970824AD7079EAA,                               // UI Rethemed - Main Bar 1.7, 2026-11-07
 			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0xB6635F04BB1CC9CC,
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0x7F317F9F8340B035,                               // UI Rethemed - Notifications 1.7, 2026-11-07

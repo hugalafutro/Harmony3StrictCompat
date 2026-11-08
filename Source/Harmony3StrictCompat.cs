@@ -236,6 +236,10 @@ namespace Harmony3StrictCompat
 			if (uirVacuum != null)
 				harmony.Patch(uirVacuum, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirVacuumFontEnter)),
 					finalizer: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirVacuumFontExit)));
+			var uirSlotFor = Target("UIRethemed.InspectorTabs.GearTab:VanillaSlotFor");
+			uirDollSlot = uirGearTab == null ? null : AccessTools.Inner(uirGearTab, "DollSlot");
+			if (uirSlotFor != null && uirDollSlot != null && ModsConfig.IsActive("stevezero.FullArmorHandsFeet"))
+				harmony.Patch(uirSlotFor, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirHandsFeetSlot)));
 			var uirSlotLabel = Target("UIRethemed.InspectorTabs.GearTab:SlotLabel");
 			if (uirSlotLabel != null)
 				harmony.Patch(uirSlotLabel, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirShortSlotLabel)));
@@ -813,6 +817,34 @@ namespace Harmony3StrictCompat
 			Text.Font = __state;
 		}
 		static FieldInfo uirVacuumGauge, uirVacuumLabelWidth, uirGaugeLabel;
+
+		// Full Armor - Hands and Feet rewrites every gloves/boots def (covers only Hands/Feet) to the Overhead layer so
+		// they never conflict with armor it extends to those parts. UIR's doll classifier reads the layer before the
+		// body part, so such items fall into Extra ("headgear" covering no head part) and the Hands/Feet cells stay
+		// empty. Items on Overhead/EyeCover that cover hands or feet and no head, torso or leg group go to those cells.
+		static Type uirDollSlot;
+		static bool UirHandsFeetSlot(Apparel ap, ref object __result)
+		{
+			var props = ap.def.apparel;
+			var layers = props.layers;
+			if (layers == null || !(layers.Contains(ApparelLayerDefOf.Overhead) || layers.Contains(ApparelLayerDefOf.EyeCover)))
+				return true;
+			bool feet = false, hands = false;
+			foreach (var g in props.bodyPartGroups)
+			{
+				switch (g.defName)
+				{
+					case "Feet": feet = true; break;
+					case "Hands": case "LeftHand": case "RightHand": hands = true; break;
+					case "FullHead": case "UpperHead": case "Eyes": case "Teeth": case "Mouth": case "Jaw": case "Nose":
+					case "Torso": case "Legs": case "Waist":
+						return true;
+				}
+			}
+			if (!feet && !hands) return true;
+			__result = Enum.ToObject(uirDollSlot, feet ? 8 : 6); // DollSlot.Feet / DollSlot.Hands
+			return false;
+		}
 
 		// Personal tweak: empty doll slots are captioned in Tiny with the layer's label, and Packs Are Not Belts'
 		// "Mechanitor" layer is one letter too wide for the cell, so its "r" wraps onto a second line.
@@ -1517,6 +1549,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.InspectorTabs.Theme:StatLine"] = 0xE7BF59AB7C8A20D5,
 			["UIRethemed.InspectorTabs.GearTab:RefreshVacuumGauge"] = 0x8A89AD0AD75AD5FE,                // UI Rethemed - Inspector Tabs 1.7, 2026-11-08
 			["UIRethemed.InspectorTabs.GearTab:SlotLabel"] = 0x26E089A47B83FA79,
+			["UIRethemed.InspectorTabs.GearTab:VanillaSlotFor"] = 0x685E5552BE5DC1B7,
 			["UIRethemed.MainBar.MenuWindow:Face"] = 0x7970824AD7079EAA,                               // UI Rethemed - Main Bar 1.7, 2026-11-07
 			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0xB6635F04BB1CC9CC,
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0x7F317F9F8340B035,                               // UI Rethemed - Notifications 1.7, 2026-11-07

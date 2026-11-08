@@ -59,7 +59,7 @@
 - Hospitality: Casino: the inspect pane shows the pricing setting and the silver charged per game.
 - Hospitality: Casino: only casino visitors and trade caravans at their chill spot play slot machines (bestowers, shuttle guards and leaving caravans keep their duty).
 - Hospitality: visitors in warcaskets skip the arrival re-gear (casket pieces re-locked) and keep their casket helmet on.
-- Hospitality: diagnostic only, logs which think node puts a guest with a claimed bed on the floor.
+- Hospitality: guests no longer sleep on the floor after a save is loaded in the same session (stale per-pawn guest comp cache cleared on load).
 - Giddy-Up 2: dismounted caravan animals keep their travel/follow target, so the caravan arrives and leaves.
 - Vanilla/unknown: a caravan guard holding a trader kind counts as the Trader (dismiss works, caravan exits).
 - RimPacts: factions whose exiled leader left or was dismissed get a new leader (also repaired after load), no more "Faction leader for X is null".

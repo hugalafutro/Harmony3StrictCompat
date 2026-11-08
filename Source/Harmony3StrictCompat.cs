@@ -228,6 +228,10 @@ namespace Harmony3StrictCompat
 				vsieHaveNoticed = (Func<Pawn, Tale, bool>)vsieNoticed.CreateDelegate(typeof(Func<Pawn, Tale, bool>));
 				harmony.Patch(vsieCured, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(VsieCuredMyFriendLabel)));
 			}
+			var uirVacuum = Target("UIRethemed.InspectorTabs.GearTab:RefreshVacuumGauge");
+			if (uirVacuum != null)
+				harmony.Patch(uirVacuum, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirVacuumFontEnter)),
+					finalizer: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirVacuumFontExit)));
 			var dsStructure = Target("Merthsoft.DesignatorShapes.Shapes.FloodFill:IsStructure");
 			if (dsStructure != null)
 				harmony.Patch(dsStructure, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DsDoorIsStructure)));
@@ -780,6 +784,17 @@ namespace Harmony3StrictCompat
 		static Func<float> hcBodyWidth;
 		static FieldInfo hcLabel, hcValue, hcIcon, hcBar, hcAccent;
 		static bool hcInGroup;
+
+		// UIR's Gear tab measures the vacuum gauge's label and value widths with whatever Text.Font the last drawer left
+		// (its other gauges and the comfy-temperature texts force Small first), then draws them in Small. Measured in
+		// Tiny, the label truncates to "Vacuum resist..." and "92%" to "9...", and the bar rect changes width, which
+		// restarts its fill animation; the next 0.5 s rebuild may land on Small again, hence the flicker.
+		static void UirVacuumFontEnter(out GameFont __state)
+		{
+			__state = Text.Font;
+			Text.Font = GameFont.Small;
+		}
+		static void UirVacuumFontExit(GameFont __state) => Text.Font = __state;
 
 		static void HcGroupEnter() => hcInGroup = true;
 		static void HcGroupExit() => hcInGroup = false;
@@ -1475,6 +1490,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.InspectorTabs.HoverCard:LineHeight"] = 0xBC638E0C842420E6,                        // UI Rethemed - Inspector Tabs 1.7, 2026-11-06
 			["UIRethemed.InspectorTabs.HoverCard:DrawGroup"] = 0x983CB3913E7492E4,
 			["UIRethemed.InspectorTabs.Theme:StatLine"] = 0xE7BF59AB7C8A20D5,
+			["UIRethemed.InspectorTabs.GearTab:RefreshVacuumGauge"] = 0x8A89AD0AD75AD5FE,                // UI Rethemed - Inspector Tabs 1.7, 2026-11-08
 			["UIRethemed.MainBar.MenuWindow:Face"] = 0x7970824AD7079EAA,                               // UI Rethemed - Main Bar 1.7, 2026-11-07
 			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0xB6635F04BB1CC9CC,
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0x7F317F9F8340B035,                               // UI Rethemed - Notifications 1.7, 2026-11-07

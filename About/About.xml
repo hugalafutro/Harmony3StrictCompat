@@ -68,6 +68,7 @@
 - Simple Leadership: leaders only join raids whose points cover them.
 - Sensible Bed Ownership: reservation prefix skipped for beds with no map.
 - Skilled Refueling: Harmony 3 unchecked binding for its mistyped __instance patch.
+- Smarter Visitors + Hospitality: its leave-delay prefix only touches Hospitality's stay timer, not the 1200-tick recovery after a fight (hurt visitor groups no longer stand at their defend point forever instead of leaving).
 - Basic Traits: "TraitHediffApplier: Processing pawn" debug spam removed.
 - Triumphant Research: shows the full unlock list instead of a blank window.
 - Too Many Mods: 22 lowercase "Defs/thingDef[" xpaths fixed (Rimsenal items).

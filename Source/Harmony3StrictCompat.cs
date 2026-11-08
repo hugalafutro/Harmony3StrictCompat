@@ -118,6 +118,10 @@ namespace Harmony3StrictCompat
 			var hospPocket = Target("Hospitality.Utilities.ItemUtility:PocketHeadgear");
 			if (hospPocket != null)
 				harmony.Patch(hospPocket, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospKeepCasketHelmet)));
+			var svPrefix = Target("SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix");
+			svStayTimer = AccessTools.TypeByName("Hospitality.Trigger_TicksPassedAndOkayToLeave");
+			if (svPrefix != null && svStayTimer != null)
+				harmony.Patch(svPrefix, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SvOnlyStayTimer)));
 			var epIssue = Target("FinitePopulationVeterans.WorldPopulationManager:TryGetVeteran");
 			if (epIssue != null)
 				harmony.Patch(epIssue, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(EpIssuedLeavesWorld)));
@@ -1551,6 +1555,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.InspectorTabs.GearTab:VanillaSlotFor"] = 0x685E5552BE5DC1B7,
 			["UIRethemed.InspectorTabs.GearTab:DrawStatsPanel"] = 0xEAA253E7421BEDB7,
 			["SmartMedicine.Dialog_StockUp:<DoWindowContents>b__10_0"] = 0x287F2659618CDD5B,        // Smart Medicine - Continued 1.7, 2026-11-08 (DLL of 2026-11-02)
+			["SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix"] = 0xEA4FA1B085907595,     // Smarter Visitors 1.7.0, 2026-11-08
 			["UIRethemed.MainBar.MenuWindow:Face"] = 0x7970824AD7079EAA,                               // UI Rethemed - Main Bar 1.7, 2026-11-07
 			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0xB6635F04BB1CC9CC,
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0x7F317F9F8340B035,                               // UI Rethemed - Notifications 1.7, 2026-11-07
@@ -1674,6 +1679,22 @@ namespace Harmony3StrictCompat
 		{
 			foreach (var ins in instructions)
 				yield return ins.Calls(LogMessage) ? new CodeInstruction(OpCodes.Pop).WithLabels(ins.labels).WithBlocks(ins.blocks) : ins;
+		}
+
+		// ---- Smarter Visitors + Hospitality --------------------------------------------------------------
+		// Smarter Visitors prefixes Trigger_TicksPassed.ActivateOn for every ticks trigger of a VisitColony lord, not
+		// only Hospitality's stay timer (Trigger_TicksPassedAndOkayToLeave): also vanilla's Trigger_TicksPassedWithoutHarm
+		// (1200) that returns the group from LordToil_DefendPoint to its travel toil after a fight. With "Visitors will
+		// not leave if needing medical rest" on, one hurt visitor pushes that deadline out by 2500 ticks every time it
+		// comes up, so a group hurt while leaving stands at its defend point eating and sleeping and never exits.
+		// Its prefix handles the stay timer only; every other ticks trigger runs vanilla.
+		static Type svStayTimer;
+
+		static bool SvOnlyStayTimer(Trigger_TicksPassed __0, ref bool __result)
+		{
+			if (svStayTimer.IsInstanceOfType(__0)) return true;
+			__result = true; // run Trigger_TicksPassed.ActivateOn unchanged
+			return false;
 		}
 
 		// ---- Simple Leadership raid leaders ------------------------------------------------------------

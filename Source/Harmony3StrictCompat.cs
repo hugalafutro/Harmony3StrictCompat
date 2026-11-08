@@ -846,11 +846,16 @@ namespace Harmony3StrictCompat
 			return false;
 		}
 
-		// Personal tweak: empty doll slots are captioned in Tiny with the layer's label, and Packs Are Not Belts'
-		// "Mechanitor" layer is one letter too wide for the cell, so its "r" wraps onto a second line.
+		// Personal tweak: empty doll slots are captioned in Tiny with the layer's label, and modded layer labels
+		// longer than ~9 letters (Packs Are Not Belts' "Mechanitor", "Exoskeleton", "Ammunition") wrap onto a second line.
 		static void UirShortSlotLabel(ref string __result)
 		{
-			if (__result == "Mechanitor") __result = "Mech.";
+			switch (__result)
+			{
+				case "Mechanitor": __result = "Mech."; break;
+				case "Exoskeleton": __result = "Exo."; break;
+				case "Ammunition": __result = "Ammo"; break;
+			}
 		}
 
 		static void HcGroupEnter() => hcInGroup = true;

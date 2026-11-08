@@ -240,6 +240,9 @@ namespace Harmony3StrictCompat
 			uirDollSlot = uirGearTab == null ? null : AccessTools.Inner(uirGearTab, "DollSlot");
 			if (uirSlotFor != null && uirDollSlot != null && ModsConfig.IsActive("stevezero.FullArmorHandsFeet"))
 				harmony.Patch(uirSlotFor, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirHandsFeetSlot)));
+			var uirStatsPanel = Target("UIRethemed.InspectorTabs.GearTab:DrawStatsPanel");
+			if (uirStatsPanel != null)
+				harmony.Patch(uirStatsPanel, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirStatsPanelOrder)));
 			var uirSlotLabel = Target("UIRethemed.InspectorTabs.GearTab:SlotLabel");
 			if (uirSlotLabel != null)
 				harmony.Patch(uirSlotLabel, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirShortSlotLabel)));
@@ -817,6 +820,55 @@ namespace Harmony3StrictCompat
 			Text.Font = __state;
 		}
 		static FieldInfo uirVacuumGauge, uirVacuumLabelWidth, uirGaugeLabel;
+
+		// Personal tweak: the Gear tab overview draws its cards as loadout, mass, stock-up, comfy temperature, combat.
+		// Wanted: mass, combat, temperature, stock-up. The stock-up loop and the temperature card are inline, so the
+		// `DrawGaugeCard(ref y, width)` call (ldloca y; ldloc width; call) is cut from the end and dropped in front of the
+		// stock-up loop's init (`ldc.i4.0; stloc i; br COND`, COND found from `ldsfld stocks; callvirt get_Count`), and
+		// the stock-up loop is cut from there and appended where the combat call was. Labels stay on the new first
+		// instruction of each spot. Untouched when either shape is missing.
+		static IEnumerable<CodeInstruction> UirStatsPanelOrder(IEnumerable<CodeInstruction> instructions)
+		{
+			var codes = instructions.ToList();
+			var gearTab = AccessTools.TypeByName("UIRethemed.InspectorTabs.GearTab");
+			var gauge = AccessTools.DeclaredMethod(gearTab, "DrawGaugeCard");
+			var stocks = AccessTools.DeclaredField(gearTab, "stocks");
+			int call = codes.FindIndex(c => c.Calls(gauge));
+			int count = codes.FindIndex(c => c.opcode == OpCodes.Ldsfld && c.operand is FieldInfo f && f == stocks
+				&& codes[codes.IndexOf(c) + 1].opcode == OpCodes.Callvirt && ((MethodInfo)codes[codes.IndexOf(c) + 1].operand).Name == "get_Count");
+			if (call < 2 || count < 1 || codes[call - 2].opcode != OpCodes.Ldloca_S || !codes[call - 1].IsLdloc())
+			{
+				Log.Error("[Harmony3StrictCompat] UIR DrawStatsPanel shape changed, card order left as shipped");
+				return codes;
+			}
+			// loop condition starts one before `ldsfld stocks` (ldloc i) and carries the label the init's br jumps to
+			int cond = count - 1;
+			var condLabels = codes[cond].labels;
+			int br = codes.FindIndex(c => (c.opcode == OpCodes.Br || c.opcode == OpCodes.Br_S) && c.operand is Label l && condLabels.Contains(l));
+			// loop ends at the blt after get_Count (+1 for the callvirt, +1 for blt)
+			int loopEnd = count + 2;
+			if (condLabels.Count == 0 || br < 2 || br > cond || !(codes[loopEnd].opcode == OpCodes.Blt || codes[loopEnd].opcode == OpCodes.Blt_S) || loopEnd >= call - 2)
+			{
+				Log.Error("[Harmony3StrictCompat] UIR DrawStatsPanel stock loop shape changed, card order left as shipped");
+				return codes;
+			}
+			int loopStart = br - 2; // ldc.i4.0; stloc i; br COND
+			var gaugeCall = codes.GetRange(call - 2, 3);
+			var loop = codes.GetRange(loopStart, loopEnd + 1 - loopStart);
+			var afterCall = codes[call + 1];
+			// labels: whatever pointed at the loop init now points at the gauge call; whatever pointed at the gauge call
+			// now points at the moved loop; the loop's own internal labels travel with it
+			var loopLabels = loop[0].labels.ToList(); loop[0].labels.Clear();
+			var callLabels = gaugeCall[0].labels.ToList(); gaugeCall[0].labels.Clear();
+			codes.RemoveRange(call - 2, 3);
+			codes.RemoveRange(loopStart, loop.Count);
+			int insertAt = call - 2 - loop.Count; // old call position after the loop was cut
+			loop[0].labels.AddRange(callLabels);
+			codes.InsertRange(insertAt, loop);
+			gaugeCall[0].labels.AddRange(loopLabels);
+			codes.InsertRange(loopStart, gaugeCall);
+			return codes;
+		}
 
 		// Full Armor - Hands and Feet rewrites every gloves/boots def (covers only Hands/Feet) to the Overhead layer so
 		// they never conflict with armor it extends to those parts. UIR's doll classifier reads the layer before the
@@ -1555,6 +1607,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.InspectorTabs.GearTab:RefreshVacuumGauge"] = 0x8A89AD0AD75AD5FE,                // UI Rethemed - Inspector Tabs 1.7, 2026-11-08
 			["UIRethemed.InspectorTabs.GearTab:SlotLabel"] = 0x26E089A47B83FA79,
 			["UIRethemed.InspectorTabs.GearTab:VanillaSlotFor"] = 0x685E5552BE5DC1B7,
+			["UIRethemed.InspectorTabs.GearTab:DrawStatsPanel"] = 0xEAA253E7421BEDB7,
 			["UIRethemed.MainBar.MenuWindow:Face"] = 0x7970824AD7079EAA,                               // UI Rethemed - Main Bar 1.7, 2026-11-07
 			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0xB6635F04BB1CC9CC,
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0x7F317F9F8340B035,                               // UI Rethemed - Notifications 1.7, 2026-11-07

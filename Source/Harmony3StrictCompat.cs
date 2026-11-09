@@ -254,8 +254,8 @@ namespace Harmony3StrictCompat
 			if (uirSlotLabel != null)
 				harmony.Patch(uirSlotLabel, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirShortSlotLabel)));
 			var smStockUpFilter = Target("SmartMedicine.Dialog_StockUp:<DoWindowContents>b__10_0");
-			if (smStockUpFilter != null && ModsConfig.IsActive("vanillaracesexpanded.sanguophage"))
-				harmony.Patch(smStockUpFilter, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SmStockUpVrePacks)));
+			if (smStockUpFilter != null)
+				harmony.Patch(smStockUpFilter, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SmStockUpExtras)));
 			var dsStructure = Target("Merthsoft.DesignatorShapes.Shapes.FloodFill:IsStructure");
 			if (dsStructure != null)
 				harmony.Patch(dsStructure, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DsDoorIsStructure)));
@@ -939,15 +939,14 @@ namespace Harmony3StrictCompat
 			}
 		}
 
-		// Smart Medicine's stock-up picker lists drugs, medicine and vanilla HemogenPack only; VRE Sanguophage's
-		// animal/corpse packs are plain Foods, so they never show. Postfix on the picker's filter lambda admits them.
-		static ThingDef[] smVrePacks;
-		static void SmStockUpVrePacks(ThingDef t, ref bool __result)
+		// Smart Medicine's stock-up picker lists drugs, medicine and vanilla HemogenPack only; other hemogen packs and
+		// carried meals are plain Foods, so they never show. Postfix on the picker's filter lambda admits these defs.
+		static readonly HashSet<string> SmStockUpDefs = new()
 		{
-			if (__result) return;
-			smVrePacks ??= new[] { DefDatabase<ThingDef>.GetNamedSilentFail("VRE_HemogenPack_Animal"), DefDatabase<ThingDef>.GetNamedSilentFail("VRE_HemogenPack_Corpse") };
-			__result = t == smVrePacks[0] || t == smVrePacks[1];
-		}
+			"VRE_HemogenPack_Animal", "VRE_HemogenPack_Corpse", "VRE_HemogenPack_Sanguophage",
+			"MealSurvivalPack", "MealNutrientPackaged",
+		};
+		static void SmStockUpExtras(ThingDef t, ref bool __result) => __result |= SmStockUpDefs.Contains(t.defName);
 
 		static void HcGroupEnter() => hcInGroup = true;
 		static void HcGroupExit() => hcInGroup = false;

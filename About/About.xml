@@ -48,6 +48,7 @@
 - Auto-Cast Specialist Commands + Det's Xenotypes - Stoneborn (personal tweak): Stonecall is auto-cast when mining or finishing construction, following the Auto-Cast Mining Command setting, which right-click on the Stonecall gizmo toggles (check icon shown).
 - Vanilla (found through Modern Needs Tab): an emptied minified thing has a label again, so job reports no longer throw and MNT keeps recording job history.
 - Stem's VWE Industrial Expansion, Fortification Industrial - Citadel: missing weapon sounds pointed at existing ones (pistol equip, sawn-off repeater shot, flame bunker).
+- Smart Medicine - Continued (personal tweak): the Stock Up picker also lists the VRE Sanguophage animal, corpse and sanguophage hemogen packs, packaged survival meals and nutrient packaged meals.
 - Vanilla Races Expanded - Sanguophage: animalfeeders (strigoi) drink animal hemogen packs on their own, like regular packs, when no prisoner or regular pack is available.
 - Hospitality: Vending machines (personal tweak): the powered vending machine draws 100 W and keeps stored items frozen while powered.
 - Mod Settings Framework (VEF): slider settings reach every def their xpath matches, not just the first (ReBuild's grate speed slider now covers the sterile grate tile).

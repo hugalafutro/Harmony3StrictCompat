@@ -115,6 +115,8 @@ namespace Harmony3StrictCompat
 			var epDispatch = Target("FinitePopulationVeterans.WorldPopulationManager:IsPawnAvailableForDispatch");
 			if (epDispatch != null)
 				harmony.Patch(epDispatch, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(EpNoLeaderVeterans)));
+			if (Target("FinitePopulationVeterans.FPUtility:IsPawnSavable") != null)
+				EpInitPrisonerMemory(harmony);
 			var hospRegear = Target("Hospitality.Utilities.SpawnGroupUtility:GenerateNewGearFor");
 			if (hospRegear != null)
 				harmony.Patch(hospRegear, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospKeepWarcasketGear)));
@@ -1451,6 +1453,58 @@ namespace Harmony3StrictCompat
 			return ImageConversion.EncodeArrayToPNG(data, format, width, height, rowBytes);
 		}
 
+		// ---- Eternal Pawns: memory gizmo on prisoners -----------------------------------------------------------
+		// Personal tweak: FPUtility.IsPawnSavable rejects unreleased prisoners, which is right for the veteran pool but also
+		// hides the memory and notes gizmo. Adds the same gizmo for colony prisoners; the other checks copy IsPawnSavable
+		// (fingerprinted). Keep its veteran pool logic untouched: only the gizmo changes.
+		static Func<Pawn, Window> epMemoryWindow;
+		static Type epManagerType;
+		static FieldInfo epSettings, epShowGizmo, epNotes, epVeterans, epPins;
+
+		static void EpInitPrisonerMemory(Harmony harmony)
+		{
+			var window = AccessTools.Constructor(AccessTools.TypeByName("FinitePopulationVeterans.Window_PawnMemory"), [typeof(Pawn)]);
+			epManagerType = AccessTools.TypeByName("FinitePopulationVeterans.WorldPopulationManager");
+			epSettings = AccessTools.Field(AccessTools.TypeByName("FinitePopulationVeterans.FPMod"), "settings");
+			epShowGizmo = AccessTools.Field(AccessTools.TypeByName("FinitePopulationVeterans.FPSettings"), "showGizmoButton");
+			epNotes = AccessTools.Field(epManagerType, "pawnNotes");
+			epVeterans = AccessTools.Field(epManagerType, "allVeteranIdsCache");
+			epPins = AccessTools.Field(epManagerType, "manualVeteranPins");
+			if (window == null || epSettings == null || epShowGizmo == null || epNotes == null || epVeterans == null || epPins == null)
+			{
+				Log.Error("[Harmony3StrictCompat] Eternal Pawns memory window or settings changed: its mod updated, remove or redo the prisoner gizmo");
+				return;
+			}
+			epMemoryWindow = pawn => (Window)window.Invoke([pawn]);
+			harmony.Patch(AccessTools.Method(typeof(Pawn), nameof(Pawn.GetGizmos)),
+				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(EpPrisonerMemoryGizmo)));
+		}
+
+		static IEnumerable<Gizmo> EpPrisonerMemoryGizmo(IEnumerable<Gizmo> __result, Pawn __instance)
+		{
+			foreach (var gizmo in __result)
+				yield return gizmo;
+			if (!__instance.IsPrisonerOfColony || __instance.guest.Released || !__instance.RaceProps.Humanlike || __instance.Dead
+				|| __instance.Faction == Faction.OfPlayer || __instance.IsMutant || __instance.Faction?.def.defName == "Entities"
+				|| QuestUtility.IsQuestLodger(__instance) || QuestUtility.IsReservedByQuestOrQuestBeingGenerated(__instance)
+				|| __instance.IsCaravanMember())
+				yield break;
+			var settings = epSettings.GetValue(null);
+			if (settings == null || !(bool)epShowGizmo.GetValue(settings) || Find.World?.GetComponent(epManagerType) is not { } manager)
+				yield break;
+			int id = __instance.thingIDNumber;
+			yield return new Command_Action
+			{
+				defaultLabel = "FP_MemoryButton".Translate(),
+				defaultDesc = "FP_OpenPawnMemoryPanelDesc".Translate(),
+				icon = ContentFinder<Texture2D>.Get("UI/Icons/EP_MemoryIcon"),
+				action = () => Find.WindowStack.Add(epMemoryWindow(__instance)),
+				defaultIconColor = ((HashSet<int>)epVeterans.GetValue(manager)).Contains(id) ? Color.cyan
+					: ((HashSet<int>)epPins.GetValue(manager)).Contains(id) || ((Dictionary<int, string>)epNotes.GetValue(manager)).ContainsKey(id) ? Color.yellow
+					: Color.white,
+			};
+		}
+
 		// ---- Eternal Pawns: faction leaders recycled as ordinary raiders/visitors ------------------------------
 		// Eternal Pawns (helldan.eternalpawns, 1.6 build) prefixes PawnGenerator.GeneratePawn at priority 2000 and, with
 		// veteranRecallChance (default 0.5), hands back a pawn from its per-faction veteran pool instead of generating one,
@@ -1649,6 +1703,7 @@ namespace Harmony3StrictCompat
 			["HospitalityCasino.VendingMachineJobHelper:InsertCoin"] = 0xDD3ACDA377763174,                   // Casino 1.7, 2026-11-06
 			["HospitalityCasino.CompVendingMachine:CompInspectStringExtra"] = 0x4C16897C23044EC3,            // Casino 1.7, 2026-11-06
 			["FinitePopulationVeterans.WorldPopulationManager:IsPawnAvailableForDispatch"] = 0x5A8A111FF41E04D8, // Eternal Pawns 1.6 build, 2026-04-13
+			["FinitePopulationVeterans.FPUtility:IsPawnSavable"] = 0xED6ECD2938A4AB2A,                     // Eternal Pawns 1.6 build, 2026-04-13
 			["FinitePopulationVeterans.WorldPopulationManager:PawnMatchesRequest"] = 0xAF54B4F3884BC77E, // Eternal Pawns 1.6 build, 2026-04-13
 			["FinitePopulationVeterans.WorldPopulationManager:TryGetVeteran"] = 0xEEC0813511A23153,      // Eternal Pawns 1.6 build, 2026-04-13
 			["MSSFP.Utils.PawnGraphicUtils+<>c__DisplayClass4_0:<SaveTextureToFile>b__0"] = 0x3C2DDE1F39E984E8,  // MSS Tweaks and Fun 1.7, 2026-10-19

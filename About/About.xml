@@ -56,6 +56,7 @@
 - Mod Settings Framework (VEF): slider settings reach every def their xpath matches, not just the first (ReBuild's grate speed slider now covers the sterile grate tile).
 - MSS Tweaks and Fun: haunt portraits no longer saved upside down on 1.7/Vulkan.
 - MSS Tweaks and Fun: VFE Pirates Buckoneer culture patch remapped to the VFEP_Mercenaries faction.
+- Eternal Pawns (personal tweak): the memory and notes gizmo also shows on your prisoners.
 - Eternal Pawns: faction leaders, leader kinds and warcasket wearers stay out of the veteran draw; MustBeCapableOfViolence honoured.
 - Eternal Pawns: an issued veteran leaves the world pawn list, so vanilla cannot redress it a second time in the same group (duplicate caravan pawns, stuck trade caravans).
 - Hospitality: Casino: tables given Casino's vending comp by LocalTweaks (tongo, billiards) charge visitors once per game.

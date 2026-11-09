@@ -47,6 +47,26 @@ namespace Harmony3StrictCompat
 				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DropWorldCopiesOfShipPawns)));
 			harmony.Patch(AccessTools.Method(typeof(Game), nameof(Game.FinalizeInit)),
 				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RepairMissingLeaders)));
+			var tdSkillArrow = Target("TD_Enhancement_Pack.SkillLearningIndicator:LabelLearning");
+			var uirCardSkill = Target("UIRethemed.ColonistCard.Glance:DrawSkill");
+			if (tdSkillArrow != null && uirCardSkill != null)
+			{
+				tdLearningArrow = (Action<SkillRecord, Rect, float>)tdSkillArrow.CreateDelegate(typeof(Action<SkillRecord, Rect, float>));
+				harmony.Patch(uirCardSkill, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCardSkillArrow)));
+			}
+			var srDuration = Target("SkilledRefueling.HarmonyPatches:GetRefuelDuration");
+			var srSpeed = Target("SkilledRefueling.RefuelingUtility:RefuelingSpeedForPawn");
+			if (srDuration != null && srSpeed != null)
+			{
+				srOwnerField = AccessTools.DeclaredField(srDuration.DeclaringType, "JD_RefuelField");
+				if (srOwnerField == null)
+					Log.Error("[Harmony3StrictCompat] SkilledRefueling.HarmonyPatches.JD_RefuelField no longer exists: its mod updated, remove or redo this fix");
+				else
+				{
+					srRefuelSpeed = (Func<Pawn, float>)srSpeed.CreateDelegate(typeof(Func<Pawn, float>));
+					harmony.Patch(srDuration, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SrRefuelDuration)));
+				}
+			}
 			var rpDismiss = Target("RimPacts.WorldComponent_RimPacts:DismissExilePawn");
 			if (rpDismiss != null)
 				harmony.Patch(rpDismiss, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpReplaceDismissedLeader)));
@@ -60,8 +80,6 @@ namespace Harmony3StrictCompat
 				Fingerprint("TriumphantResearch.Window_ResearchComplete:.ctor", trCtor);
 				harmony.Patch(trCtor, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(TrFillEmptyCarousel)));
 			}
-			// Not patched here (its binding is relaxed in PatchCtorPrefix), but fingerprinted all the same.
-			Target("SkilledRefueling.HarmonyPatches:JobDriverRefuelAtomic_MakeNewToils_Postfix");
 			var mvcfStat = Target("MVCF.Utilities.VerbStatsUtility:GetStatValue");
 			if (mvcfStat != null)
 			{
@@ -1192,6 +1210,43 @@ namespace Harmony3StrictCompat
 
 		static void LtoBusyworkUpperMark(Rect rect, Pawn colonist) => bwUpperMark(null, rect, colonist);
 
+		// ---- TD Enhancement Pack skill gain arrows on the UI Rethemed colonist card ------------------------------
+		// Personal tweak: TD only transpiles the arrow into vanilla SkillUI.DrawSkill, which the card does not use. Its
+		// recording in SkillRecord.Learn runs regardless, so call TD's drawer for each card row. It draws at
+		// x = levelLabelWidth + 70 in the current group: -70 inside a group over the bar's right end puts it at the origin.
+		static Action<SkillRecord, Rect, float> tdLearningArrow;
+
+		static void UirCardSkillArrow(Rect cell, SkillRecord skill)
+		{
+			const float size = 14f;
+			const float levelLabelWidth = 22f; // UIR's 20 px level number plus its 2 px margin
+			Widgets.BeginGroup(new Rect(cell.xMax - levelLabelWidth - size, Mathf.Round(cell.center.y - size / 2f), size, size));
+			tdLearningArrow(skill, new Rect(0f, 0f, size, size), -70f);
+			Widgets.EndGroup();
+		}
+
+		// ---- Skilled Refueling: normal and atomic refuel jobs share one cached iterator field ---------------------
+		// GetRefuelDuration caches the "<>4__this" FieldInfo from whichever iterator runs first, but JobDriver_Refuel and
+		// JobDriver_RefuelAtomic have separate iterator classes, so the other job's GetValue throws ArgumentException.
+		// It also casts to JobDriver_Refuel only, so atomic refuels never get the skill speed. Refresh the cache for the
+		// current iterator and let its code handle normal refuels. Atomic refuels get the skill speed without the
+		// per-stack scaling: fuel targets are still in a queue when the toils are built, so no single stack exists yet.
+		static FieldInfo srOwnerField;
+		static Func<Pawn, float> srRefuelSpeed;
+
+		static bool SrRefuelDuration(object instance, ref int __result)
+		{
+			var owner = AccessTools.Field(instance.GetType(), "<>4__this");
+			if (owner?.GetValue(instance) is JobDriver_RefuelAtomic atomic)
+			{
+				float speed = srRefuelSpeed(atomic.pawn);
+				__result = speed > 0f ? Mathf.CeilToInt(240f / speed) : 240;
+				return false;
+			}
+			srOwnerField.SetValue(null, owner);
+			return true;
+		}
+
 		// ---- Better Workbench Management: bill options overlap the Ideology style button -------------------------
 		// Personal tweak: BWM's previous/next bill arrows sit at inRect.yMin + 4 and overlap the top of the ingredient
 		// filter by a few pixels. inRect is only used for that rect, so shift it 7 px up.
@@ -1560,7 +1615,6 @@ namespace Harmony3StrictCompat
 			["RimWorld.CompShuttle:CompTick"] = 0x335012F801042105,                                              // game 1.7.5000, 2026-11-08
 			["SimpleLeadership.PawnGroupMakerUtility_GeneratePawns_Patch:Postfix"] = 0x931CDA2DA9F203ED,          // Steam 2026-10-27
 			["TraitTracker.TraitHediffApplier:ApplyHediffsToPawnsWithTraits"] = 0x67BDC9BB976E9B72,                // 2026-10-22
-			["SkilledRefueling.HarmonyPatches:JobDriverRefuelAtomic_MakeNewToils_Postfix"] = 0x80FDB19E16DDBC54,
 			// VEF 1.7 MVCF.dll, 2026-10-31
 			["MVCF.Utilities.VerbStatsUtility:GetStatValue"] = 0x691C1FF55EB56CE6,
 			["MVCF.Utilities.VerbStatsUtility:CreateAverageStat"] = 0x00F6026D0950F156,                           // StatDef overload
@@ -1590,6 +1644,10 @@ namespace Harmony3StrictCompat
 			["ModSettingsFramework.PatchOperationSliderFloat:ApplyWorker"] = 0x7D3F07C2C28B20A5,              // VEF 1.7 0ModSettingsFramework.dll, 2026-10-13
 			["ModSettingsFramework.PatchOperationSliderInt:ApplyWorker"] = 0x03DFA38BA62A830B,
 			["Busywork.Patch_ColonistBarColonistDrawer_DrawColonist:Postfix"] = 0x8671BDCBF4F254FC,          // Busywork 1.7, 2026-11-05
+			["TD_Enhancement_Pack.SkillLearningIndicator:LabelLearning"] = 0xA1C6010BAEEDD973,             // TD Enhancement Pack 1.7, DLL of 2026-10-22
+			["UIRethemed.ColonistCard.Glance:DrawSkill"] = 0xA4D4C02C6D77B1EF,                             // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-07
+			["SkilledRefueling.HarmonyPatches:GetRefuelDuration"] = 0xFE59863C2B492B65,                    // Skilled Refueling 1.7, DLL of 2026-11-09
+			["SkilledRefueling.RefuelingUtility:RefuelingSpeedForPawn"] = 0x302D7899D7E9DF65,
 			["TacticalGroups.TacticalGroups_ColonistBarColonistDrawer:DrawColonist"] = 0x092B4F83C851CE01,     // LTO Colony Groups 1.6 build, 2026-11-05
 			["ModernNeedsTab.Patch_Pawn_JobTracker_EndCurrentJob:Prefix"] = 0xDD06E10633A7F9FC,             // Modern Needs Tab, 2026-11-05
 			["CommonSense.ThingMaker_MakeThing_CommonSensePatch:Postfix"] = 0xE351865A0EF38D39,             // Common Sense 1.6 build, 2026-11-05
@@ -1913,7 +1971,6 @@ namespace Harmony3StrictCompat
 		// key: "<assembly>|<declaring type name>|<method name>"
 		static readonly HashSet<string> Unchecked = new()
 		{
-			"Skilled Refueling|HarmonyPatches|JobDriverRefuelAtomic_MakeNewToils_Postfix", // only JobDriver.pawn/job
 		};
 
 		static string Key(MethodInfo m) => $"{m.Module.Assembly.GetName().Name}|{m.DeclaringType?.Name}|{m.Name}";

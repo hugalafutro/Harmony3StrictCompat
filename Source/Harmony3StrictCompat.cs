@@ -266,6 +266,13 @@ namespace Harmony3StrictCompat
 			var canHaul = Target("Verse.AI.HaulAIUtility:PawnCanAutomaticallyHaul");
 			if (canHaul != null && ModsConfig.IsActive("orion.hospitality"))
 				harmony.Patch(canHaul, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HaulAreaLabelNullSafe)));
+			var unburnedWait = Target("Unburned.Pretty_Patch:Prefix");
+			var vefVanillaMelee = Target("VEF.Weapons.MeleeReachCombatUtility:IsVanillaMeleeAttack");
+			if (unburnedWait != null && vefVanillaMelee != null)
+			{
+				vefIsVanillaMelee = (Func<Verb, bool>)vefVanillaMelee.CreateDelegate(typeof(Func<Verb, bool>));
+				harmony.Patch(unburnedWait, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UnburnedKeepReachAutoAttack)));
+			}
 			var dsStructure = Target("Merthsoft.DesignatorShapes.Shapes.FloodFill:IsStructure");
 			if (dsStructure != null)
 				harmony.Patch(dsStructure, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DsDoorIsStructure)));
@@ -989,6 +996,33 @@ namespace Harmony3StrictCompat
 
 		static string AreaLabelOrGuest(Area area) => area?.Label ?? "guest area";
 
+		// ---- Unburned + VEF: reach melee weapons never auto-attack while drafted --------------------------
+		// Unburned's prefix is a full copy of JobDriver_Wait.CheckForAutoAttack that always skips the original, so VEF's
+		// transpiler on the original never runs. Its copy still treats every melee verb as "not a shooter". Same test
+		// VEF injects: a melee verb with more reach than adjacent goes on to the target search.
+		static Func<Verb, bool> vefIsVanillaMelee;
+		static bool VerbIsAdjacentMelee(Verb verb) => verb.verbProps.IsMeleeAttack && vefIsVanillaMelee(verb);
+
+		static IEnumerable<CodeInstruction> UnburnedKeepReachAutoAttack(IEnumerable<CodeInstruction> instructions)
+		{
+			var codes = instructions.ToList();
+			var verbProps = AccessTools.Field(typeof(Verb), nameof(Verb.verbProps));
+			var isMelee = AccessTools.PropertyGetter(typeof(VerbProperties), nameof(VerbProperties.IsMeleeAttack));
+			int replaced = 0;
+			for (int i = codes.Count - 2; i >= 0; i--)
+			{
+				if (codes[i].opcode == OpCodes.Ldfld && Equals(codes[i].operand, verbProps) && codes[i + 1].Calls(isMelee))
+				{
+					codes[i] = new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(VerbIsAdjacentMelee))).MoveLabelsFrom(codes[i]);
+					codes.RemoveAt(i + 1);
+					replaced++;
+				}
+			}
+			if (replaced != 1)
+				Log.Error($"[Harmony3StrictCompat] Unburned auto-attack: expected one melee verb check, replaced {replaced}");
+			return codes;
+		}
+
 		static void HcGroupEnter() => hcInGroup = true;
 		static void HcGroupExit() => hcInGroup = false;
 
@@ -1598,6 +1632,8 @@ namespace Harmony3StrictCompat
 			["Verse.AI.HaulAIUtility:PawnCanAutomaticallyHaul"] = 0x4F5511488CF0B191,                            // game 1.7.5000, 2026-11-09
 			["RimWorld.JobGiver_DropUnusedInventory:Drop"] = 0x80ADDA655AAFAE64,                                  // game 1.7.5000, 2026-11-09
 			["SmartMedicine.StockUpUtility:StockingUpOn"] = 0xE47440ED851F08C2,                                   // (Pawn, Thing) overload, Smart Medicine 1.7, 2026-11-09
+			["Unburned.Pretty_Patch:Prefix"] = 0xE153E3D01BE0AC50,                                                // Unburned 1.7, 2026-11-09
+			["VEF.Weapons.MeleeReachCombatUtility:IsVanillaMeleeAttack"] = 0xAED0762AE41E6D48,                    // VEF 1.7, 2026-11-09
 			["SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix"] = 0xEA4FA1B085907595,     // Smarter Visitors 1.7.0, 2026-11-08
 			["UIRethemed.MainBar.MenuWindow:Face"] = 0x7970824AD7079EAA,                               // UI Rethemed - Main Bar 1.7, 2026-11-07
 			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0xB6635F04BB1CC9CC,

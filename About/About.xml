@@ -68,6 +68,7 @@
 - RimPacts: factions whose exiled leader left or was dismissed get a new leader (also repaired after load), no more "Faction leader for X is null".
 - VEF (MVCF): multi-verb weapons use the weapon's own accuracy/cooldown when the verb sets none; duplicate stat rows hidden; Range row fixed.
 - VEF: verb range factor applied to the result instead of the shared verb def (no stuck ranges).
+- Unburned + VEF: drafted pawns with reach melee weapons auto-attack at full reach again (Unburned replaced the method VEF patches).
 - Simple Leadership: leaders only join raids whose points cover them.
 - Sensible Bed Ownership: reservation prefix skipped for beds with no map.
 - Skilled Refueling: Harmony 3 unchecked binding for its mistyped __instance patch.

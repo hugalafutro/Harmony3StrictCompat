@@ -37,6 +37,7 @@
 - Prisoner Realism + Cleaning Area Relaunched: prisoners only clean filth inside the Clean area, no more standing-still Clean job loop.
 - Hunt For Me: only player animals take hunting jobs (a released animal marked for hunting no longer hunts itself).
 - Designator Shapes + Better Architect Menu: flood fill stops at doors again.
+- Vanilla Quests Expanded - Ancients (personal tweak): the pneumatic capsule arrival message lists what arrived.
 - Vanilla Social Interactions Expanded: "cured my friend" thought label resolves for implied relatives (no more template errors or Social tab fallback).
 - UI Rethemed - Colonist Card (personal tweak): the activity row shows the bleed rate and time to death when a pawn would bleed out within a day.
 - UI Rethemed - Inspector Tabs: long opinion rows in hover cards wrap instead of overlapping.

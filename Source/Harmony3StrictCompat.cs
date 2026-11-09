@@ -54,6 +54,9 @@ namespace Harmony3StrictCompat
 				tdLearningArrow = (Action<SkillRecord, Rect, float>)tdSkillArrow.CreateDelegate(typeof(Action<SkillRecord, Rect, float>));
 				harmony.Patch(uirCardSkill, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCardSkillArrow)));
 			}
+			var vqeaDeliver = Target("VanillaQuestsExpandedAncients.Building_PneumaticTubeLaunchPort:Deliver");
+			if (vqeaDeliver != null)
+				harmony.Patch(vqeaDeliver, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(VqeaCapsuleContentsTranspiler)));
 			var uirCardActivity = Target("UIRethemed.ColonistCard.CardInfo:Activity");
 			if (uirCardActivity != null)
 				harmony.Patch(uirCardActivity, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCardBleedOut)));
@@ -1230,6 +1233,51 @@ namespace Harmony3StrictCompat
 			Widgets.EndGroup();
 		}
 
+		// ---- VQE Ancients: name the pneumatic capsule's contents in its arrival message ---------------------------
+		// Personal tweak: Deliver sends the message before it builds the local list of things to place, and pawns haul
+		// them away quickly. Drops that message and sends it after the list is built, just before the placing loop.
+		static IEnumerable<CodeInstruction> VqeaCapsuleContentsTranspiler(IEnumerable<CodeInstruction> instructions)
+		{
+			var codes = instructions.ToList();
+			var getEnumerator = AccessTools.Method(typeof(List<Thing>), nameof(List<Thing>.GetEnumerator));
+			int message = codes.FindIndex(c => c.operand is MethodInfo { Name: nameof(Messages.Message) } m && m.DeclaringType == typeof(Messages));
+			int loop = codes.FindIndex(c => c.Calls(getEnumerator));
+			if (message < 0 || loop < 1 || !codes[loop - 1].IsLdloc())
+			{
+				Log.Error("[Harmony3StrictCompat] VQE Ancients Deliver no longer has the expected message or loop: its mod updated, remove or redo this tweak");
+				return codes;
+			}
+			var inserted = new List<CodeInstruction>
+			{
+				new CodeInstruction(OpCodes.Ldarg_0).MoveLabelsFrom(codes[loop - 1]).MoveBlocksFrom(codes[loop - 1]),
+				new CodeInstruction(codes[loop - 1].opcode, codes[loop - 1].operand),
+				CodeInstruction.Call(typeof(Harmony3StrictCompatMod), nameof(VqeaCapsuleMessage)),
+			};
+			codes.InsertRange(loop - 1, inserted);
+			var call = codes[message];
+			var pops = ((MethodInfo)call.operand).GetParameters().Select(_ => new CodeInstruction(OpCodes.Pop)).ToList();
+			pops[0].MoveLabelsFrom(call).MoveBlocksFrom(call);
+			codes.RemoveAt(message);
+			codes.InsertRange(message, pops);
+			return codes;
+		}
+
+		static void VqeaCapsuleMessage(Building port, List<Thing> things)
+		{
+			const int maxKinds = 6;
+			string text = "VQEA_PneumaticCapsuleArrived".Translate();
+			var kinds = things.GroupBy(t => (t.def, t.Stuff))
+				.Select(g => (g.Key.def, g.Key.Stuff, count: g.Sum(t => t.stackCount)))
+				.OrderByDescending(k => k.count).ToList();
+			if (kinds.Count > 0)
+			{
+				text = text.TrimEnd('.') + ": " + string.Join(", ", kinds.Take(maxKinds).Select(k => GenLabel.ThingLabel(k.def, k.Stuff, k.count)));
+				if (kinds.Count > maxKinds)
+					text += $" +{kinds.Count - maxKinds}";
+			}
+			Messages.Message(text, port, MessageTypeDefOf.PositiveEvent);
+		}
+
 		// ---- Bleed-out time on the UI Rethemed colonist card activity row ----------------------------------------
 		// Personal tweak: the time left only shows at the bottom of the Health tab. Same text and limits as vanilla
 		// HealthCardUtility: nothing for a slow bleed (a day or more) or a Deathless pawn. Goes first because the row
@@ -1721,6 +1769,7 @@ namespace Harmony3StrictCompat
 			["TD_Enhancement_Pack.SkillLearningIndicator:LabelLearning"] = 0xA1C6010BAEEDD973,             // TD Enhancement Pack 1.7, DLL of 2026-10-22
 			["UIRethemed.ColonistCard.Glance:DrawSkill"] = 0xA4D4C02C6D77B1EF,                             // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-07
 			["UIRethemed.ColonistCard.CardInfo:Activity"] = 0x9BE7ACDF25553CE5,                            // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-07
+			["VanillaQuestsExpandedAncients.Building_PneumaticTubeLaunchPort:Deliver"] = 0x824DD22872D97BE7, // VQE Ancients 1.6 build, DLL of 2026-10-06
 			["SkilledRefueling.HarmonyPatches:GetRefuelDuration"] = 0xFE59863C2B492B65,                    // Skilled Refueling 1.7, DLL of 2026-11-09
 			["SkilledRefueling.RefuelingUtility:RefuelingSpeedForPawn"] = 0x302D7899D7E9DF65,
 			["TacticalGroups.TacticalGroups_ColonistBarColonistDrawer:DrawColonist"] = 0x092B4F83C851CE01,     // LTO Colony Groups 1.6 build, 2026-11-05

@@ -38,6 +38,7 @@
 - Hunt For Me: only player animals take hunting jobs (a released animal marked for hunting no longer hunts itself).
 - Designator Shapes + Better Architect Menu: flood fill stops at doors again.
 - Vanilla Social Interactions Expanded: "cured my friend" thought label resolves for implied relatives (no more template errors or Social tab fallback).
+- UI Rethemed - Colonist Card (personal tweak): the activity row shows the bleed rate and time to death when a pawn would bleed out within a day.
 - UI Rethemed - Inspector Tabs: long opinion rows in hover cards wrap instead of overlapping.
 - Flourish - Everyday Animations: the telescope pose mirrors with the telescope's art, so a West-rotated telescope is used from the eyepiece side too.
 - Flourish - Everyday Animations: in the telescope pose the telescope is drawn over the pawn and under its hands.

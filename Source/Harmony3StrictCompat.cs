@@ -57,6 +57,9 @@ namespace Harmony3StrictCompat
 			var vqeaDeliver = Target("VanillaQuestsExpandedAncients.Building_PneumaticTubeLaunchPort:Deliver");
 			if (vqeaDeliver != null)
 				harmony.Patch(vqeaDeliver, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(VqeaCapsuleContentsTranspiler)));
+			var normalCanGenerate = Target("RimWorld.PawnGroupKindWorker_Normal:CanGenerateFrom");
+			if (normalCanGenerate != null)
+				harmony.Patch(normalCanGenerate, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(NormalGroupYieldsPawns)));
 			var uirCardActivity = Target("UIRethemed.ColonistCard.CardInfo:Activity");
 			if (uirCardActivity != null)
 				harmony.Patch(uirCardActivity, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCardBleedOut)));
@@ -1282,6 +1285,18 @@ namespace Harmony3StrictCompat
 		// Personal tweak: the time left only shows at the bottom of the Health tab. Same text and limits as vanilla
 		// HealthCardUtility: nothing for a slow bleed (a day or more) or a Deathless pawn. Goes first because the row
 		// truncates long job text. Patches Activity, not ActivityLine: UIR matches that line against the inspect string.
+		// Vanilla bug: CanGenerateFrom checks options against the whole point total, but ChoosePawnGenOptionsByPoints
+		// caps each pawn at MaxPawnCost (the faction curve). A group whose every option costs more than that cap
+		// passes the gate and yields no pawns, e.g. VFE Pirates' melee-only Junker Hussar group below ~5800 points:
+		// the quest "raid of roughly this size:" preview comes out blank. Reject such groups so another one is rolled.
+		static void NormalGroupYieldsPawns(PawnGroupMakerParms parms, PawnGroupMaker groupMaker, ref bool __result)
+		{
+			if (!__result || parms.faction == null || groupMaker.kindDef.Worker.GetType() != typeof(PawnGroupKindWorker_Normal))
+				return;
+			__result = PawnGroupMakerUtility.GetOptions(parms, parms.faction.def, groupMaker.options, parms.points, parms.points, null)
+				.Any(o => PawnGroupMakerUtility.PawnGenOptionValid(o.Option, parms));
+		}
+
 		static void UirCardBleedOut(Pawn pawn, ref string activity)
 		{
 			float rate = pawn.health.hediffSet.BleedRateTotal;
@@ -1813,6 +1828,7 @@ namespace Harmony3StrictCompat
 			["SmartMedicine.Dialog_StockUp:<DoWindowContents>b__10_0"] = 0x287F2659618CDD5B,        // Smart Medicine - Continued 1.7, 2026-11-08 (DLL of 2026-11-02)
 			["Verse.AI.HaulAIUtility:PawnCanAutomaticallyHaul"] = 0x4F5511488CF0B191,                            // game 1.7.5000, 2026-11-09
 			["RimWorld.JobGiver_DropUnusedInventory:Drop"] = 0x80ADDA655AAFAE64,                                  // game 1.7.5000, 2026-11-09
+			["RimWorld.PawnGroupKindWorker_Normal:CanGenerateFrom"] = 0xCE8A5138AE0DBBC4,                       // game 1.7.5000, 2026-11-09
 			["SmartMedicine.StockUpUtility:StockingUpOn"] = 0xE47440ED851F08C2,                                   // (Pawn, Thing) overload, Smart Medicine 1.7, 2026-11-09
 			["Unburned.Pretty_Patch:Prefix"] = 0xE153E3D01BE0AC50,                                                // Unburned 1.7, 2026-11-09
 			["VEF.Weapons.MeleeReachCombatUtility:IsVanillaMeleeAttack"] = 0xAED0762AE41E6D48,                    // VEF 1.7, 2026-11-09

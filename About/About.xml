@@ -49,6 +49,7 @@
 - Vanilla (found through Modern Needs Tab): an emptied minified thing has a label again, so job reports no longer throw and MNT keeps recording job history.
 - Stem's VWE Industrial Expansion, Fortification Industrial - Citadel: missing weapon sounds pointed at existing ones (pistol equip, sawn-off repeater shot, flame bunker).
 - Smart Medicine - Continued (personal tweak): the Stock Up picker also lists the VRE Sanguophage animal, corpse and sanguophage hemogen packs, packaged survival meals and nutrient packaged meals.
+- Smart Medicine - Continued: stocked food-type items such as hemogen packs are no longer dropped by the idle inventory cleanup.
 - Vanilla Races Expanded - Sanguophage: animalfeeders (strigoi) drink animal hemogen packs on their own, like regular packs, when no prisoner or regular pack is available.
 - Hospitality: Vending machines (personal tweak): the powered vending machine draws 100 W and keeps stored items frozen while powered.
 - Mod Settings Framework (VEF): slider settings reach every def their xpath matches, not just the first (ReBuild's grate speed slider now covers the sterile grate tile).
@@ -61,6 +62,7 @@
 - Hospitality: Casino: only casino visitors and trade caravans at their chill spot play slot machines (bestowers, shuttle guards and leaving caravans keep their duty).
 - Hospitality: visitors in warcaskets skip the arrival re-gear (casket pieces re-locked) and keep their casket helmet on.
 - Hospitality: guests no longer sleep on the floor after a save is loaded in the same session (stale per-pawn guest comp cache cleared on load).
+- Hospitality: guests helping out no longer null-ref in the hopper-filling work giver on food outside the guest area.
 - Giddy-Up 2: dismounted caravan animals keep their travel/follow target, so the caravan arrives and leaves.
 - Vanilla/unknown: a caravan guard holding a trader kind counts as the Trader (dismiss works, caravan exits).
 - RimPacts: factions whose exiled leader left or was dismissed get a new leader (also repaired after load), no more "Faction leader for X is null".

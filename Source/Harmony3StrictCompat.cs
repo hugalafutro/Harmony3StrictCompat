@@ -256,6 +256,16 @@ namespace Harmony3StrictCompat
 			var smStockUpFilter = Target("SmartMedicine.Dialog_StockUp:<DoWindowContents>b__10_0");
 			if (smStockUpFilter != null)
 				harmony.Patch(smStockUpFilter, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SmStockUpExtras)));
+			var smStockingUp = Target("SmartMedicine.StockUpUtility:StockingUpOn", args: [typeof(Pawn), typeof(Thing)]);
+			var dropUnused = Target("RimWorld.JobGiver_DropUnusedInventory:Drop");
+			if (smStockingUp != null && dropUnused != null)
+			{
+				smIsStocked = (Func<Pawn, Thing, bool>)smStockingUp.CreateDelegate(typeof(Func<Pawn, Thing, bool>));
+				harmony.Patch(dropUnused, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SmKeepStockedItem)));
+			}
+			var canHaul = Target("Verse.AI.HaulAIUtility:PawnCanAutomaticallyHaul");
+			if (canHaul != null && ModsConfig.IsActive("orion.hospitality"))
+				harmony.Patch(canHaul, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HaulAreaLabelNullSafe)));
 			var dsStructure = Target("Merthsoft.DesignatorShapes.Shapes.FloodFill:IsStructure");
 			if (dsStructure != null)
 				harmony.Patch(dsStructure, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DsDoorIsStructure)));
@@ -948,6 +958,37 @@ namespace Harmony3StrictCompat
 		};
 		static void SmStockUpExtras(ThingDef t, ref bool __result) => __result |= SmStockUpDefs.Contains(t.defName);
 
+		// JobGiver_DropUnusedInventory drops low-preferability food (hemogen packs are DesperateOnly) from a Home-area
+		// pawn's inventory once it has not used raw food for 150000 ticks. Smart Medicine's keep check only covers the
+		// drug loop, so stocked hemogen packs were dropped and fetched again. Drop is the one exit of both loops.
+		static Func<Pawn, Thing, bool> smIsStocked;
+		static bool SmKeepStockedItem(Pawn pawn, Thing thing) => !smIsStocked(pawn, thing);
+
+		// ---- Hospitality guests: null area in PawnCanAutomaticallyHaul ------------------------------------
+		// Hospitality makes guests care about forbidden cells and answers InAllowedArea from the guest area, but a guest's
+		// playerSettings.allowedAreas stays empty. For food outside the guest area vanilla then builds its fail reason from
+		// EffectiveAreaRestrictionInPawnCurrentMap.Label on null. CookFillHopper is the one work giver that reaches this
+		// with forbidden things, because it walks every food item on the map without the scanner's forbidden check.
+		static IEnumerable<CodeInstruction> HaulAreaLabelNullSafe(IEnumerable<CodeInstruction> instructions)
+		{
+			var label = AccessTools.PropertyGetter(typeof(Area), nameof(Area.Label));
+			int replaced = 0;
+			foreach (var code in instructions)
+			{
+				if (code.Calls(label))
+				{
+					code.opcode = OpCodes.Call;
+					code.operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(AreaLabelOrGuest));
+					replaced++;
+				}
+				yield return code;
+			}
+			if (replaced != 1)
+				Log.Error($"[Harmony3StrictCompat] PawnCanAutomaticallyHaul: expected one Area.Label call, replaced {replaced}");
+		}
+
+		static string AreaLabelOrGuest(Area area) => area?.Label ?? "guest area";
+
 		static void HcGroupEnter() => hcInGroup = true;
 		static void HcGroupExit() => hcInGroup = false;
 
@@ -1554,6 +1595,9 @@ namespace Harmony3StrictCompat
 			["UIRethemed.InspectorTabs.GearTab:VanillaSlotFor"] = 0x685E5552BE5DC1B7,
 			["UIRethemed.InspectorTabs.GearTab:DrawStatsPanel"] = 0xEAA253E7421BEDB7,
 			["SmartMedicine.Dialog_StockUp:<DoWindowContents>b__10_0"] = 0x287F2659618CDD5B,        // Smart Medicine - Continued 1.7, 2026-11-08 (DLL of 2026-11-02)
+			["Verse.AI.HaulAIUtility:PawnCanAutomaticallyHaul"] = 0x4F5511488CF0B191,                            // game 1.7.5000, 2026-11-09
+			["RimWorld.JobGiver_DropUnusedInventory:Drop"] = 0x80ADDA655AAFAE64,                                  // game 1.7.5000, 2026-11-09
+			["SmartMedicine.StockUpUtility:StockingUpOn"] = 0xE47440ED851F08C2,                                   // (Pawn, Thing) overload, Smart Medicine 1.7, 2026-11-09
 			["SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix"] = 0xEA4FA1B085907595,     // Smarter Visitors 1.7.0, 2026-11-08
 			["UIRethemed.MainBar.MenuWindow:Face"] = 0x7970824AD7079EAA,                               // UI Rethemed - Main Bar 1.7, 2026-11-07
 			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0xB6635F04BB1CC9CC,

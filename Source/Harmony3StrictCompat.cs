@@ -1814,9 +1814,9 @@ namespace Harmony3StrictCompat
 			["Flourish.Everyday.JobAnimationWorker_Anchored:Evaluate"] = 0x817B489F5395FF01,                // Flourish Everyday 1.7, 2026-10-25
 			["VFETribals.FactionUIUtility_DoWindowContents_Patch:Postfix"] = 0x8824F2B542A8AC6E,             // VFE Tribals 1.6 build, 2026-10-14
 			["UIRethemed.Factions.FactionsTab:Themed"] = 0x6464010BFAB662C3,                               // UI Rethemed 1.7, 2026-11-06
-			["UIRethemed.Core.CoreWidgets:Button"] = 0x96B9EA4E631E845B,
-			["UIRethemed.Core.CoreWidgets:Icon"] = 0x2094A97723860CBE,
-			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0xFEC5735778B040A7,
+			["UIRethemed.Core.CoreWidgets:Button"] = 0x28FBFA6FDA057319,                             // UI Rethemed - Core 1.7, 2026-11-10
+			["UIRethemed.Core.CoreWidgets:Icon"] = 0x6F9ED71D5BB35A5A,
+			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0xCFF9DEFBB0223744,
 			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0xC62AB6FF16C5404C,
 			["UIRethemed.InspectorTabs.HoverCard:LineHeight"] = 0xBC638E0C842420E6,                        // UI Rethemed - Inspector Tabs 1.7, 2026-11-06
 			["UIRethemed.InspectorTabs.HoverCard:DrawGroup"] = 0x983CB3913E7492E4,

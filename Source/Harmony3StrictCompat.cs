@@ -57,6 +57,9 @@ namespace Harmony3StrictCompat
 			var vqeaDeliver = Target("VanillaQuestsExpandedAncients.Building_PneumaticTubeLaunchPort:Deliver");
 			if (vqeaDeliver != null)
 				harmony.Patch(vqeaDeliver, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(VqeaCapsuleContentsTranspiler)));
+			var turretRadius = Target("RimWorld.PlaceWorker_ShowTurretRadius:AllowsPlacing");
+			if (turretRadius != null)
+				harmony.Patch(turretRadius, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(TurretRadiusAnyVerb)));
 			var normalCanGenerate = Target("RimWorld.PawnGroupKindWorker_Normal:CanGenerateFrom");
 			if (normalCanGenerate != null)
 				harmony.Patch(normalCanGenerate, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(NormalGroupYieldsPawns)));
@@ -1281,6 +1284,27 @@ namespace Harmony3StrictCompat
 			Messages.Message(text, port, MessageTypeDefOf.PositiveEvent);
 		}
 
+		// ---- Range ring for turrets whose gun has no Verb_Shoot / Verb_Spray ----------------------------------
+		// Vanilla PlaceWorker_ShowTurretRadius takes the first verb that is Verb_Shoot or a Verb_Spray and null-refs
+		// every frame while placing when there is none, e.g. Verb_ShootBeam (Rimsenal Security incinerator and graser
+		// turrets; LocalTweaks gives those the placeworker). Such guns draw the ring of their first ranged verb instead;
+		// everything vanilla handles runs the original.
+		static bool TurretRadiusAnyVerb(BuildableDef checkingDef, IntVec3 loc, ref AcceptanceReport __result)
+		{
+			var verbs = (checkingDef as ThingDef)?.building?.turretGunDef?.Verbs;
+			if (verbs == null || verbs.Any(v => v.verbClass == typeof(Verb_Shoot) || typeof(Verb_Spray).IsAssignableFrom(v.verbClass)))
+				return true;
+			var verb = verbs.FirstOrDefault(v => v.range > 0f);
+			if (verb != null)
+			{
+				GenDraw.DrawRadiusRing(loc, verb.range);
+				if (verb.minRange > 0f)
+					GenDraw.DrawRadiusRing(loc, verb.minRange);
+			}
+			__result = true;
+			return false;
+		}
+
 		// ---- Bleed-out time on the UI Rethemed colonist card activity row ----------------------------------------
 		// Personal tweak: the time left only shows at the bottom of the Health tab. Same text and limits as vanilla
 		// HealthCardUtility: nothing for a slow bleed (a day or more) or a Deathless pawn. Goes first because the row
@@ -1833,6 +1857,7 @@ namespace Harmony3StrictCompat
 			["Verse.AI.HaulAIUtility:PawnCanAutomaticallyHaul"] = 0x4F5511488CF0B191,                            // game 1.7.5000, 2026-11-09
 			["RimWorld.JobGiver_DropUnusedInventory:Drop"] = 0x80ADDA655AAFAE64,                                  // game 1.7.5000, 2026-11-09
 			["RimWorld.PawnGroupKindWorker_Normal:CanGenerateFrom"] = 0xCE8A5138AE0DBBC4,                       // game 1.7.5000, 2026-11-09
+			["RimWorld.PlaceWorker_ShowTurretRadius:AllowsPlacing"] = 0xA27D64AC3CB5B9DB,                       // game 1.7.5000, 2026-11-10
 			["SmartMedicine.StockUpUtility:StockingUpOn"] = 0xE47440ED851F08C2,                                   // (Pawn, Thing) overload, Smart Medicine 1.7, 2026-11-09
 			["Unburned.Pretty_Patch:Prefix"] = 0xE153E3D01BE0AC50,                                                // Unburned 1.7, 2026-11-09
 			["VEF.Weapons.MeleeReachCombatUtility:IsVanillaMeleeAttack"] = 0xAED0762AE41E6D48,                    // VEF 1.7, 2026-11-09

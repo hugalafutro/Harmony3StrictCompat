@@ -72,7 +72,7 @@
 - Giddy-Up 2: dismounted caravan animals keep their travel/follow target, so the caravan arrives and leaves.
 - Vanilla/unknown: a caravan guard holding a trader kind counts as the Trader (dismiss works, caravan exits).
 - RimPacts: factions whose exiled leader left or was dismissed get a new leader (also repaired after load), no more "Faction leader for X is null".
-- RimPacts + vanilla gatherings: the expo party host is picked by vanilla's organizer rules (no more party called off moments after it starts because the host is scheduled for work), and every gathering's called-off message names the reason.
+- RimPacts + vanilla gatherings: the expo party host is picked by vanilla's organizer rules (no more party called off moments after it starts because the host is scheduled for work), the host of any party stays through its own work or sleep schedule until the party ends, and every gathering's called-off message names the reason.
 - VEF (MVCF): multi-verb weapons use the weapon's own accuracy/cooldown when the verb sets none; duplicate stat rows hidden; Range row fixed.
 - VEF: verb range factor applied to the result instead of the shared verb def (no stuck ranges).
 - Unburned + VEF: drafted pawns with reach melee weapons auto-attack at full reach again (Unburned replaced the method VEF patches).

@@ -2755,8 +2755,8 @@ namespace Harmony3StrictCompat
 	// organizer. Vanilla calls a party off when its organizer leaves it, and a pawn whose schedule forbids
 	// recreation (or who is asleep, starving, bleeding ...) leaves on its next think: "The party has been called
 	// off." a moment after it started, with no reason. Pick the organizer by vanilla's own rules
-	// (GatheringsUtility.FindRandomGatheringOrganizer), fall back to RimPacts' choice when nobody qualifies, and
-	// append the reason to every gathering's called-off message.
+	// (GatheringsUtility.FindRandomGatheringOrganizer), fall back to RimPacts' choice when nobody qualifies, let the
+	// host of any gathering stay through its own schedule, and append the reason to every called-off message.
 	[StaticConstructorOnStartup]
 	static class GatheringCalledOffReason
 	{
@@ -2768,6 +2768,8 @@ namespace Harmony3StrictCompat
 			var harmony = new Harmony("sammael.harmony3strictcompat");
 			harmony.Patch(AccessTools.Method(typeof(TransitionAction_Message), nameof(TransitionAction_Message.DoAction)),
 				prefix: new HarmonyMethod(typeof(GatheringCalledOffReason), nameof(AppendReason)));
+			harmony.Patch(AccessTools.Method(typeof(LordJob_Joinable_Gathering), nameof(LordJob_Joinable_Gathering.VoluntaryJoinPriorityFor)),
+				postfix: new HarmonyMethod(typeof(GatheringCalledOffReason), nameof(HostIgnoresSchedule)));
 			var force = Harmony3StrictCompatMod.Target("RimPacts.WorldComponent_RimPacts:ForceExpoParty");
 			if (force != null)
 				harmony.Patch(force, transpiler: new HarmonyMethod(typeof(GatheringCalledOffReason), nameof(VanillaOrganizer)));
@@ -2799,6 +2801,19 @@ namespace Harmony3StrictCompat
 					&& GatheringsUtility.ShouldPawnKeepGathering(p, GatheringDefOf.Party)
 					&& GatheringsUtility.PawnCanStartOrContinueGathering(p)).RandomElementWithFallback()
 				?? all.FirstOrDefault();
+		}
+
+		// A party lasts 2-6 hours, but the host's schedule is only checked when it starts: a host whose block turns
+		// to work or sleep leaves, and vanilla calls the whole party off. The host keeps hosting through its own
+		// schedule; every other reason to leave (asleep, starving, bleeding ...) still applies.
+		static void HostIgnoresSchedule(LordJob_Joinable_Gathering __instance, Pawn p, ref float __result)
+		{
+			if (__result > 0f || p != __instance.Organizer || __instance.lord?.ownedPawns.Contains(p) != true) return;
+			var def = gatheringDef(__instance);
+			if (def == null || !def.respectTimetable || p.timetable == null || p.timetable.CurrentAssignment.allowJoy) return;
+			if (!GatheringsUtility.ShouldGuestKeepAttendingGathering(p) || __instance.Spot.IsForbidden(p)) return;
+			if (p.health.hediffSet.hediffs.Any(h => h.def.blocksSocialInteraction)) return;
+			__result = VoluntarilyJoinableLordJobJoinPriorities.SocialGathering;
 		}
 
 		// The called-off transition ends the lord, so the changed text is never shown twice.

@@ -1801,6 +1801,7 @@ namespace Harmony3StrictCompat
 			["KanbanStockpileContinue.KSUtil:CountStoredSimilarStacks"] = 0x0D6509A3EE0A8A5F,
 			["KanbanStockpileContinue.KSUtil:IsSimilarStack"] = 0xA9EA56B4765CDEAF,
 			["KanbanStockpileContinue.KSUtil:BuildSslExcessSet"] = 0x3D125057D3A69CBC,
+			["RimPacts.WorldComponent_RimPacts:ForceExpoParty"] = 0x1BD5B8FBC4BCB65D,                          // RimPacts 1.7, 2026-11-10
 			["SensibleBedOwnership.Patch_Pawn_Ownership_get_OwnedBed:Prefix"] = 0x696E7432D36527D8,       // SBO 1.6 build, 2026-11-05
 			["SensibleBedOwnership.Utility:GetMainBed"] = 0xAE5863A6DF81EAD6,                                // (Pawn) overload
 			["SensibleBedOwnership.Utility:AllAssignedBedsAndDeathrestCaskets"] = 0x8560CE17C9797D18,
@@ -2746,6 +2747,94 @@ namespace Harmony3StrictCompat
 				|| !victim.IsPrisonerOfColony || !InRitual(d.Instigator as Pawn)) return;
 			d.Def = DamageDefOf.ExecutionCut;
 			dinfo = d;
+		}
+	}
+
+	// ---- Gatherings: RimPacts' expo party host, and why a gathering was called off ---------------------------
+	// RimPacts' ForceExpoParty makes the first spawned colonist that is not downed or in a mental state the party
+	// organizer. Vanilla calls a party off when its organizer leaves it, and a pawn whose schedule forbids
+	// recreation (or who is asleep, starving, bleeding ...) leaves on its next think: "The party has been called
+	// off." a moment after it started, with no reason. Pick the organizer by vanilla's own rules
+	// (GatheringsUtility.FindRandomGatheringOrganizer), fall back to RimPacts' choice when nobody qualifies, and
+	// append the reason to every gathering's called-off message.
+	[StaticConstructorOnStartup]
+	static class GatheringCalledOffReason
+	{
+		static readonly AccessTools.FieldRef<LordJob_Joinable_Gathering, GatheringDef> gatheringDef =
+			AccessTools.FieldRefAccess<LordJob_Joinable_Gathering, GatheringDef>("gatheringDef");
+
+		static GatheringCalledOffReason()
+		{
+			var harmony = new Harmony("sammael.harmony3strictcompat");
+			harmony.Patch(AccessTools.Method(typeof(TransitionAction_Message), nameof(TransitionAction_Message.DoAction)),
+				prefix: new HarmonyMethod(typeof(GatheringCalledOffReason), nameof(AppendReason)));
+			var force = Harmony3StrictCompatMod.Target("RimPacts.WorldComponent_RimPacts:ForceExpoParty");
+			if (force != null)
+				harmony.Patch(force, transpiler: new HarmonyMethod(typeof(GatheringCalledOffReason), nameof(VanillaOrganizer)));
+		}
+
+		static IEnumerable<CodeInstruction> VanillaOrganizer(IEnumerable<CodeInstruction> instructions)
+		{
+			bool done = false;
+			foreach (var code in instructions)
+			{
+				// the first FirstOrDefault(colonists, predicate) picks the organizer, the second one a guest
+				if (!done && code.operand is MethodInfo { Name: "FirstOrDefault" } m && m.GetParameters().Length == 2
+					&& m.GetParameters()[1].ParameterType == typeof(Predicate<Pawn>))
+				{
+					code.opcode = OpCodes.Call;
+					code.operand = AccessTools.Method(typeof(GatheringCalledOffReason), nameof(PickOrganizer));
+					done = true;
+				}
+				yield return code;
+			}
+			if (!done)
+				Log.Error("[Harmony3StrictCompat] RimPacts ForceExpoParty: organizer pick not found, expo party host fix skipped");
+		}
+
+		static Pawn PickOrganizer(IEnumerable<Pawn> colonists, Predicate<Pawn> rimPacts)
+		{
+			var all = colonists.Where(p => rimPacts(p)).ToList();
+			return all.Where(p => p.DevelopmentalStage.Adult() && !p.InBed() && p.GetLord() == null
+					&& GatheringsUtility.ShouldPawnKeepGathering(p, GatheringDefOf.Party)
+					&& GatheringsUtility.PawnCanStartOrContinueGathering(p)).RandomElementWithFallback()
+				?? all.FirstOrDefault();
+		}
+
+		// The called-off transition ends the lord, so the changed text is never shown twice.
+		static void AppendReason(TransitionAction_Message __instance, Transition trans)
+		{
+			if (__instance.type == MessageTypeDefOf.NegativeEvent && !__instance.message.NullOrEmpty()
+				&& trans.target?.lord?.LordJob is LordJob_Joinable_Gathering job)
+				__instance.message = __instance.message.TrimEnd('.') + ": " + Reason(job, trans.target.lord.Map) + ".";
+		}
+
+		// Mirrors LordJob_Joinable_Gathering.ShouldBeCalledOff and VoluntaryJoinPriorityFor, in their order.
+		static string Reason(LordJob_Joinable_Gathering job, Map map)
+		{
+			if (map != null && !GatheringsUtility.AcceptableGameConditionsToContinueGathering(map)) return "the colony is in danger";
+			var p = job.Organizer;
+			if (p == null) return "someone attending died";
+			string host = "the host " + p.LabelShort + " ";
+			if (p.Dead) return host + "died";
+			if (!p.Spawned) return host + "is gone";
+			if (p.Downed) return host + "is downed";
+			if (p.Drafted) return host + "was drafted";
+			if (p.InMentalState) return host + "is in a mental state (" + p.MentalStateDef.label + ")";
+			if (p.health.hediffSet.BleedRateTotal > 0f) return host + "is bleeding";
+			if (!GatheringsUtility.PawnCanStartOrContinueGathering(p)) return host + "cannot host a gathering (prisoner, slave, blood loss ...)";
+			var def = gatheringDef(job);
+			if (def != null && def.respectTimetable && p.timetable != null && !p.timetable.CurrentAssignment.allowJoy)
+				return host + "is scheduled for " + p.timetable.CurrentAssignment.label;
+			if (p.needs?.food != null && p.needs.food.Starving) return host + "is starving";
+			if (p.needs?.rest != null && (int)p.needs.rest.CurCategory >= 3) return host + "is exhausted";
+			if (p.health.hediffSet.HasTendableNonInjuryNonMissingPartHediff()) return host + "needs treatment";
+			if (p.health.hediffSet.InLabor()) return host + "is in labor";
+			if (!p.Awake()) return host + "fell asleep";
+			if (job.Spot.IsForbidden(p)) return "the spot is forbidden to the host " + p.LabelShort;
+			var blocker = p.health.hediffSet.hediffs.FirstOrDefault(h => h.def.blocksSocialInteraction);
+			if (blocker != null) return host + "has " + blocker.def.label;
+			return host + "left for something more important, or someone attending died";
 		}
 	}
 

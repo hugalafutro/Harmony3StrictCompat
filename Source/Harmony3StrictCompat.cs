@@ -2709,6 +2709,46 @@ namespace Harmony3StrictCompat
 		}
 	}
 
+	// ---- Ritual sacrifice of an innocent prisoner is not an "execution of an innocent" ------------------------
+	// Vanilla records ExecutedPrisoner / ExecutedPrisonerInnocent for a ritual sacrifice like for any execution, so
+	// an ideoligion with a sacrifice ritual and "Execution: horrible if innocent" hates its own moral guide for
+	// holding the ritual (-30 opinion from every member, mood hits). Alpha Memes' heart extraction also kills with
+	// plain Cut damage instead of ExecutionCut, so the same death counts a second time as a prisoner who died
+	// through neglect (InnocentPrisonerDied, another -15). While the killer is in a ritual: an innocent prisoner's
+	// death records no execution events, and the death thoughts see execution damage, as vanilla sacrifice passes.
+	// Guilty prisoners and executions outside rituals are unchanged. Only vanilla methods are patched; if Alpha
+	// Memes switches to ExecutionCut the second half becomes a no-op.
+	[StaticConstructorOnStartup]
+	static class RitualSacrificeIsNoExecution
+	{
+		static RitualSacrificeIsNoExecution()
+		{
+			var harmony = new Harmony("sammael.harmony3strictcompat");
+			harmony.Patch(AccessTools.Method(typeof(ThoughtUtility), nameof(ThoughtUtility.GiveThoughtsForPawnExecuted)),
+				prefix: new HarmonyMethod(typeof(RitualSacrificeIsNoExecution), nameof(SkipInnocentInRitual)));
+			harmony.Patch(AccessTools.Method(typeof(PawnDiedOrDownedThoughtsUtility), nameof(PawnDiedOrDownedThoughtsUtility.TryGiveThoughts),
+					new[] { typeof(Pawn), typeof(DamageInfo?), typeof(PawnDiedOrDownedThoughtsKind) }),
+				prefix: new HarmonyMethod(typeof(RitualSacrificeIsNoExecution), nameof(RitualKillIsExecutionDamage)));
+		}
+
+		static bool InRitual(Pawn pawn) => pawn?.GetLord()?.LordJob is LordJob_Ritual;
+
+		static bool SkipInnocentInRitual(Pawn victim, Pawn executioner)
+		{
+			if (!victim.RaceProps.Humanlike || !victim.IsPrisoner || victim.guilt.IsGuilty || !InRitual(executioner)) return true;
+			if (executioner.Faction != null) executioner.Faction.lastExecutionTick = Find.TickManager.TicksGame;
+			return false;
+		}
+
+		static void RitualKillIsExecutionDamage(Pawn victim, ref DamageInfo? dinfo, PawnDiedOrDownedThoughtsKind thoughtsKind)
+		{
+			if (thoughtsKind != PawnDiedOrDownedThoughtsKind.Died || dinfo is not { } d || d.Def.execution
+				|| !victim.IsPrisonerOfColony || !InRitual(d.Instigator as Pawn)) return;
+			d.Def = DamageDefOf.ExecutionCut;
+			dinfo = d;
+		}
+	}
+
 	// ---- VTE Variations "choose graphic" on Adaptive Storage furniture ---------------------------------------
 	// Reel's Expanded Storage rebuilds VFE furniture (wardrobe, royal dresser) as Adaptive Storage buildings. ASF
 	// hides the base graphic, draws the texture from the def's GraphicsDef instead and caches it until its renderer

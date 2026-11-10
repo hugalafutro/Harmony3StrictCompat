@@ -2325,6 +2325,30 @@ namespace Harmony3StrictCompat
 		}
 	}
 
+	// ---- Weapons with two equipment comps --------------------------------------------------------------------
+	// A gun def that adds CompProperties_EquippableAbility(Reloadable) without <comps Inherit="False"> also inherits
+	// BaseWeapon's plain CompEquippable (vanilla's Hellcat uses Inherit="False" for exactly this). Both comps save a
+	// verbTracker with the same CompEquippable_<id>_N load IDs, so every such weapon in a save logs "Exception registering
+	// ... in loaded object directory" on load, and GetComp<CompEquippable> returns the plain one. Seen: Pulse Weaponry
+	// DV_PulseRifle (1.6 build). Drop the plain comp when a subclass is present; the extra saved verbTracker is ignored.
+	[StaticConstructorOnStartup]
+	static class DedupeEquippableComps
+	{
+		static DedupeEquippableComps()
+		{
+			var fixedDefs = new List<string>();
+			foreach (var def in DefDatabase<ThingDef>.AllDefs)
+			{
+				if (def.comps == null || !def.comps.Any(c => c.compClass != typeof(CompEquippable) && typeof(CompEquippable).IsAssignableFrom(c.compClass)))
+					continue;
+				if (def.comps.RemoveAll(c => c.compClass == typeof(CompEquippable)) > 0)
+					fixedDefs.Add(def.defName);
+			}
+			if (fixedDefs.Count > 0)
+				Log.Message($"[Harmony3StrictCompat] dropped duplicate plain CompEquippable from {fixedDefs.Count} weapon(s): {string.Join(", ", fixedDefs)}");
+		}
+	}
+
 	// ---- VRE Sanguophage: animalfeeders never drink animal hemogen packs on their own -----------------------
 	// VRE gives corpsefeeders their own job giver (JobGiver_GetCorpseHemogen, drinks VRE_HemogenPack_Corpse), but
 	// nothing does the same for VRE_HemogenPack_Animal: vanilla JobGiver_GetHemogen only looks for HemogenPack. So a

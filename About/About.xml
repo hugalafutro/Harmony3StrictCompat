@@ -84,6 +84,7 @@
 - Too Many Mods: 22 lowercase "Defs/thingDef[" xpaths fixed (Rimsenal items).
 - Rimsenal Faction Pack - Spacer: no second style comp on the mech commander helmet, Dresser, EndTable and FloodLight.
 - Rimsenal - Security Pack (with LocalTweaks): incinerator and graser turrets show their range ring while placing (vanilla ring code null-refs on beam verbs).
+- Pulse Weaponry (and any weapon with the same mistake): weapons with an ability comp no longer also keep the plain equipment comp, so their verbs stop clashing on load.
 - ReGrowth plant patches: duplicate wild plant records removed from biomes (world-gen Landmarks/Mutators steps).
 - Vanilla: no needs while no world exists (quest pawns built before the world loads).
 - Vanilla: shuttle passengers are no longer evicted (and dropped from their lord) on landing because they last left a map more than a day ago; the one-day eviction now counts time spent inside the shuttle.

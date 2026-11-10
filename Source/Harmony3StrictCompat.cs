@@ -1798,6 +1798,9 @@ namespace Harmony3StrictCompat
 			["HaulersDream.JobDriver_UnloadHauledInventory:FindTargetOrDrop"] = 0x124B6AF8B6F91AFF,
 			["HaulersDream.JobDriver_UnloadHauledInventory+<>c__DisplayClass15_0:<FindTargetOrDrop>b__0"] = 0xF8A1275757B89E49,
 			["KanbanStockpileContinue.KanbanStockpileAPI:TryGetSettings"] = 0xFB4378E38CFA29D3,               // Kanban Stockpile Continue 1.6 build, 2025-08-12
+			["KanbanStockpileContinue.KSUtil:CountStoredSimilarStacks"] = 0x0D6509A3EE0A8A5F,
+			["KanbanStockpileContinue.KSUtil:IsSimilarStack"] = 0xA9EA56B4765CDEAF,
+			["KanbanStockpileContinue.KSUtil:BuildSslExcessSet"] = 0x3D125057D3A69CBC,
 			["SensibleBedOwnership.Patch_Pawn_Ownership_get_OwnedBed:Prefix"] = 0x696E7432D36527D8,       // SBO 1.6 build, 2026-11-05
 			["SensibleBedOwnership.Utility:GetMainBed"] = 0xAE5863A6DF81EAD6,                                // (Pawn) overload
 			["SensibleBedOwnership.Utility:AllAssignedBedsAndDeathrestCaskets"] = 0x8560CE17C9797D18,
@@ -2662,6 +2665,47 @@ namespace Harmony3StrictCompat
 					break;
 				}
 			if (room < count) countToDrop.SetValue(driver, room);
+		}
+	}
+
+	// ---- Kanban Stockpile Continue: similar stack limit shuttles unstackable meals in and out -----------------
+	// Kanban's accept check counts "similar stacks" with CanStackWith; its "remove excess" job counts stacks per
+	// def + stuff. Vanilla refuses to merge same-def meals whose ingredients differ in food kind or merge tags
+	// (meat / vegetarian, insect meat ...). A storage with a similar stack limit therefore accepts a third fine
+	// meal stack as "not similar", remove-excess carries it out as "over the limit", and the next haul brings it
+	// back: a pawn runs the same meals between the capped fridge and the next storage. The accept check now counts
+	// like the removal does: every other stack of the same def and stuff. Topping up a stack that can absorb the
+	// item is a separate Kanban path and still works.
+	[StaticConstructorOnStartup]
+	static class KanbanSimilarStackCount
+	{
+		static KanbanSimilarStackCount()
+		{
+			var count = Harmony3StrictCompatMod.Target("KanbanStockpileContinue.KSUtil:CountStoredSimilarStacks");
+			Harmony3StrictCompatMod.Target("KanbanStockpileContinue.KSUtil:IsSimilarStack");    // fingerprint only: the two rules that disagree
+			Harmony3StrictCompatMod.Target("KanbanStockpileContinue.KSUtil:BuildSslExcessSet");
+			if (count == null) return;
+			new Harmony("sammael.harmony3strictcompat").Patch(count,
+				postfix: new HarmonyMethod(typeof(KanbanSimilarStackCount), nameof(CountSameDef)));
+		}
+
+		static void CountSameDef(SlotGroup slotGroup, Map map, Thing thing, int max, ref int __result)
+		{
+			if (__result >= max || thing == null || !thing.def.EverStorable(false)) return;
+			int stacks = 0;
+			var cells = slotGroup.CellsList;
+			for (int i = 0; i < cells.Count; i++)
+			{
+				var things = map.thingGrid.ThingsListAt(cells[i]);
+				for (int j = 0; j < things.Count; j++)
+				{
+					var t = things[j];
+					if (t == thing || t.def != thing.def || t.Stuff != thing.Stuff || ++stacks < max) continue;
+					__result = stacks;
+					return;
+				}
+			}
+			if (stacks > __result) __result = stacks;
 		}
 	}
 

@@ -32,6 +32,7 @@
 - Sensible Bed Ownership: OwnedBed answers cached per pawn until bed ownership changes (was rescanning every bed hundreds of thousands of times a minute); spot-checked against SBO; also used by the parallel render threads, and SBO's bed list scan is locked (sleeping animals in animal beds halved FPS, render jobs threw "Collection was modified").
 - Hauler's Dream + Compositable Loadouts: loadout items are kept during surplus unload again (CL's items now list several defs; HD only knew Item.Def).
 - Hauler's Dream + Kanban Stockpile Continue: HD respects Kanban's max stack size when it plans pick-ups and unloads into capped storage (no more overfill / remove-excess churn).
+- Kanban Stockpile Continue: the similar stack limit counts every stack of the same def when accepting, like its remove-excess job does (no more pawns shuttling unmergeable meals between a capped fridge and the next storage).
 - Common Sense: no "random element from empty collection" warnings for food no recipe makes (meal ingredients lookup skipped).
 - Common Sense: clean-before-eating moves on when its filth is already gone instead of erroring out of the eating job.
 - Prisoner Realism + Cleaning Area Relaunched: prisoners only clean filth inside the Clean area, no more standing-still Clean job loop.

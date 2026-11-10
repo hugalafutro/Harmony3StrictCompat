@@ -23,7 +23,6 @@
 - Biomes! Caverns (Caveworld Flora): wild fungus colonies regrow (each removed mushroom lowers its colony's count; on load counts are reset to the live mushrooms).
 - Biomes! Caverns (Caveworld Flora): wild fungi mouseover shows growth again instead of "Brightbells)".
 - Biomes! Caverns: strips the equipment nodes from BMT_ResourceBlueCrystal ("is equipment but has no verbs or tools").
-- More Phytokin Xenotypes: with Anomaly + Odyssey + Starjack the Odyssey module shadows six Anomaly def files (same relative path), so carrionkin / harbingerkin never load; LocalTweaks ships copies of those files, this mod checks them against the upstream files at startup.
 - Loading Progress: its startup profiler no longer races during parallel XML loading (a mod's defs could fail to load and crash the game into a ModsConfig reset).
 - Loadout Compositing + Better Workbench Management: per-tag bills get the "count pawns away / on caravan" option back (BWM's new Debug build broke LC's transpiler).
 - Better Workbench Management: its bill options no longer overlap the "Use global style" dropdown (vanilla classic mode or Style Change Anytime).

@@ -2931,33 +2931,4 @@ namespace Harmony3StrictCompat
 			parent.DirtyMapMesh(parent.Map);
 		}
 	}
-
-	// ---- More Phytokin Xenotypes: Modules/Anomaly shadowed by Modules/Odyssey ------------------------------
-	// With Anomaly + Odyssey + Starjack active, MPX (3813857865, 0.1.1) loads both module folders; six Defs files
-	// share the same relative path in both and the game keeps one file per path (last load folder wins), so the
-	// carrionkin / harbingerkin defs never load. LocalTweaks/MorePhytokinXenotypes (its LoadFolders.xml, same condition)
-	// ships byte copies of those files under other names, see the patch there (LocalTweaks because ParentName resolves
-	// only from mods loaded earlier, and this mod loads before Core). The copies go stale silently, so compare
-	// them against the upstream files at startup: a changed or missing upstream file is a red error.
-	[StaticConstructorOnStartup]
-	static class MpxAnomalyCopies
-	{
-		static MpxAnomalyCopies()
-		{
-			var mpx = LoadedModManager.RunningMods.FirstOrDefault(m => m.PackageId == "pumpkin.morephytokinxenotypes");
-			if (mpx == null || !ModsConfig.AnomalyActive || !ModsConfig.OdysseyActive || !ModsConfig.IsActive("vanillaracesexpanded.starjack")) return;
-			var tweaks = LoadedModManager.RunningMods.FirstOrDefault(m => m.PackageId == "sammael.localtweaks");
-			if (tweaks == null) { Log.Error("[Harmony3StrictCompat] More Phytokin Xenotypes needs LocalTweaks (MorePhytokinXenotypes def copies), not active"); return; }
-			var copies = Path.Combine(tweaks.RootDir, "MorePhytokinXenotypes", "Defs");
-			foreach (var f in new[] { "AbilityDefs/Abilities", "GeneDefs/Genes", "IncidentDefs/Incidents", "ThingDefs/Things", "ThoughtDefs/Thoughts", "XenotypeDefs/Xenotypes" })
-			{
-				var theirs = Path.Combine(mpx.RootDir, "Modules", "Anomaly", "Defs", f + ".xml");
-				var ours = Path.Combine(copies, Path.GetDirectoryName(f), "MPX_Anomaly_" + Path.GetFileName(f) + ".xml");
-				if (!File.Exists(theirs))
-					Log.Error($"[Harmony3StrictCompat] More Phytokin Xenotypes no longer ships Modules/Anomaly/Defs/{f}.xml: its mod updated, remove LocalTweaks/MorePhytokinXenotypes and its LoadFolders.xml entry");
-				else if (!File.ReadAllBytes(theirs).SequenceEqual(File.ReadAllBytes(ours)))
-					Log.Error($"[Harmony3StrictCompat] More Phytokin Xenotypes changed Modules/Anomaly/Defs/{f}.xml: its mod updated, refresh the copy {ours}");
-			}
-		}
-	}
 }

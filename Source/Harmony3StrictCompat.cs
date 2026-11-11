@@ -296,6 +296,10 @@ namespace Harmony3StrictCompat
 				smIsStocked = (Func<Pawn, Thing, bool>)smStockingUp.CreateDelegate(typeof(Func<Pawn, Thing, bool>));
 				harmony.Patch(dropUnused, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SmKeepStockedItem)));
 			}
+			var uirqOf = Target("UIRethemed.Quests.RewardTiles:Of");
+			uirqTile = AccessTools.TypeByName("UIRethemed.Quests.Tile");
+			if (uirqOf != null && uirqTile != null)
+				harmony.Patch(uirqOf, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirqRewardTiles)));
 			var qcMod = AccessTools.TypeByName("QualityColors.QualityColorsMod");
 			qcSettings = qcMod == null ? null : AccessTools.Field(qcMod, "Settings");
 			qcColors = qcSettings == null ? null : AccessTools.Field(qcSettings.FieldType, "Colors");
@@ -1033,13 +1037,56 @@ namespace Harmony3StrictCompat
 		static bool SmKeepStockedItem(Pawn pawn, Thing thing) => !smIsStocked(pawn, thing);
 
 		// ---- UI Rethemed - Quests x Quality Colors: reward tiles and their tooltip titles ----------------
-		// Quality Colors wraps the "(masterwork)" part of an item label in a colour tag. A reward tile is narrow, so
-		// the label truncates before that part, and the hover card strips tags from its title. The tag itself tells
-		// the quality: a label carrying one of Quality Colors' configured colours is drawn whole in that colour, and
-		// the card title gets the colour back after the strip. Other coloured labels are left alone.
+		// Reward labels reach the tiles without Quality Colors' tag, and the hover card strips tags from its title. A
+		// postfix on the tile builder finds each tile's item through its click closure and wraps the label in the
+		// item's Quality Colors colour; a label carrying such a colour is then drawn whole in it, and the card title
+		// gets the colour back after the strip. Other coloured labels are left alone.
+		// The same postfix moves the market value from the pill beside the name (which took half the tile and cut the
+		// name short) to the second line under it.
 		static FieldInfo qcSettings, qcColors;
 		static readonly Regex QcTag = new("<color=#([0-9A-Fa-f]{6})>", RegexOptions.Compiled);
 		static string qcPendingHex;
+
+		static Type uirqTile;
+
+		static void UirqRewardTiles(IList tiles)
+		{
+			var label = AccessTools.Field(uirqTile, "label");
+			var line = AccessTools.Field(uirqTile, "line");
+			var lineColor = AccessTools.Field(uirqTile, "lineColor");
+			var silver = AccessTools.Field(uirqTile, "silver");
+			var onClick = AccessTools.Field(uirqTile, "onClick");
+			for (int i = 0; i < tiles.Count; i++)
+			{
+				object tile = tiles[i];
+				if (silver.GetValue(tile) is float worth)
+				{
+					var count = line.GetValue(tile) as string;
+					line.SetValue(tile, count.NullOrEmpty() ? worth.ToStringMoney() : count + "   " + worth.ToStringMoney());
+					if ((Color)lineColor.GetValue(tile) == default) lineColor.SetValue(tile, Color.white);
+					silver.SetValue(tile, null);
+				}
+				if (qcColors != null && label.GetValue(tile) is string text && UirqQualityOf(onClick.GetValue(tile) as Delegate) is { } quality
+					&& qcColors.GetValue(qcSettings.GetValue(null)) is Dictionary<QualityCategory, Color> colors && colors.TryGetValue(quality, out var c))
+					label.SetValue(tile, $"<color=#{QcHex(c)}>{ColoredText.StripTags(text)}</color>");
+				tiles[i] = tile;
+			}
+		}
+
+		// The tile keeps no item reference; its click handler's closure does (a Thing, or the remembered def + quality).
+		static QualityCategory? UirqQualityOf(Delegate click)
+		{
+			if (click?.Target is not { } closure) return null;
+			foreach (var field in closure.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+			{
+				var value = field.GetValue(closure);
+				if (value is Thing thing && thing.TryGetQuality(out var quality)) return quality;
+				if (value is ThingStuffPairWithQuality pair && pair.thing != null && pair.thing.HasComp(typeof(CompQuality))) return pair.Quality;
+			}
+			return null;
+		}
+
+		static string QcHex(Color c) => $"{Mathf.RoundToInt(c.r * 255f):X2}{Mathf.RoundToInt(c.g * 255f):X2}{Mathf.RoundToInt(c.b * 255f):X2}";
 
 		static string QcQualityHex(string text)
 		{
@@ -1047,7 +1094,7 @@ namespace Harmony3StrictCompat
 			if (qcColors.GetValue(qcSettings.GetValue(null)) is not Dictionary<QualityCategory, Color> colors) return null;
 			foreach (Match m in QcTag.Matches(text))
 				foreach (var c in colors.Values)
-					if (string.Equals(m.Groups[1].Value, $"{Mathf.RoundToInt(c.r * 255f):X2}{Mathf.RoundToInt(c.g * 255f):X2}{Mathf.RoundToInt(c.b * 255f):X2}", StringComparison.OrdinalIgnoreCase))
+					if (string.Equals(m.Groups[1].Value, QcHex(c), StringComparison.OrdinalIgnoreCase))
 						return m.Groups[1].Value;
 			return null;
 		}
@@ -1897,6 +1944,7 @@ namespace Harmony3StrictCompat
 			["HaulersDream.CompositableLoadoutsCompat:LoadoutWantedUnits"] = 0x89C4B3F40C058F43,
 			["UIRethemed.Quests.Theme:LabelTruncated"] = 0xBCEFD483BBCF25F6,                               // UI Rethemed - Quests 1.7, 2026-11-11
 			["UIRethemed.Quests.HoverCard:Region"] = 0xC63A1FE873265DBA,
+			["UIRethemed.Quests.RewardTiles:Of"] = 0x3656DF7054B80C0C,
 			["UIRethemed.Quests.HoverCard:ContentRegion"] = 0x13E206A5930D6140,
 			["UIRethemed.Quests.HoverCard:Register"] = 0x24510609E345B99F,
 			["HaulersDream.InventorySurplus:KeepCountOf"] = 0x04CE467AFB2AB712,                                 // Hauler's Dream 1.6 build, 2026-11-11

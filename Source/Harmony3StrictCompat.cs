@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Text;
+using System.Text.RegularExpressions;
 using HarmonyLib;
 using RimWorld;
 using RimWorld.Planet;
@@ -294,6 +295,23 @@ namespace Harmony3StrictCompat
 			{
 				smIsStocked = (Func<Pawn, Thing, bool>)smStockingUp.CreateDelegate(typeof(Func<Pawn, Thing, bool>));
 				harmony.Patch(dropUnused, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SmKeepStockedItem)));
+			}
+			var qcMod = AccessTools.TypeByName("QualityColors.QualityColorsMod");
+			qcSettings = qcMod == null ? null : AccessTools.Field(qcMod, "Settings");
+			qcColors = qcSettings == null ? null : AccessTools.Field(qcSettings.FieldType, "Colors");
+			if (qcColors != null)
+			{
+				var uirqLabel = Target("UIRethemed.Quests.Theme:LabelTruncated");
+				var uirqRegion = Target("UIRethemed.Quests.HoverCard:Region");
+				var uirqContent = Target("UIRethemed.Quests.HoverCard:ContentRegion");
+				var uirqRegister = Target("UIRethemed.Quests.HoverCard:Register");
+				if (uirqLabel != null && uirqRegion != null && uirqContent != null && uirqRegister != null)
+				{
+					harmony.Patch(uirqLabel, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirqLabelQuality)));
+					harmony.Patch(uirqRegion, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirqTipTitle)));
+					harmony.Patch(uirqContent, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirqTipTitle)));
+					harmony.Patch(uirqRegister, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirqTipRegister)));
+				}
 			}
 			var hdKeepCount = Target("HaulersDream.InventorySurplus:KeepCountOf");
 			var smStockCount = Target("SmartMedicine.StockUpUtility:StockUpCount", args: [typeof(Pawn), typeof(ThingDef)]);
@@ -1013,6 +1031,43 @@ namespace Harmony3StrictCompat
 		// drug loop, so stocked hemogen packs were dropped and fetched again. Drop is the one exit of both loops.
 		static Func<Pawn, Thing, bool> smIsStocked;
 		static bool SmKeepStockedItem(Pawn pawn, Thing thing) => !smIsStocked(pawn, thing);
+
+		// ---- UI Rethemed - Quests x Quality Colors: reward tiles and their tooltip titles ----------------
+		// Quality Colors wraps the "(masterwork)" part of an item label in a colour tag. A reward tile is narrow, so
+		// the label truncates before that part, and the hover card strips tags from its title. The tag itself tells
+		// the quality: a label carrying one of Quality Colors' configured colours is drawn whole in that colour, and
+		// the card title gets the colour back after the strip. Other coloured labels are left alone.
+		static FieldInfo qcSettings, qcColors;
+		static readonly Regex QcTag = new("<color=#([0-9A-Fa-f]{6})>", RegexOptions.Compiled);
+		static string qcPendingHex;
+
+		static string QcQualityHex(string text)
+		{
+			if (text == null || text.IndexOf("<color=#", StringComparison.Ordinal) < 0) return null;
+			if (qcColors.GetValue(qcSettings.GetValue(null)) is not Dictionary<QualityCategory, Color> colors) return null;
+			foreach (Match m in QcTag.Matches(text))
+				foreach (var c in colors.Values)
+					if (string.Equals(m.Groups[1].Value, $"{Mathf.RoundToInt(c.r * 255f):X2}{Mathf.RoundToInt(c.g * 255f):X2}{Mathf.RoundToInt(c.b * 255f):X2}", StringComparison.OrdinalIgnoreCase))
+						return m.Groups[1].Value;
+			return null;
+		}
+
+		static void UirqLabelQuality(ref string text, ref Color color)
+		{
+			var hex = QcQualityHex(text);
+			if (hex == null) return;
+			color = new Color(Convert.ToInt32(hex.Substring(0, 2), 16) / 255f, Convert.ToInt32(hex.Substring(2, 2), 16) / 255f,
+				Convert.ToInt32(hex.Substring(4, 2), 16) / 255f, color.a);
+			text = ColoredText.StripTags(text);
+		}
+
+		// Region / ContentRegion strip the title and then call Register; the prefix order carries the colour across.
+		static void UirqTipTitle(string title) => qcPendingHex = QcQualityHex(title);
+		static void UirqTipRegister(ref string title)
+		{
+			if (qcPendingHex != null && !title.NullOrEmpty()) title = $"<color=#{qcPendingHex}>{title}</color>";
+			qcPendingHex = null;
+		}
 
 		// Hauler's Dream shields Smart Medicine stock only while the stack is not tagged as its own haul. The tag spreads
 		// to every inventory stack of a def the pawn hauls, so a stocked stack gets tagged, HD unloads part of it, Stock Up
@@ -1840,6 +1895,10 @@ namespace Harmony3StrictCompat
 			["CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__1"] = 0x61D455F6E62CAD49,
 			["HaulersDream.CompositableLoadoutsCompat:InitKeepApi"] = 0x3F15140E9ED2D991,                    // Hauler's Dream 1.6 build, 2026-11-05
 			["HaulersDream.CompositableLoadoutsCompat:LoadoutWantedUnits"] = 0x89C4B3F40C058F43,
+			["UIRethemed.Quests.Theme:LabelTruncated"] = 0xBCEFD483BBCF25F6,                               // UI Rethemed - Quests 1.7, 2026-11-11
+			["UIRethemed.Quests.HoverCard:Region"] = 0xC63A1FE873265DBA,
+			["UIRethemed.Quests.HoverCard:ContentRegion"] = 0x13E206A5930D6140,
+			["UIRethemed.Quests.HoverCard:Register"] = 0x24510609E345B99F,
 			["HaulersDream.InventorySurplus:KeepCountOf"] = 0x04CE467AFB2AB712,                                 // Hauler's Dream 1.6 build, 2026-11-11
 			["SmartMedicine.StockUpUtility:StockUpCount"] = 0x6CFF64A881BBB050,                                   // (Pawn, ThingDef) overload, Smart Medicine 1.7, 2026-11-11
 			["HaulersDream.StorageCommitments:get_InsideSpaceScan"] = 0x212C16560ED8173E,                     // Hauler's Dream 1.6 build, 2026-11-06

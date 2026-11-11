@@ -3115,4 +3115,43 @@ namespace Harmony3StrictCompat
 			parent.DirtyMapMesh(parent.Map);
 		}
 	}
+
+	// ---- Vanilla: stale hypothermia / heatstroke on reused world pawns --------------------------------------
+	// Hypothermia and heatstroke have no comps, death chance or hediff givers, so WorldPawns mothballs a pawn that
+	// carries them, and a mothballed pawn only ages (Pawn.TickMothballed). The hediff stays frozen until the pawn
+	// is reused, possibly a year later: a trade caravan or visitor group then arrives with a member above 15% and
+	// leaves at once "because of dangerous temperature" (Trigger_PawnExperiencingDangerousTemperatures), even at
+	// a comfortable 16 C. Off the map vanilla treats a pawn as warm (HediffGiver_Hypothermia/Heat recover when it
+	// is not spawned), so apply that same recovery for the mothballed time. Caravan members are never mothballed;
+	// their hediffs keep ticking as before.
+	[StaticConstructorOnStartup]
+	static class MothballedTemperatureRecovery
+	{
+		static readonly HediffDef hypothermicSlowdown = DefDatabase<HediffDef>.GetNamedSilentFail("HypothermicSlowdown");
+
+		static MothballedTemperatureRecovery()
+		{
+			new Harmony("sammael.harmony3strictcompat").Patch(AccessTools.Method(typeof(Pawn), nameof(Pawn.TickMothballed)),
+				postfix: new HarmonyMethod(typeof(MothballedTemperatureRecovery), nameof(Recover)));
+		}
+
+		static void Recover(Pawn __instance, int interval)
+		{
+			var hediffs = __instance.health?.hediffSet?.hediffs;
+			if (hediffs == null) return;
+			for (int i = hediffs.Count - 1; i >= 0; i--)
+			{
+				var h = hediffs[i];
+				if (h.def != HediffDefOf.Hypothermia && h.def != HediffDefOf.Heatstroke && h.def != hypothermicSlowdown) continue;
+				// Vanilla off-map step, once per 60-tick giver interval.
+				float severity = h.Severity;
+				for (int n = interval / 60; n > 0 && severity > 0f; n--)
+					severity -= Mathf.Clamp(severity * 0.027f, 0.0015f, 0.015f);
+				if (severity <= 0f)
+					__instance.health.RemoveHediff(h);
+				else
+					h.Severity = severity;
+			}
+		}
+	}
 }

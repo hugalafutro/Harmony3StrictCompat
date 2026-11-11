@@ -30,6 +30,7 @@
 - Busywork + LTO Colony Groups: "Upper" job icons show on Colony Groups portraits (Busywork only hooked the vanilla colonist bar).
 - Sensible Bed Ownership: OwnedBed answers cached per pawn until bed ownership changes (was rescanning every bed hundreds of thousands of times a minute); spot-checked against SBO; also used by the parallel render threads, and SBO's bed list scan is locked (sleeping animals in animal beds halved FPS, render jobs threw "Collection was modified").
 - Hauler's Dream + Compositable Loadouts: loadout items are kept during surplus unload again (CL's items now list several defs; HD only knew Item.Def).
+- Hauler's Dream + Smart Medicine - Continued: Stock Up amounts count as kept even on stacks Hauler's Dream tagged as its own haul (no more unload / re-fetch loop and "Cannot unload inventory" alert).
 - Hauler's Dream + Kanban Stockpile Continue: HD respects Kanban's max stack size when it plans pick-ups and unloads into capped storage (no more overfill / remove-excess churn).
 - Kanban Stockpile Continue: the similar stack limit counts every stack of the same def when accepting, like its remove-excess job does (no more pawns shuttling unmergeable meals between a capped fridge and the next storage).
 - Vanilla Ideology + Alpha Memes (heart extraction): sacrificing an innocent prisoner in a ritual no longer counts as executing an innocent or as a prisoner death through neglect (no opinion / mood penalties for the ideoligion's own ritual).

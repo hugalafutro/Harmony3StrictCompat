@@ -295,6 +295,13 @@ namespace Harmony3StrictCompat
 				smIsStocked = (Func<Pawn, Thing, bool>)smStockingUp.CreateDelegate(typeof(Func<Pawn, Thing, bool>));
 				harmony.Patch(dropUnused, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SmKeepStockedItem)));
 			}
+			var hdKeepCount = Target("HaulersDream.InventorySurplus:KeepCountOf");
+			var smStockCount = Target("SmartMedicine.StockUpUtility:StockUpCount", args: [typeof(Pawn), typeof(ThingDef)]);
+			if (hdKeepCount != null && smStockCount != null)
+			{
+				smStockCountOf = (Func<Pawn, ThingDef, int>)smStockCount.CreateDelegate(typeof(Func<Pawn, ThingDef, int>));
+				harmony.Patch(hdKeepCount, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdKeepStockUpCount)));
+			}
 			var canHaul = Target("Verse.AI.HaulAIUtility:PawnCanAutomaticallyHaul");
 			if (canHaul != null && ModsConfig.IsActive("orion.hospitality"))
 				harmony.Patch(canHaul, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HaulAreaLabelNullSafe)));
@@ -1006,6 +1013,17 @@ namespace Harmony3StrictCompat
 		// drug loop, so stocked hemogen packs were dropped and fetched again. Drop is the one exit of both loops.
 		static Func<Pawn, Thing, bool> smIsStocked;
 		static bool SmKeepStockedItem(Pawn pawn, Thing thing) => !smIsStocked(pawn, thing);
+
+		// Hauler's Dream shields Smart Medicine stock only while the stack is not tagged as its own haul. The tag spreads
+		// to every inventory stack of a def the pawn hauls, so a stocked stack gets tagged, HD unloads part of it, Stock Up
+		// fetches it back into the same tagged stack, and the stack's tag age ends in the "Cannot unload inventory"
+		// alert. KeepCountOf is the keep count HD honours on tagged stacks too (drug policy, loadouts): count the stock
+		// there. Max, not sum: Stock Up and the other sources each fill the same inventory up to their own count.
+		static Func<Pawn, ThingDef, int> smStockCountOf;
+		static void HdKeepStockUpCount(Pawn pawn, ThingDef def, ref int __result)
+		{
+			if (pawn?.inventory != null && def != null) __result = Math.Max(__result, smStockCountOf(pawn, def));
+		}
 
 		// ---- Hospitality guests: null area in PawnCanAutomaticallyHaul ------------------------------------
 		// Hospitality makes guests care about forbidden cells and answers InAllowedArea from the guest area, but a guest's
@@ -1822,6 +1840,8 @@ namespace Harmony3StrictCompat
 			["CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__1"] = 0x61D455F6E62CAD49,
 			["HaulersDream.CompositableLoadoutsCompat:InitKeepApi"] = 0x3F15140E9ED2D991,                    // Hauler's Dream 1.6 build, 2026-11-05
 			["HaulersDream.CompositableLoadoutsCompat:LoadoutWantedUnits"] = 0x89C4B3F40C058F43,
+			["HaulersDream.InventorySurplus:KeepCountOf"] = 0x04CE467AFB2AB712,                                 // Hauler's Dream 1.6 build, 2026-11-11
+			["SmartMedicine.StockUpUtility:StockUpCount"] = 0x6CFF64A881BBB050,                                   // (Pawn, ThingDef) overload, Smart Medicine 1.7, 2026-11-11
 			["HaulersDream.StorageCommitments:get_InsideSpaceScan"] = 0x212C16560ED8173E,                     // Hauler's Dream 1.6 build, 2026-11-06
 			["HaulersDream.JobDriver_UnloadHauledInventory:FindTargetOrDrop"] = 0x124B6AF8B6F91AFF,
 			["HaulersDream.JobDriver_UnloadHauledInventory+<>c__DisplayClass15_0:<FindTargetOrDrop>b__0"] = 0xF8A1275757B89E49,

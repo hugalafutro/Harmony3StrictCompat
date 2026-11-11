@@ -1048,6 +1048,10 @@ namespace Harmony3StrictCompat
 		static string qcPendingHex;
 
 		static Type uirqTile;
+		static MethodInfo uirqTextDim;
+		// The stack count shares the value line; it is drawn in the theme's dim text colour so the value stands out.
+		static Color UirqDim() => (uirqTextDim ??= AccessTools.PropertyGetter(AccessTools.TypeByName("UIRethemed.Quests.Theme"), "TextDim"))
+			?.Invoke(null, null) is Color dim ? dim : new Color(0.7f, 0.7f, 0.7f);
 
 		static void UirqRewardTiles(IList tiles)
 		{
@@ -1062,7 +1066,7 @@ namespace Harmony3StrictCompat
 				if (silver.GetValue(tile) is float worth)
 				{
 					var count = line.GetValue(tile) as string;
-					line.SetValue(tile, count.NullOrEmpty() ? worth.ToStringMoney() : count + "   " + worth.ToStringMoney());
+					line.SetValue(tile, count.NullOrEmpty() ? worth.ToStringMoney() : $"<color=#{QcHex(UirqDim())}>{count}</color>   {worth.ToStringMoney()}");
 					if ((Color)lineColor.GetValue(tile) == default) lineColor.SetValue(tile, Color.white);
 					silver.SetValue(tile, null);
 				}

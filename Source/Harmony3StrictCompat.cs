@@ -539,8 +539,8 @@ namespace Harmony3StrictCompat
 
 		// ---- Show Mod Updates + UI Rethemed - Main Bar: icon on the "N updated mods" menu button ----
 		// UIR's menu gives icons only to the vanilla options it knows (KnownOptions); other mods' buttons are drawn by
-		// MenuWindow.Face with no icon. Match Show Mod Updates' label ("{0} updated mod(s)", in the active language)
-		// and hand Face a Phosphor icon from UIR Core.
+		// MenuWindow.Face with no icon. Match Show Mod Updates' label ("{0} updated mod(s)", with or without its
+		// "RimWorld updated" second line, or that line alone; in the active language) and hand Face a Phosphor icon from UIR Core.
 		static System.Text.RegularExpressions.Regex smuLabel;
 		static LoadedLanguage smuLanguage;
 		static object smuIcon;
@@ -555,7 +555,11 @@ namespace Harmony3StrictCompat
 				foreach (var key in new[] { "SMU.CurrentUpdate", "SMU.CurrentUpdates" })
 					if (smuLanguage.TryGetTextFromKey(key, out var form))
 						forms.Add(System.Text.RegularExpressions.Regex.Escape(form.RawText).Replace(@"\{0}", @"\d+"));
-				smuLabel = forms.Count == 0 ? null : new System.Text.RegularExpressions.Regex("^(?:" + string.Join("|", forms) + ")$");
+				// After a game update SMU appends Environment.NewLine + "SMU.GameUpdated", or shows that line alone
+				var game = smuLanguage.TryGetTextFromKey("SMU.GameUpdated", out var gameForm) ? System.Text.RegularExpressions.Regex.Escape(gameForm.RawText) : null;
+				var mods = forms.Count == 0 ? null : "(?:" + string.Join("|", forms) + ")" + (game == null ? "" : @"(?:\r?\n" + game + ")?");
+				var any = mods == null ? game : game == null ? mods : mods + "|" + game;
+				smuLabel = any == null ? null : new System.Text.RegularExpressions.Regex("^(?:" + any + ")$");
 			}
 			if (smuLabel == null || !smuLabel.IsMatch(text)) return;
 			smuIcon ??= uirIconFor("arrow-clockwise");
@@ -1862,8 +1866,8 @@ namespace Harmony3StrictCompat
 			["Unburned.Pretty_Patch:Prefix"] = 0xE153E3D01BE0AC50,                                                // Unburned 1.7, 2026-11-09
 			["VEF.Weapons.MeleeReachCombatUtility:IsVanillaMeleeAttack"] = 0xAED0762AE41E6D48,                    // VEF 1.7, 2026-11-09
 			["SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix"] = 0xEA4FA1B085907595,     // Smarter Visitors 1.7.0, 2026-11-08
-			["UIRethemed.MainBar.MenuWindow:Face"] = 0x7970824AD7079EAA,                               // UI Rethemed - Main Bar 1.7, 2026-11-07
-			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0xB6635F04BB1CC9CC,
+			["UIRethemed.MainBar.MenuWindow:Face"] = 0xD74AED0C610C9EC5,                               // UI Rethemed - Main Bar 1.7, 2026-11-11
+			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0x4AF99FCAB553E81A,
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0x7F317F9F8340B035,                               // UI Rethemed - Notifications 1.7, 2026-11-07
 			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0x95E1F6B21DC2F25D,
 			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0xA5D732B3B2CD1FCA,

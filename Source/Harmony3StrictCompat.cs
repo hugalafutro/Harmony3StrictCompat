@@ -428,6 +428,8 @@ namespace Harmony3StrictCompat
 				harmony.Patch(AccessTools.Method(typeof(PocketMapUtility), nameof(PocketMapUtility.GeneratePocketMap)),
 					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LeoSeamsRandomCavern)),
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LeoSeamsRoofLava)));
+			foreach (var alert in new[] { typeof(Alert_NeedResearchProject), typeof(Alert_NeedAnomalyProject) })
+				harmony.Patch(AccessTools.Method(alert, "OnClick"), prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ResearchAlertOpenTab)));
 			if (Target("SmartDeconstruct.SmartDeconstructMod:getDesignation") is { } sdGetDesignation)
 				harmony.Patch(sdGetDesignation, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SdVeinDesignation)));
 			harmony.Patch(AccessTools.Method(typeof(WildAnimalSpawner), "CommonalityOfAnimalNow"),
@@ -841,6 +843,17 @@ namespace Harmony3StrictCompat
 			var map = spawnerMap(__instance);
 			if (map == null || !map.IsPocketMap) return true;
 			__result = def.RaceProps.waterSeeker && !map.terrainGrid.AnyWaterCells ? 0f : map.BiomeAt(loc).CommonalityOfAnimal(def);
+			return false;
+		}
+
+		// The "need research project" alerts cast the research tab's window to MainTabWindow_Research to pick a tab.
+		// Nice Research Tab replaces that window, so clicking the alert threw InvalidCastException (UI Rethemed -
+		// Notifications then stopped drawing alerts under the gizmos until restart, 2026-11-12). With a replaced window
+		// just open the research tab.
+		static bool ResearchAlertOpenTab()
+		{
+			if (MainButtonDefOf.Research.TabWindow is MainTabWindow_Research) return true;
+			Find.MainTabsRoot.SetCurrentTab(MainButtonDefOf.Research);
 			return false;
 		}
 

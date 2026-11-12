@@ -424,6 +424,21 @@ namespace Harmony3StrictCompat
 				harmony.Patch(flHasMuzzle, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FlSkipMuzzleFlashGuns)));
 			harmony.Patch(AccessTools.Method(typeof(CompAssignableToPawn), nameof(CompAssignableToPawn.ForceRemovePawn)),
 				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AwayBedLossProbe)));
+			if (AccessTools.TypeByName("Leo.Events.MineEntrance") != null && AccessTools.TypeByName("BiomesCore.DefModExtensions.BiomesMap") != null)
+				harmony.Patch(AccessTools.Method(typeof(PocketMapUtility), nameof(PocketMapUtility.GeneratePocketMap)),
+					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LeoSeamsRandomCavern)),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LeoSeamsRoofLava)));
+			if (Target("SmartDeconstruct.SmartDeconstructMod:getDesignation") is { } sdGetDesignation)
+				harmony.Patch(sdGetDesignation, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SdVeinDesignation)));
+			harmony.Patch(AccessTools.Method(typeof(WildAnimalSpawner), "CommonalityOfAnimalNow"),
+				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PocketMapAnimalCommonality)));
+			if (Target("QuietWonders.QWEffects:Frame") is { } qwFrame)
+				harmony.Patch(qwFrame, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(QwSkipPocketMaps)));
+			tgTaskForce = AccessTools.Field("TacticalGroups.ColonistGroup:isTaskForce");
+			if (tgTaskForce != null && Target("TacticalGroups.ColonistGroup:GetUniqueLoadID") is { } tgLoadId)
+				harmony.Patch(tgLoadId, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(TgTaskForceLoadId)));
+			harmony.Patch(AccessTools.Method(typeof(Precept_Ritual), nameof(Precept_Ritual.ExposeData)),
+				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RitualSaveCompletedOnce)));
 			var uirRowDraw = Target("UIRethemed.Notifications.StatusRow:Draw");
 			var uirRowWidth = Target("UIRethemed.Notifications.StatusRow:WidthFor");
 			var uirColorOf = Target("UIRethemed.Notifications.NotificationStyles:ColorOf");
@@ -789,6 +804,82 @@ namespace Harmony3StrictCompat
 				&& pawn.MapHeld != bed.Map && __instance.AssignedPawnsForReading.Contains(pawn))
 				Log.Warning($"[Harmony3StrictCompat] Away bed loss: {pawn.LabelShort} unassigned from {bed.LabelShort} ({bed.ThingID}, {bed.Map}) " +
 					$"while on {pawn.MapHeld?.ToString() ?? "the world map"}. Stack shows who did it.\n{new System.Diagnostics.StackTrace(1)}");
+		}
+
+		// Leo - Events + Biomes! Caverns (personal tweak): the "unexpected mineral seams" cave is a pocket map whose
+		// generator fixes the vanilla Underground biome. Pick one of the three Caverns biomes for each new cave, so
+		// its terrain, fungi and plants, weather and wildlife come from that biome. The tile copies the biome at
+		// generation, so an existing cave keeps its own. Caverns' stalagmite/crystal gen steps are added in XML.
+		static readonly string[] cavernBiomes = ["BMT_FungalForest", "BMT_CrystalCaverns", "BMT_EarthenDepths"];
+		static void LeoSeamsRandomCavern(MapGeneratorDef generatorDef)
+		{
+			if (generatorDef?.defName == "LE_MineralSeams" && generatorDef.pocketMapProperties != null
+				&& cavernBiomes.Select(DefDatabase<BiomeDef>.GetNamedSilentFail).Where(b => b != null).TryRandomElement(out var biome))
+				generatorDef.pocketMapProperties.biome = biome;
+		}
+
+		// Vanilla GenStep_Terrain deletes rock on lava (supportsRock false) and then strips roofs that would be
+		// unsupported, which leaves the middle of a lava pool open to the sky. Right for a surface map, but the cave is
+		// underground: the first Earthen Depths cave (2026-11-12) had 92 open cells, so its room read "Unroofed (92)".
+		// Put the generator's rock roof back on every open cell.
+		static void LeoSeamsRoofLava(MapGeneratorDef generatorDef, Map __result)
+		{
+			if (__result == null || generatorDef?.defName != "LE_MineralSeams") return;
+			var roof = generatorDef.roofDef ?? RoofDefOf.RoofRockThick;
+			foreach (var cell in __result.AllCells)
+				if (!cell.Roofed(__result))
+					__result.roofGrid.SetRoof(cell, roof);
+		}
+
+		// Vanilla WildAnimalSpawner.CommonalityOfAnimalNow reads Find.WorldGrid[map.Tile] (pollution, coast, tile
+		// mutators). A pocket map has no world tile, so it threw "Index was out of range" on every spawn try once a cave
+		// had a biome with wildlife (vanilla Underground has animal density 0; Caverns biomes do not). On pocket maps
+		// weigh animals by the biome alone.
+		static readonly AccessTools.FieldRef<WildAnimalSpawner, Map> spawnerMap = AccessTools.FieldRefAccess<WildAnimalSpawner, Map>("map");
+		static bool PocketMapAnimalCommonality(WildAnimalSpawner __instance, PawnKindDef def, IntVec3 loc, ref float __result)
+		{
+			var map = spawnerMap(__instance);
+			if (map == null || !map.IsPocketMap) return true;
+			__result = def.RaceProps.waterSeeker && !map.terrainGrid.AnyWaterCells ? 0f : map.BiomeAt(loc).CommonalityOfAnimal(def);
+			return false;
+		}
+
+		// Smart Deconstruct cancels a mine job that would bring down a thick roof and removes the target's Mine
+		// designation, but looks only for Mine. Ore marked with Odyssey's vein designation (MineVein, which also hands
+		// out Mine jobs) kept its designation, so the work giver re-issued the job at once: "started 10 jobs in one tick"
+		// and a "cannot mine" message per tick (compressed gold in Leo's cave, 2026-11-12). Fall back to MineVein.
+		static void SdVeinDesignation(Thing b, DesignationDef def, Map map, ref Designation __result)
+		{
+			if (__result == null && def == DesignationDefOf.Mine && DesignationDefOf.MineVein != null && b != null && map != null)
+				__result = map.designationManager.DesignationAt(b.Position, DesignationDefOf.MineVein);
+		}
+
+		// Quiet Wonders reads the map's world tile for its season calendar; a pocket map (cave, undercave) has none,
+		// so pollen, leaves and shedding threw "Index was out of range" when the camera was on one. Its outdoor
+		// effects have no place underground: skip them on pocket maps.
+		static bool QwSkipPocketMaps(Map map) => map == null || !map.IsPocketMap;
+
+		// Colony Groups: the load ID is type name + groupID, but colony groups and task forces number separately (a
+		// task force for a second map, e.g. Leo's cave, is "1" next to "Colony 1"), so loading logged "An item with the
+		// same key has already been added. Key: TacticalGroups.ColonyGroup1". Nothing saves references to these groups,
+		// so giving task forces their own ID changes no saved data.
+		static FieldInfo tgTaskForce;
+		static void TgTaskForceLoadId(object __instance, ref string __result)
+		{
+			if ((bool)tgTaskForce.GetValue(__instance))
+				__result += "_TaskForce";
+		}
+
+		// A ritual's finished obligation can land in completedObligations twice (seen with VFE Tribals' advance-to-spacer
+		// ritual, 2026-11-12). Both copies are deep-saved with the same ID, so every load logged "An item with the same
+		// key has already been added. Key: RitualObligation_30". Save each finished obligation once.
+		static void RitualSaveCompletedOnce(Precept_Ritual __instance)
+		{
+			if (Scribe.mode == LoadSaveMode.Saving && __instance.completedObligations is { Count: > 1 } done)
+			{
+				var seen = new HashSet<int>();
+				done.RemoveAll(o => o != null && !seen.Add(o.ID));
+			}
 		}
 
 		static void AegCareSwitchFor(Def __instance, Pawn pawn, ref bool __result)
@@ -2202,6 +2293,9 @@ namespace Harmony3StrictCompat
 			["AutoExtractGenes.Utils:GetAutoExtractGenesComponent"] = 0x41DC32D5B21682AC,                // AutoExtractGenes 1.7, DLL of 2026-11-08
 			["ColonyManagerRedux.Manager:FinalizeInit"] = 0x6E9B8BF106F9034A,                           // Colony Manager Redux 1.7, DLL of 2026-11-02
 			["Flourish.AnimEventWorkers:HasMuzzle"] = 0x09D80ABDB9276A61,                               // Flourish - Combat Animations 2.1.5
+			["QuietWonders.QWEffects:Frame"] = 0x43D61EC90E750997,                                       // Quiet Wonders, DLL as of 2026-11-12
+			["TacticalGroups.ColonistGroup:GetUniqueLoadID"] = 0x5F30AAACFB7C28AE,                      // Colony Groups 1.6 build
+			["SmartDeconstruct.SmartDeconstructMod:getDesignation"] = 0x53C1CCCAD3316AC2,               // Smart Deconstruct 1.7
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0x6BEE64F14A0C8B7D,                               // UI Rethemed - Notifications 1.7, 2026-11-12
 			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0xA287A5FBF229B64E,
 			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0x8CE5181883AB492A,

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch>
+  <!-- Leo - Events + Biomes! Caverns (personal tweak): the mineral seams cave gets a random Caverns biome in C#
+       (LeoSeamsRandomCavern). Add the Caverns gen steps that MapCommonBase maps get, so the cave also gets
+       stalagmites (cavern biomes) and blue crystals (crystalline caverns only); both check the biome themselves. -->
+  <Operation Class="PatchOperationAdd" MayRequire="Leo.EventsExpanded,BiomesTeam.BiomesCaverns">
+    <xpath>Defs/MapGeneratorDef[defName="LE_MineralSeams"]/genSteps</xpath>
+    <value>
+      <li>BMT_CrystalsGenerator</li>
+      <li>BMT_ScatterStalagmiteGenerator</li>
+    </value>
+  </Operation>
+</Patch>

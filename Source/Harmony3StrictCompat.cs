@@ -40,6 +40,11 @@ namespace Harmony3StrictCompat
 				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DropWorldCopiesOfShipPawns)));
 			harmony.Patch(AccessTools.Method(typeof(Game), nameof(Game.FinalizeInit)),
 				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RepairMissingLeaders)));
+			if (Target("TD_Enhancement_Pack.Alert_Deterioration:get_DeterioratingThings") is { } tdDeteriorating)
+			{
+				Target("TD_Enhancement_Pack.Alert_Deterioration+<get_DeterioratingThings>d__1:MoveNext"); // fingerprint only: the iterator body filtered below
+				harmony.Patch(tdDeteriorating, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(TdDeteriorationNoCorpses)));
+			}
 			var tdSkillArrow = Target("TD_Enhancement_Pack.SkillLearningIndicator:LabelLearning");
 			var uirCardSkill = Target("UIRethemed.ColonistCard.Glance:DrawSkill");
 			if (tdSkillArrow != null && uirCardSkill != null)
@@ -2012,8 +2017,10 @@ namespace Harmony3StrictCompat
 			["ModSettingsFramework.PatchOperationSliderFloat:ApplyWorker"] = 0x7D3F07C2C28B20A5,              // VEF 1.7 0ModSettingsFramework.dll, 2026-10-13
 			["ModSettingsFramework.PatchOperationSliderInt:ApplyWorker"] = 0x03DFA38BA62A830B,
 			["Busywork.Patch_ColonistBarColonistDrawer_DrawColonist:Postfix"] = 0x8671BDCBF4F254FC,          // Busywork 1.7, 2026-11-05
+			["TD_Enhancement_Pack.Alert_Deterioration:get_DeterioratingThings"] = 0x8774F1B773D667FE,       // TD Enhancement Pack 1.7, 2026-11-12
+			["TD_Enhancement_Pack.Alert_Deterioration+<get_DeterioratingThings>d__1:MoveNext"] = 0x54FBB3FD87CA2948,
 			["TD_Enhancement_Pack.SkillLearningIndicator:LabelLearning"] = 0xA1C6010BAEEDD973,             // TD Enhancement Pack 1.7, DLL of 2026-10-22
-			["UIRethemed.ColonistCard.Glance:DrawSkill"] = 0x1F838060C7BD771F,                             // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-12
+			["UIRethemed.ColonistCard.Glance:DrawSkill"] = 0xFAACCE0D0C521EF3,                             // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-12 09:50
 			["VanillaQuestsExpandedAncients.Building_PneumaticTubeLaunchPort:Deliver"] = 0x824DD22872D97BE7, // VQE Ancients 1.6 build, DLL of 2026-10-06
 			["SkilledRefueling.HarmonyPatches:GetRefuelDuration"] = 0xFE59863C2B492B65,                    // Skilled Refueling 1.7, DLL of 2026-11-09
 			["SkilledRefueling.RefuelingUtility:RefuelingSpeedForPawn"] = 0x302D7899D7E9DF65,
@@ -2077,8 +2084,8 @@ namespace Harmony3StrictCompat
 			["Unburned.Pretty_Patch:Prefix"] = 0xE153E3D01BE0AC50,                                                // Unburned 1.7, 2026-11-09
 			["VEF.Weapons.MeleeReachCombatUtility:IsVanillaMeleeAttack"] = 0xAED0762AE41E6D48,                    // VEF 1.7, 2026-11-09
 			["SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix"] = 0xEA4FA1B085907595,     // Smarter Visitors 1.7.0, 2026-11-08
-			["UIRethemed.MainBar.MenuWindow:Face"] = 0xD74AED0C610C9EC5,                               // UI Rethemed - Main Bar 1.7, 2026-11-11
-			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0x4AF99FCAB553E81A,
+			["UIRethemed.MainBar.MenuWindow:Face"] = 0xDA9AAC9E54D1FF0A,                               // UI Rethemed - Main Bar 1.7, 2026-11-12
+			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0x02160D2EC5042D09,
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0x6BEE64F14A0C8B7D,                               // UI Rethemed - Notifications 1.7, 2026-11-12
 			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0xA287A5FBF229B64E,
 			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0x8CE5181883AB492A,
@@ -2305,6 +2312,14 @@ namespace Harmony3StrictCompat
 		// check; a bed that was just despawned (e.g. replaced via Replace Stuff) has no map, so it throws and
 		// the pawn's tick errors out. For an unspawned bed, skip SBO's prefix and let vanilla Reserve decide.
 		// __1 is SBO's "target" parameter; __result is SBO's own return value (true = run vanilla Reserve).
+		// ---- TD Enhancement Pack: deterioration alert without corpses ---------------------------------------------
+		// Personal tweak: the "Deteriorating" alert already leaves out rotting corpses, but lists every fresh one left
+		// outside (raid dead), burying real items in the list. Drop all corpses from it.
+		static void TdDeteriorationNoCorpses(ref IEnumerable<Thing> __result)
+		{
+			if (__result != null) __result = __result.Where(t => t is not Corpse);
+		}
+
 		// ---- Smart Medicine: "use nearby medicine" measured in tiles ---------------------------------------------
 		// Find swaps inventory medicine (doctor's, patient's) for equal ground medicine when the ground one's distance
 		// <= minDistance + distanceToUseEqualOnGround * 2. minDistance is the doctor-patient Manhattan distance in

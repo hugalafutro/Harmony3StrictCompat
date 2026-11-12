@@ -392,6 +392,15 @@ namespace Harmony3StrictCompat
 				uirTemperatureCard = Enum.Parse(uirReadoutCard.FieldType, "Temperature");
 				harmony.Patch(uirReadoutFace, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirTemperatureOverlayClick)));
 			}
+			var uirToggle = Target("UIRethemed.MainBar.BarControls:Toggle");
+			var uirSetSpeed = Target("UIRethemed.MainBar.BarControls:SetSpeed");
+			tdSettings = AccessTools.Field("TD_Enhancement_Pack.Mod:settings");
+			tdStopSlowdown = tdSettings == null ? null : AccessTools.Field(tdSettings.FieldType, "stopForcedSlowdown");
+			if (uirToggle != null && uirSetSpeed != null && tdStopSlowdown != null)
+			{
+				harmony.Patch(uirToggle, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirSpeedTileShiftClick)));
+				harmony.Patch(uirSetSpeed, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirSpeedFlyoutShiftClick)));
+			}
 			var uirRowDraw = Target("UIRethemed.Notifications.StatusRow:Draw");
 			var uirRowWidth = Target("UIRethemed.Notifications.StatusRow:WidthFor");
 			var uirColorOf = Target("UIRethemed.Notifications.NotificationStyles:ColorOf");
@@ -645,6 +654,33 @@ namespace Harmony3StrictCompat
 			Verse.Sound.SoundStarter.PlayOneShotOnCamera(settings.showTemperatureOverlay ? SoundDefOf.Checkbox_TurnedOn : SoundDefOf.Checkbox_TurnedOff);
 			ev.Use();
 		}
+
+		// ---- UI Rethemed - Main Bar + TD Enhancement Pack: Shift-click the time speed to end the forced 1x slowdown ----
+		// TD's "Shift-click the time controls to stop the forced slowdown" transpiles vanilla TimeControls, which UIR only
+		// draws offscreen. Same rule on UIR's controls, behind TD's own setting: Shift-click on the speed tile ends the
+		// slowdown (instead of opening the flyout) while one is running; Shift-click on a flyout speed ends it and picks
+		// that speed. Combat keeps re-signalling the slowdown, so it can come back, as with TD on vanilla controls.
+		static FieldInfo tdSettings, tdStopSlowdown;
+		static readonly AccessTools.FieldRef<TimeSlower, int> forceNormalSpeedUntil = AccessTools.FieldRefAccess<TimeSlower, int>("forceNormalSpeedUntil");
+		static readonly Action<TimeSpeed> playSpeedSound = AccessTools.MethodDelegate<Action<TimeSpeed>>(AccessTools.Method(typeof(TimeControls), "PlaySoundOf"));
+
+		static bool StopForcedSlowdown()
+		{
+			if (!Event.current.shift || !(bool)tdStopSlowdown.GetValue(tdSettings.GetValue(null))) return false;
+			var tm = Find.TickManager;
+			if (!tm.slower.ForcedNormalSpeed) return false;
+			forceNormalSpeedUntil(tm.slower) = tm.TicksGame - 1;
+			return true;
+		}
+
+		static bool UirSpeedTileShiftClick(object[] __args)
+		{
+			if (Convert.ToInt32(__args[0]) != 1 || !StopForcedSlowdown()) return true; // 1 = Flyout.Speed
+			playSpeedSound(Find.TickManager.CurTimeSpeed);
+			return false;
+		}
+
+		static void UirSpeedFlyoutShiftClick() => StopForcedSlowdown();
 
 		// ---- UI Rethemed - Notifications: the top-left messages drawn as rows in its notification stack ----
 		// UIR restyles letters, conditions and alerts into one column but leaves the game's transient messages
@@ -2031,6 +2067,8 @@ namespace Harmony3StrictCompat
 			["SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix"] = 0xEA4FA1B085907595,     // Smarter Visitors 1.7.0, 2026-11-08
 			["UIRethemed.MainBar.MenuWindow:Face"] = 0x5EA84E7C0767049F,                               // UI Rethemed - Main Bar 1.7, 2026-11-12 14:26
 			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0xEF81461ADE4000AB,
+			["UIRethemed.MainBar.BarControls:Toggle"] = 0xBFFF4D6AF367B2C5,
+			["UIRethemed.MainBar.BarControls:SetSpeed"] = 0xC298A9F6CE3648A8,
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0x6BEE64F14A0C8B7D,                               // UI Rethemed - Notifications 1.7, 2026-11-12
 			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0xA287A5FBF229B64E,
 			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0x8CE5181883AB492A,

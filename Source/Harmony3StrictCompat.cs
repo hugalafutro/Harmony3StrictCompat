@@ -410,6 +410,13 @@ namespace Harmony3StrictCompat
 				if (ambMixed != null && ambMeat != null && ambVeg != null)
 					harmony.Patch(ambRecover, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AmbRecoverByKind)));
 			}
+			var uirCareFor = Target("UIRethemed.InspectorTabs.CareSwitchDef:For");
+			aegEnabled = AccessTools.Field("AutoExtractGenes.AutoExtractGenesComp:isEnabled");
+			if (uirCareFor != null && aegEnabled != null && Target("AutoExtractGenes.Utils:GetAutoExtractGenesComponent") is { } aegGet)
+			{
+				aegComp = (Func<Pawn, ThingComp>)aegGet.CreateDelegate(typeof(Func<Pawn, ThingComp>));
+				harmony.Patch(uirCareFor, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AegCareSwitchFor)));
+			}
 			var uirRowDraw = Target("UIRethemed.Notifications.StatusRow:Draw");
 			var uirRowWidth = Target("UIRethemed.Notifications.StatusRow:WidthFor");
 			var uirColorOf = Target("UIRethemed.Notifications.NotificationStyles:ColorOf");
@@ -710,6 +717,41 @@ namespace Harmony3StrictCompat
 					return;
 				}
 			__result = ambMixed.GetValue(adaptiveRecipe) as RecipeDef;
+		}
+
+		// ---- UI Rethemed - Inspector Tabs + Auto Extract Genes: the switch in the Health tab's Care section ----
+		// AEG postfixes vanilla HealthCardUtility.DrawOverviewTab, which UIR's themed Health tab replaces. UIR lets mods add
+		// Care switches by def (CareSwitchDef: a pawn collection that is "on" and a setter); AEG keeps a per-pawn bool on
+		// its comp instead, so these adapt it. The def itself is added by 1.7/Patches/UIRethemed_AutoExtractGenesCare.xml.
+		// CareSwitchDef.For shows a switch for every pawn with player settings (animals too); limit this one to the pawns
+		// AEG's own checkbox showed for.
+		const string AegSwitchDef = "Harmony3StrictCompat_AutoExtractGenes";
+		static FieldInfo aegEnabled;
+		static Func<Pawn, ThingComp> aegComp;
+		public static readonly ICollection<Pawn> AegPawnsOn = new AegEnabledPawns();
+
+		public static void AegSet(Pawn pawn, bool flag)
+		{
+			if (aegComp?.Invoke(pawn) is { } comp) aegEnabled.SetValue(comp, flag);
+		}
+
+		static void AegCareSwitchFor(Def __instance, Pawn pawn, ref bool __result)
+		{
+			if (__result && __instance.defName == AegSwitchDef) __result = aegComp(pawn) != null;
+		}
+
+		// UIR only asks Contains (CareSwitchDef.IsOn); nothing enumerates or edits it.
+		sealed class AegEnabledPawns : ICollection<Pawn>
+		{
+			public bool Contains(Pawn pawn) => aegComp?.Invoke(pawn) is { } comp && (bool)aegEnabled.GetValue(comp);
+			public int Count => 0;
+			public bool IsReadOnly => true;
+			public void Add(Pawn item) => throw new NotSupportedException();
+			public void Clear() => throw new NotSupportedException();
+			public bool Remove(Pawn item) => throw new NotSupportedException();
+			public void CopyTo(Pawn[] array, int arrayIndex) { }
+			public IEnumerator<Pawn> GetEnumerator() => Enumerable.Empty<Pawn>().GetEnumerator();
+			IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 		}
 
 		// ---- UI Rethemed - Notifications: the top-left messages drawn as rows in its notification stack ----
@@ -2100,6 +2142,8 @@ namespace Harmony3StrictCompat
 			["UIRethemed.MainBar.BarControls:Toggle"] = 0xBFFF4D6AF367B2C5,
 			["UIRethemed.MainBar.BarControls:SetSpeed"] = 0xC298A9F6CE3648A8,
 			["AdaptiveMealBill.AdaptiveRecipeSelection:RecoverRecipe"] = 0x62FA21FEB38C0B91,             // AdaptiveMealBill 1.7, DLL of 2026-11-08
+			["UIRethemed.InspectorTabs.CareSwitchDef:For"] = 0x0766755B744724C3,                         // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-06
+			["AutoExtractGenes.Utils:GetAutoExtractGenesComponent"] = 0x41DC32D5B21682AC,                // AutoExtractGenes 1.7, DLL of 2026-11-08
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0x6BEE64F14A0C8B7D,                               // UI Rethemed - Notifications 1.7, 2026-11-12
 			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0xA287A5FBF229B64E,
 			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0x8CE5181883AB492A,

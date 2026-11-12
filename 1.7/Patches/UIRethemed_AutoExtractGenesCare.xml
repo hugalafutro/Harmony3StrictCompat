@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch>
+  <!-- UI Rethemed - Inspector Tabs + Auto Extract Genes: AEG's "Automatically extract genes" checkbox is drawn in the
+       vanilla Health tab only, which UIR replaces. This adds it as a switch in the themed tab's Care section. The pawn
+       list and setter are C# (AegPawnsOn / AegSet in Harmony3StrictCompat.cs), which also limits the switch to the
+       pawns AEG covers (colonists, slaves, prisoners, colony ghouls). -->
+  <Operation Class="PatchOperationAdd" MayRequire="LazyFridayStudio.UIRethemed.InspectorTabs,Nibato.AutoExtractGenes">
+    <xpath>Defs</xpath>
+    <value>
+      <UIRethemed.InspectorTabs.CareSwitchDef>
+        <defName>Harmony3StrictCompat_AutoExtractGenes</defName>
+        <labelKey>nibato.AutoExtractGenes.AutoExtractGenes</labelKey>
+        <descriptionKey>nibato.AutoExtractGenes.AutoExtractGenes.Tooltip</descriptionKey>
+        <mod>Nibato.AutoExtractGenes</mod>
+        <pawnsOn>Harmony3StrictCompat.Harmony3StrictCompatMod.AegPawnsOn</pawnsOn>
+        <set>Harmony3StrictCompat.Harmony3StrictCompatMod.AegSet</set>
+        <icon>UIRethemedCore/Phosphor/dna</icon>
+      </UIRethemed.InspectorTabs.CareSwitchDef>
+    </value>
+  </Operation>
+</Patch>

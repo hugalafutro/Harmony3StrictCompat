@@ -463,6 +463,19 @@ namespace Harmony3StrictCompat
 			}
 			if (Target("UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix") is { } umInspect)
 				harmony.Patch(umInspect, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UmInspectButtonsPawnOnly)));
+			Target("UIRethemed.Animals.Motion:Key"); // fingerprint only: the key the patched Hover hands its rect to
+			if (Target("UIRethemed.Animals.Motion:Hover") is { } uiraHover)
+				harmony.Patch(uiraHover, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UiraHoverKeyOnScreen)));
+		}
+
+		// ---- UI Rethemed - Animals: hover highlight mirrored into other groups ----
+		// Motion.Hover keeps each hover fade under a key hashed from the rect it is given. Grouped animal rows are drawn
+		// inside Widgets.BeginGroup(group body), so the Nth row of every unfolded group has the same local rect and
+		// shares one fade: hovering a row lit the same row (and its cells) in every group below. Hover only uses its rect
+		// for that key, so a prefix hands it the screen rect (patching the small Key itself could be defeated by inlining); a scroll moves the key, so a row under a scrolling mouse fades in again (0.08 s).
+		static void UiraHoverKeyOnScreen(ref Rect rect)
+		{
+			if (Event.current != null) rect = GUIUtility.GUIToScreenRect(rect);
 		}
 
 		// ---- Useful Marks: second info card button on selected things ----
@@ -2125,6 +2138,8 @@ namespace Harmony3StrictCompat
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPostfix"] = 0xEAEA3D4FF6046A94,
 			["UsefulMarks.Dialog_NamePawn_DoWindowContents_Patch:Postfix"] = 0xF33AD5F31EB56B3B,        // Useful Marks 1.7, DLL of 2026-10-22
 			["UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix"] = 0xD2A3A440ED802D16,
+			["UIRethemed.Animals.Motion:Key"] = 0xD8B1E64161CEBA55,                                     // UI Rethemed - Animals 1.7, DLL of 2026-11-09
+			["UIRethemed.Animals.Motion:Hover"] = 0x647430A1557F69F6,
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an

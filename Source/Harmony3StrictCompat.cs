@@ -287,6 +287,18 @@ namespace Harmony3StrictCompat
 				smIsStocked = (Func<Pawn, Thing, bool>)smStockingUp.CreateDelegate(typeof(Func<Pawn, Thing, bool>));
 				harmony.Patch(dropUnused, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SmKeepStockedItem)));
 			}
+			if (Target("SmartMedicine.FindBestMedicine:Find") is { } smFind)
+			{
+				var evaluator = AccessTools.Inner(smFind.DeclaringType, "MedicineEvaluator");
+				smEvalDistance = evaluator == null ? null : AccessTools.Field(evaluator, "distance");
+				smEvalThing = evaluator == null ? null : AccessTools.Field(evaluator, "thing");
+				smNearbySetting = AccessTools.Field(AccessTools.TypeByName("SmartMedicine.Settings"), "distanceToUseEqualOnGround");
+				if (smEvalDistance != null && smEvalThing != null && smNearbySetting != null)
+					harmony.Patch(smFind, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SmFindRemember)),
+						transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SmNearbyInTiles)));
+				else
+					Log.Error("[Harmony3StrictCompat] Smart Medicine MedicineEvaluator/Settings fields changed: its mod updated, redo the nearby-medicine fix");
+			}
 			var uirqOf = Target("UIRethemed.Quests.RewardTiles:Of");
 			uirqTile = AccessTools.TypeByName("UIRethemed.Quests.Tile");
 			if (uirqOf != null && uirqTile != null)
@@ -2060,6 +2072,7 @@ namespace Harmony3StrictCompat
 			["RimWorld.JobGiver_DropUnusedInventory:Drop"] = 0x80ADDA655AAFAE64,                                  // game 1.7.5000, 2026-11-09
 			["RimWorld.PawnGroupKindWorker_Normal:CanGenerateFrom"] = 0xCE8A5138AE0DBBC4,                       // game 1.7.5000, 2026-11-09
 			["RimWorld.PlaceWorker_ShowTurretRadius:AllowsPlacing"] = 0xA27D64AC3CB5B9DB,                       // game 1.7.5000, 2026-11-10
+			["SmartMedicine.FindBestMedicine:Find"] = 0x5C207A8C7B0E5F6A,                                        // Smart Medicine - Continued 1.7, 2026-11-12
 			["SmartMedicine.StockUpUtility:StockingUpOn"] = 0xE47440ED851F08C2,                                   // (Pawn, Thing) overload, Smart Medicine 1.7, 2026-11-09
 			["Unburned.Pretty_Patch:Prefix"] = 0xE153E3D01BE0AC50,                                                // Unburned 1.7, 2026-11-09
 			["VEF.Weapons.MeleeReachCombatUtility:IsVanillaMeleeAttack"] = 0xAED0762AE41E6D48,                    // VEF 1.7, 2026-11-09
@@ -2292,6 +2305,45 @@ namespace Harmony3StrictCompat
 		// check; a bed that was just despawned (e.g. replaced via Replace Stuff) has no map, so it throws and
 		// the pawn's tick errors out. For an unspawned bed, skip SBO's prefix and let vanilla Reserve decide.
 		// __1 is SBO's "target" parameter; __result is SBO's own return value (true = run vanilla Reserve).
+		// ---- Smart Medicine: "use nearby medicine" measured in tiles ---------------------------------------------
+		// Find swaps inventory medicine (doctor's, patient's) for equal ground medicine when the ground one's distance
+		// <= minDistance + distanceToUseEqualOnGround * 2. minDistance is the doctor-patient Manhattan distance in
+		// tiles, but the ground distance is the pathfinding cost (walking ticks, ~10-13 a tile) from the medicine to
+		// the doctor plus from the medicine to the patient, so the "6 spaces" setting meant about one tile and a
+		// cabinet 4 tiles from the bed never qualified. Swap that one read for the Manhattan detour in tiles; the
+		// sort and the time-until-death limit keep Smart Medicine's own path cost.
+		static FieldInfo smEvalDistance, smEvalThing, smNearbySetting;
+		[ThreadStatic] static Pawn smFindHealer, smFindPatient;
+
+		static void SmFindRemember(Pawn healer, Pawn patient)
+		{
+			smFindHealer = healer;
+			smFindPatient = patient;
+		}
+
+		static int SmGroundTiles(Thing medicine)
+		{
+			if (medicine == null || smFindHealer == null || smFindPatient == null) return int.MaxValue;
+			return (medicine.Position - smFindHealer.Position).LengthManhattan + (medicine.Position - smFindPatient.Position).LengthManhattan;
+		}
+
+		static IEnumerable<CodeInstruction> SmNearbyInTiles(IEnumerable<CodeInstruction> instructions)
+		{
+			var codes = instructions.ToList();
+			var hits = new List<int>();
+			for (int i = 0; i < codes.Count; i++)
+				if (codes[i].LoadsField(smEvalDistance) && codes.Skip(i + 1).Take(5).Any(c => c.LoadsField(smNearbySetting)))
+					hits.Add(i);
+			if (hits.Count != 1)
+			{
+				Log.Error($"[Harmony3StrictCompat] Smart Medicine nearby-medicine check not found ({hits.Count} matches): its mod updated, redo this fix");
+				return codes;
+			}
+			codes[hits[0]].operand = smEvalThing;
+			codes.Insert(hits[0] + 1, new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(SmGroundTiles))));
+			return codes;
+		}
+
 		// ---- Common Sense: no sweep before medical bed rest ------------------------------------------------------
 		// Its "clean before working" StartJob prefix queues a Clean job (filth in the target's room) ahead of any job
 		// with allowOpportunisticPrefix aimed at a building, vanilla LayDown on a bed included. It only skips pawns

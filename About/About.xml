@@ -56,6 +56,7 @@
 - Stem's VWE Industrial Expansion, Fortification Industrial - Citadel: missing weapon sounds pointed at existing ones (pistol equip, sawn-off repeater shot, flame bunker).
 - Smart Medicine - Continued (personal tweak): the Stock Up picker also lists the VRE Sanguophage animal, corpse and sanguophage hemogen packs, packaged survival meals and nutrient packaged meals.
 - Smart Medicine - Continued: stocked food-type items such as hemogen packs are no longer dropped by the idle inventory cleanup.
+- Smart Medicine - Continued: the "use nearby medicine" distance setting is measured in tiles, as its label says (it compared walking cost to tiles, so nearby medicine was never used).
 - Vanilla Races Expanded - Sanguophage: animalfeeders (strigoi) drink animal hemogen packs on their own, like regular packs, when no prisoner or regular pack is available.
 - Hospitality: Vending machines (personal tweak): the powered vending machine draws 100 W and keeps stored items frozen while powered.
 - Mod Settings Framework (VEF): slider settings reach every def their xpath matches, not just the first (ReBuild's grate speed slider now covers the sterile grate tile).

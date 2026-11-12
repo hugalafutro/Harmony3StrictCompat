@@ -36,6 +36,7 @@
 - Vanilla Ideology + Alpha Memes (heart extraction): sacrificing an innocent prisoner in a ritual no longer counts as executing an innocent or as a prisoner death through neglect (no opinion / mood penalties for the ideoligion's own ritual).
 - Common Sense: no "random element from empty collection" warnings for food no recipe makes (meal ingredients lookup skipped).
 - Common Sense: clean-before-eating moves on when its filth is already gone instead of erroring out of the eating job.
+- Common Sense: pawns on medical bed rest no longer get up to sweep before lying down (tends no longer fail).
 - Prisoner Realism + Cleaning Area Relaunched: prisoners only clean filth inside the Clean area, no more standing-still Clean job loop.
 - Hunt For Me: only player animals take hunting jobs (a released animal marked for hunting no longer hunts itself).
 - Designator Shapes + Better Architect Menu: flood fill stops at doors again.

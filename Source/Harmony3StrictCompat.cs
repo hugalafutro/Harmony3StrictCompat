@@ -209,6 +209,8 @@ namespace Harmony3StrictCompat
 			foreach (var csClean in new[] { "CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__0", "CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__1" })
 				if (Target(csClean) is { } csToil)
 					harmony.Patch(csToil, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(CsFilthGone)));
+			if (Target("CommonSense.OpportunisticTasks:Cleaning_Opportunity") is { } csOpportunity)
+				harmony.Patch(csOpportunity, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(CsNoSweepBeforeMedicalRest)));
 			var prClean = Target("PrisonerRealism.JobGiver_CleanCell:ShouldClean");
 			var carArea = Target("CleaningAreaRelaunched.CleaningAreaRelaunched_Util:GetCleanArea");
 			if (prClean != null && carArea != null)
@@ -2008,6 +2010,7 @@ namespace Harmony3StrictCompat
 			["CommonSense.ThingMaker_MakeThing_CommonSensePatch:Postfix"] = 0xE351865A0EF38D39,             // Common Sense 1.6 build, 2026-11-05
 			["CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__0"] = 0x3736DE64D224E604,
 			["CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__1"] = 0x61D455F6E62CAD49,
+			["CommonSense.OpportunisticTasks:Cleaning_Opportunity"] = 0xC83F6DDEA821201F,
 			["HaulersDream.CompositableLoadoutsCompat:InitKeepApi"] = 0x3F15140E9ED2D991,                    // Hauler's Dream 1.6 build, 2026-11-05
 			["HaulersDream.CompositableLoadoutsCompat:LoadoutWantedUnits"] = 0x89C4B3F40C058F43,
 			["UIRethemed.Quests.Theme:LabelTruncated"] = 0xBCEFD483BBCF25F6,                               // UI Rethemed - Quests 1.7, 2026-11-11
@@ -2289,6 +2292,19 @@ namespace Harmony3StrictCompat
 		// check; a bed that was just despawned (e.g. replaced via Replace Stuff) has no map, so it throws and
 		// the pawn's tick errors out. For an unspawned bed, skip SBO's prefix and let vanilla Reserve decide.
 		// __1 is SBO's "target" parameter; __result is SBO's own return value (true = run vanilla Reserve).
+		// ---- Common Sense: no sweep before medical bed rest ------------------------------------------------------
+		// Its "clean before working" StartJob prefix queues a Clean job (filth in the target's room) ahead of any job
+		// with allowOpportunisticPrefix aimed at a building, vanilla LayDown on a bed included. It only skips pawns
+		// that need a tend right now, so a tended flu patient on bed rest gets up to sweep each time it lies down
+		// again, and a doctor's tend fails meanwhile (GoodLayingStatusForTend needs the patient in bed). Cleaning
+		// before ordinary sleep stays. __0 = the job about to start, __1 = the pawn.
+		static bool CsNoSweepBeforeMedicalRest(Job __0, Pawn __1, ref Job __result)
+		{
+			if (__0?.def != JobDefOf.LayDown || __1?.health == null || !HealthAIUtility.ShouldSeekMedicalRest(__1)) return true;
+			__result = null;
+			return false;
+		}
+
 		static bool SboUnspawnedBedPrefix(LocalTargetInfo __1, ref bool __result)
 		{
 			if (__1.HasThing && __1.Thing is Building_Bed && __1.Thing.Map == null)

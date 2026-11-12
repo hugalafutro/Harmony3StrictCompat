@@ -42,14 +42,13 @@
 - Vanilla + VFE Pirates: quest raid previews ("raid of roughly this size:") no longer come out blank; pawn groups whose every pawn costs more than the faction allows at those points are skipped (e.g. the melee-only Junker group).
 - Vanilla Quests Expanded - Ancients (personal tweak): the pneumatic capsule arrival message lists what arrived.
 - Vanilla Social Interactions Expanded: "cured my friend" thought label resolves for implied relatives (no more template errors or Social tab fallback).
-- UI Rethemed - Colonist Card (personal tweak): the activity row shows the bleed rate and time to death when a pawn would bleed out within a day.
 - UI Rethemed - Inspector Tabs: long opinion rows in hover cards wrap instead of overlapping.
 - Flourish - Everyday Animations: the telescope pose mirrors with the telescope's art, so a West-rotated telescope is used from the eyepiece side too.
 - Flourish - Everyday Animations: in the telescope pose the telescope is drawn over the pawn and under its hands.
 - VFE Tribals + UI Rethemed - Factions (visual tweak): the Cornerstones button is drawn as a UI Rethemed button in the themed Factions title bar.
 - Show Mod Updates + UI Rethemed - Main Bar (visual tweak): the "N updated mods" menu button gets an icon.
 - UI Rethemed - Main Bar (personal tweak): left- or right-click on the temperature readout toggles the temperature overlay (Heat Map's colours when it is active).
-- UI Rethemed - Notifications (visual tweak): the top-left messages are drawn as rows in its bottom-right notification stack, live 30 s, a hovered one stays and shows UI Rethemed's hover card.
+- UI Rethemed - Notifications (visual tweak): the top-left messages are drawn as rows in its bottom-right notification stack, live 30 s, a hovered one stays and shows UI Rethemed's hover card, under a folding "Messages" heading.
 - UI Rethemed - Quests + Quality Colors (Continued) (visual tweak): quest reward tiles and their hover card titles are drawn in the item's quality colour, and the market value sits on the line under the name instead of beside it.
 - Auto-Cast Specialist Commands + Det's Xenotypes - Stoneborn (personal tweak): Stonecall is auto-cast when mining or finishing construction, following the Auto-Cast Mining Command setting, which right-click on the Stonecall gizmo toggles (check icon shown).
 - Vanilla (found through Modern Needs Tab): an emptied minified thing has a label again, so job reports no longer throw and MNT keeps recording job history.
@@ -78,7 +77,6 @@
 - VEF (MVCF): multi-verb weapons use the weapon's own accuracy/cooldown when the verb sets none; duplicate stat rows hidden; Range row fixed.
 - VEF: verb range factor applied to the result instead of the shared verb def (no stuck ranges).
 - Unburned + VEF: drafted pawns with reach melee weapons auto-attack at full reach again (Unburned replaced the method VEF patches).
-- Simple Leadership: leaders only join raids whose points cover them.
 - Sensible Bed Ownership: reservation prefix skipped for beds with no map.
 - Skilled Refueling: Harmony 3 unchecked binding for its mistyped __instance patch.
 - Smarter Visitors + Hospitality: its leave-delay prefix only touches Hospitality's stay timer, not the 1200-tick recovery after a fight (hurt visitor groups no longer stand at their defend point forever instead of leaving).

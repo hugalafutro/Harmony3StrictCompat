@@ -34,14 +34,6 @@ namespace Harmony3StrictCompat
 			var sbo = Target("SensibleBedOwnership.Patch_ReservationManager:Prefix");
 			if (sbo != null)
 				harmony.Patch(sbo, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SboUnspawnedBedPrefix)));
-			// GitHub build (2026-10-28+) picks leaders in a Prefix and charges their cost; older builds add them in the Postfix.
-			var slPick = Target("SimpleLeadership.PawnGroupMakerUtility_GeneratePawns_Patch:Prefix", optional: true);
-			var slLeader = Target("SimpleLeadership.PawnGroupMakerUtility_GeneratePawns_Patch:Postfix", optional: slPick != null);
-			if (slPick != null)
-				harmony.Patch(slPick, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SlLeaderBudget)));
-			else if (slLeader != null)
-				harmony.Patch(slLeader, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SlLeaderBefore)),
-					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SlLeaderAfter)));
 			harmony.Patch(AccessTools.Method(typeof(Pawn_NeedsTracker), "ShouldHaveNeed"),
 				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(NoNeedsBeforeWorld)) { priority = Priority.First });
 			harmony.Patch(AccessTools.Method(typeof(Game), nameof(Game.FinalizeInit)),
@@ -64,9 +56,6 @@ namespace Harmony3StrictCompat
 			var normalCanGenerate = Target("RimWorld.PawnGroupKindWorker_Normal:CanGenerateFrom");
 			if (normalCanGenerate != null)
 				harmony.Patch(normalCanGenerate, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(NormalGroupYieldsPawns)));
-			var uirCardActivity = Target("UIRethemed.ColonistCard.CardInfo:Activity");
-			if (uirCardActivity != null)
-				harmony.Patch(uirCardActivity, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCardBleedOut)));
 			var srDuration = Target("SkilledRefueling.HarmonyPatches:GetRefuelDuration");
 			var srSpeed = Target("SkilledRefueling.RefuelingUtility:RefuelingSpeedForPawn");
 			if (srDuration != null && srSpeed != null)
@@ -420,6 +409,7 @@ namespace Harmony3StrictCompat
 				}
 				else uirPlacedDraw = null;
 				uirStyleType = uirStyle; uirWidgetsType = uirWidgets; uirColorOfCall = uirColorOf;
+				UirMessagesSectionSetup(harmony);
 				harmony.Patch(AccessTools.Method(typeof(Messages), nameof(Messages.MessagesDoGUI)),
 					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirMessagesInStack)));
 				harmony.Patch(AccessTools.PropertyGetter(typeof(Message), "TimeLeft"),
@@ -687,6 +677,67 @@ namespace Harmony3StrictCompat
 			return def != null && uirMessageKinds.TryGetValue(def, out var k) ? k : 0;
 		}
 
+		// Messages roll-up: UIR's column has folding section headings (Letters, Alerts, Events) drawn by
+		// SectionHeading.Draw, which takes the HudSection enum and keeps the folded state by the enum's name in
+		// UIR's settings. The message rows get a heading of their own by passing the unused value 3; NameOf/IconOf
+		// prefixes give that value the name "Messages" and Phosphor's list icon. Folding hides the rows (messages
+		// still expire). Off when UIR's "section headings" setting is off, or if UIR ever defines a 4th section.
+		const int UirMessagesSectionValue = 3;
+		static object uirMessagesSection;
+		static MethodInfo uirHeadingShows, uirHeadingFolded, uirHeadingDraw, uirHeadingWidth;
+		static Func<float> uirColumnShared;
+		static readonly object[] uirMessageColorDefs = new object[4];
+
+		static void UirMessagesSectionSetup(Harmony harmony)
+		{
+			var sectionType = AccessTools.TypeByName("UIRethemed.Notifications.HudSection");
+			var shows = Target("UIRethemed.Notifications.SectionHeading:Shows");
+			var folded = Target("UIRethemed.Notifications.SectionHeading:Folded");
+			var draw = Target("UIRethemed.Notifications.SectionHeading:Draw");
+			var widthFor = Target("UIRethemed.Notifications.SectionHeading:WidthFor");
+			var nameOf = Target("UIRethemed.Notifications.SectionHeading:NameOf");
+			var iconOf = Target("UIRethemed.Notifications.SectionHeading:IconOf");
+			var shared = Target("UIRethemed.Notifications.HudColumn:get_Shared");
+			if (sectionType == null || shows == null || folded == null || draw == null || widthFor == null || nameOf == null || iconOf == null || shared == null)
+				return;
+			if (Enum.IsDefined(sectionType, UirMessagesSectionValue))
+			{
+				Log.Error($"[Harmony3StrictCompat] UI Rethemed - Notifications now defines HudSection {Enum.ToObject(sectionType, UirMessagesSectionValue)}: Messages roll-up off, redo it");
+				return;
+			}
+			uirMessagesSection = Enum.ToObject(sectionType, UirMessagesSectionValue);
+			uirHeadingShows = shows; uirHeadingFolded = folded; uirHeadingDraw = draw; uirHeadingWidth = widthFor;
+			uirColumnShared = (Func<float>)shared.CreateDelegate(typeof(Func<float>));
+			harmony.Patch(shared, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirSharedWithMessages)));
+			harmony.Patch(nameOf, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirMessagesSectionName)));
+			harmony.Patch(iconOf, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirMessagesSectionIcon)));
+		}
+
+		// Messages' wanted column width from the last draw (0 when none show). UIR's sections read the shared width
+		// before drawing, so they follow the messages one frame later.
+		static float uirMessagesWanted;
+
+		static void UirSharedWithMessages(ref float __result)
+		{
+			if (uirMessagesWanted > __result) __result = uirMessagesWanted;
+		}
+
+		static bool UirMessagesSectionName(object section, ref string __result)
+		{
+			if (Convert.ToInt32(section) != UirMessagesSectionValue) return true;
+			__result = "Messages";
+			return false;
+		}
+
+		static Texture2D uirMessagesIcon;
+
+		static bool UirMessagesSectionIcon(object section, ref Texture2D __result)
+		{
+			if (Convert.ToInt32(section) != UirMessagesSectionValue) return true;
+			__result = uirMessagesIcon ??= ContentFinder<Texture2D>.Get("UIRethemedNotifications/Phosphor/list");
+			return false;
+		}
+
 		static object[] UirStyles()
 		{
 			if (uirMessageStyles != null) return uirMessageStyles;
@@ -700,6 +751,7 @@ namespace Harmony3StrictCompat
 				AccessTools.Field(uirStyleType, "tintIcon").SetValue(style, true);
 				styles[kind] = style;
 				var colorDef = AccessTools.Field(uirStyleType, "color").GetValue(style);
+				uirMessageColorDefs[kind] = colorDef;
 				uirMessageAccents[kind] = colorDef == null ? null : (Color?)AccessTools.Field(colorDef.GetType(), "accent").GetValue(colorDef);
 			}
 			return uirMessageStyles = styles;
@@ -709,14 +761,44 @@ namespace Harmony3StrictCompat
 		{
 			if (Current.ProgramState != ProgramState.Playing || Find.LetterStack == null || Find.Alerts == null
 				|| (int)uirPositionCall.Invoke(null, null) != uirBottomRight)
+			{
+				uirMessagesWanted = 0f;
 				return true;
+			}
 			var messages = liveMessages();
-			if (messages.Count == 0) return false;
+			if (messages.Count == 0)
+			{
+				uirMessagesWanted = 0f;
+				return false;
+			}
 			var styles = UirStyles();
-			float width = 0f;
-			foreach (var msg in messages) width = Mathf.Max(width, uirRowWidthCall(msg.text));
+			bool heading = uirMessagesSection != null && (bool)uirHeadingShows.Invoke(null, new object[] { uirMessagesSection, messages.Count });
+			bool folded = heading && (bool)uirHeadingFolded.Invoke(null, new object[] { uirMessagesSection });
+			// Width as UIR's sections work it out (rows 154-320 px each, heading's own width), reported to its shared
+			// column through the HudColumn.Shared postfix, so every section and the messages share one width.
+			float wanted = 0f;
+			foreach (var msg in messages) wanted = Mathf.Max(wanted, uirRowWidthCall(msg.text));
+			if (heading) wanted = Mathf.Max(wanted, (float)uirHeadingWidth.Invoke(null, new object[] { uirMessagesSection, messages.Count }));
+			uirMessagesWanted = wanted;
+			float width = uirColumnShared != null ? uirColumnShared() : wanted;
 			float x = uirColumnXCall(width);
 			float y = Find.LetterStack.LastTopY - Find.Alerts.AlertsHeight - UirStackGap;
+			if (heading)
+			{
+				// Its colour is the most pressing message (bad, then warning).
+				float headWidth = width;
+				int pressing = -1;
+				foreach (var msg in messages)
+				{
+					int kind = UirKindOf(msg.def);
+					if ((kind == 3 || kind == 2) && kind > pressing) pressing = kind;
+				}
+				float headY = folded ? y : y - messages.Count * UirRowStep;
+				uirHeadingDraw.Invoke(null, new object[] { new Rect(uirColumnXCall(headWidth), Mathf.Round(headY - UirRowHeight), headWidth, UirRowHeight),
+					uirMessagesSection, messages.Count, pressing < 0 ? null : uirMessageColorDefs[pressing], float.MaxValue,
+					(Func<string>)(() => string.Join("\n", messages.Select(m => m.text).Reverse())) });
+			}
+			if (folded) return false;
 			for (int i = messages.Count - 1; i >= 0; i--, y -= UirRowStep)
 			{
 				var msg = messages[i];
@@ -1433,10 +1515,6 @@ namespace Harmony3StrictCompat
 			return false;
 		}
 
-		// ---- Bleed-out time on the UI Rethemed colonist card activity row ----------------------------------------
-		// Personal tweak: the time left only shows at the bottom of the Health tab. Same text and limits as vanilla
-		// HealthCardUtility: nothing for a slow bleed (a day or more) or a Deathless pawn. Goes first because the row
-		// truncates long job text. Patches Activity, not ActivityLine: UIR matches that line against the inspect string.
 		// Vanilla bug: CanGenerateFrom checks options against the whole point total, but ChoosePawnGenOptionsByPoints
 		// caps each pawn at MaxPawnCost (the faction curve). A group whose every option costs more than that cap
 		// passes the gate and yields no pawns, e.g. VFE Pirates' melee-only Junker Hussar group below ~5800 points:
@@ -1447,18 +1525,6 @@ namespace Harmony3StrictCompat
 				return;
 			__result = PawnGroupMakerUtility.GetOptions(parms, parms.faction.def, groupMaker.options, parms.points, parms.points, null)
 				.Any(o => PawnGroupMakerUtility.PawnGenOptionValid(o.Option, parms));
-		}
-
-		static void UirCardBleedOut(Pawn pawn, ref string activity)
-		{
-			float rate = pawn.health.hediffSet.BleedRateTotal;
-			if (rate <= 0.01f || (ModsConfig.BiotechActive && pawn.genes != null && pawn.genes.HasActiveGene(GeneDefOf.Deathless)))
-				return;
-			int ticks = HealthUtility.TicksUntilDeathDueToBloodLoss(pawn);
-			if (ticks >= GenDate.TicksPerDay)
-				return;
-			activity = "BleedingRate".Translate() + ": " + rate.ToStringPercent() + "/" + "LetterDay".Translate()
-				+ " (" + "TimeToDeath".Translate(ticks.ToStringTicksToPeriod()) + ") - " + activity;
 		}
 
 		// ---- Skilled Refueling: normal and atomic refuel jobs share one cached iterator field ---------------------
@@ -1901,7 +1967,6 @@ namespace Harmony3StrictCompat
 		{
 			["SensibleBedOwnership.Patch_ReservationManager:Prefix"] = 0xC02F4F892C656903,                       // 2026-10-28
 			["RimWorld.CompShuttle:CompTick"] = 0x335012F801042105,                                              // game 1.7.5000, 2026-11-08
-			["SimpleLeadership.PawnGroupMakerUtility_GeneratePawns_Patch:Postfix"] = 0x931CDA2DA9F203ED,          // Steam 2026-10-27
 			["TraitTracker.TraitHediffApplier:ApplyHediffsToPawnsWithTraits"] = 0x67BDC9BB976E9B72,                // 2026-10-22
 			// VEF 1.7 MVCF.dll, 2026-10-31
 			["MVCF.Utilities.VerbStatsUtility:GetStatValue"] = 0x691C1FF55EB56CE6,
@@ -1934,8 +1999,7 @@ namespace Harmony3StrictCompat
 			["ModSettingsFramework.PatchOperationSliderInt:ApplyWorker"] = 0x03DFA38BA62A830B,
 			["Busywork.Patch_ColonistBarColonistDrawer_DrawColonist:Postfix"] = 0x8671BDCBF4F254FC,          // Busywork 1.7, 2026-11-05
 			["TD_Enhancement_Pack.SkillLearningIndicator:LabelLearning"] = 0xA1C6010BAEEDD973,             // TD Enhancement Pack 1.7, DLL of 2026-10-22
-			["UIRethemed.ColonistCard.Glance:DrawSkill"] = 0xA4D4C02C6D77B1EF,                             // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-07
-			["UIRethemed.ColonistCard.CardInfo:Activity"] = 0x9BE7ACDF25553CE5,                            // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-07
+			["UIRethemed.ColonistCard.Glance:DrawSkill"] = 0x1F838060C7BD771F,                             // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-12
 			["VanillaQuestsExpandedAncients.Building_PneumaticTubeLaunchPort:Deliver"] = 0x824DD22872D97BE7, // VQE Ancients 1.6 build, DLL of 2026-10-06
 			["SkilledRefueling.HarmonyPatches:GetRefuelDuration"] = 0xFE59863C2B492B65,                    // Skilled Refueling 1.7, DLL of 2026-11-09
 			["SkilledRefueling.RefuelingUtility:RefuelingSpeedForPawn"] = 0x302D7899D7E9DF65,
@@ -1999,17 +2063,24 @@ namespace Harmony3StrictCompat
 			["SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix"] = 0xEA4FA1B085907595,     // Smarter Visitors 1.7.0, 2026-11-08
 			["UIRethemed.MainBar.MenuWindow:Face"] = 0xD74AED0C610C9EC5,                               // UI Rethemed - Main Bar 1.7, 2026-11-11
 			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0x4AF99FCAB553E81A,
-			["UIRethemed.Notifications.StatusRow:Draw"] = 0x1B357B7B8E94651B,                               // UI Rethemed - Notifications 1.7, 2026-11-11
-			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0xEE351AA947E658AD,
-			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0x934708CF6C12FD6A,
-			["UIRethemed.Notifications.Placement:ColumnX"] = 0xDD21C495F869FD28,
-			["UIRethemed.Notifications.Placement:get_Position"] = 0x13B15EA2B0D75EA6,
-			["UIRethemed.Notifications.Motion:Hover"] = 0x34856249ACB45D9F,
-			["UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler"] = 0xD85280F50E6FA2E4,
-			["UIRethemed.Notifications.HoverCard:Region"] = 0x9DC902FA8BA85F7F,
-			["UIRethemed.Notifications.HoverCard:DrawPlaced"] = 0xC78EF4ACCEA7B370,
-			["UIRethemed.Notifications.HoverCard:PlacedSize"] = 0x19FE90C5C099812B,
-			["UIRethemed.Notifications.Placement:BesideX"] = 0x2BB22A23C0CE009D,
+			["UIRethemed.Notifications.StatusRow:Draw"] = 0x6BEE64F14A0C8B7D,                               // UI Rethemed - Notifications 1.7, 2026-11-12
+			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0xA287A5FBF229B64E,
+			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0x8CE5181883AB492A,
+			["UIRethemed.Notifications.Placement:ColumnX"] = 0x255C8D8FDA4AD782,
+			["UIRethemed.Notifications.Placement:get_Position"] = 0x6E9C3CE11AB1233B,
+			["UIRethemed.Notifications.Motion:Hover"] = 0x17C0C8C26E9E5E8C,
+			["UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler"] = 0x566F33B9E2756339,
+			["UIRethemed.Notifications.HoverCard:Region"] = 0x87CD76DF955BD12D,
+			["UIRethemed.Notifications.HoverCard:DrawPlaced"] = 0x715F0B982CB075F7,
+			["UIRethemed.Notifications.HoverCard:PlacedSize"] = 0xFBE4C039CFEEE631,
+			["UIRethemed.Notifications.Placement:BesideX"] = 0x0ECE03C314383AC3,
+			["UIRethemed.Notifications.SectionHeading:Shows"] = 0xF2F76453A964688D,
+			["UIRethemed.Notifications.SectionHeading:Folded"] = 0xBF21CDC6AB4FC035,
+			["UIRethemed.Notifications.SectionHeading:Draw"] = 0x70581AEF9E892620,
+			["UIRethemed.Notifications.SectionHeading:WidthFor"] = 0x3754E69BF054542A,
+			["UIRethemed.Notifications.SectionHeading:NameOf"] = 0x170F2A882CA52CF1,
+			["UIRethemed.Notifications.SectionHeading:IconOf"] = 0xC5286049B8494351,
+			["UIRethemed.Notifications.HudColumn:get_Shared"] = 0x3B646CDFB184B6CA,
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,
@@ -2136,46 +2207,6 @@ namespace Harmony3StrictCompat
 			if (svStayTimer.IsInstanceOfType(__0)) return true;
 			__result = true; // run Trigger_TicksPassed.ActivateOn unchanged
 			return false;
-		}
-
-		// ---- Simple Leadership raid leaders ------------------------------------------------------------
-		// New build: its Prefix subtracts each chosen leader's combatPower from parms.points but never checks the
-		// result, so a 600-point leader in a 121-point raid leaves -479 points: vanilla logs "Cannot generate pawns"
-		// and the leader arrives alone. Drop chosen leaders (last first) and refund their cost until the remaining
-		// budget can generate a vanilla group again. __0 = parms, __1 = its __state list of chosen leaders.
-		static void SlLeaderBudget(PawnGroupMakerParms __0, ref List<Pawn> __1)
-		{
-			if (__0?.faction == null || __0.groupKind == null || __1 == null || __1.Count == 0) return;
-			float min = __0.faction.def.MinPointsToGeneratePawnGroup(__0.groupKind, __0);
-			for (int i = __1.Count - 1; i >= 0 && __0.points < min; i--)
-			{
-				var leader = __1[i];
-				__0.points += leader.kindDef?.combatPower ?? 0f;
-				__1.RemoveAt(i);
-				Log.Message($"[Harmony3StrictCompat] kept Simple Leadership leader {leader.LabelShort} out of a {__0.points:F0}-point {__0.faction.Name} group (leader costs more than the raid)");
-			}
-		}
-
-		// Old build: its GeneratePawns postfix adds a faction/base leader to raids on a dice roll that ignores
-		// raid points, so a 600-point warcasket leader can join a 121-point first raid. Wrap that postfix: snapshot
-		// the group before it runs, then drop any pawn it added whose kind costs more than the whole raid budget.
-		// The vanilla result is a lazy iterator; materialise it once here so nothing generates the group twice.
-		// Simple Leadership's letter only names the leader if it is in the final pawn list, so it stays accurate.
-		static void SlLeaderBefore(ref IEnumerable<Pawn> __0, out HashSet<Pawn> __state)
-		{
-			var list = __0?.ToList() ?? new List<Pawn>();
-			__0 = list;
-			__state = new HashSet<Pawn>(list);
-		}
-
-		static void SlLeaderAfter(ref IEnumerable<Pawn> __0, PawnGroupMakerParms __1, HashSet<Pawn> __state)
-		{
-			if (__0 == null || __1 == null || __state == null) return;
-			var list = __0.ToList();
-			int removed = list.RemoveAll(p => p != null && !__state.Contains(p) && p.kindDef != null && p.kindDef.combatPower > __1.points);
-			if (removed == 0) return;
-			__0 = list;
-			Log.Message($"[Harmony3StrictCompat] kept {removed} Simple Leadership leader(s) out of a {__1.points:F0}-point {__1.faction?.Name} group (leader costs more than the raid)");
 		}
 
 		// ---- Needs check before the world exists ---------------------------------------------------------

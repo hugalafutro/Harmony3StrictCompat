@@ -2029,8 +2029,8 @@ namespace Harmony3StrictCompat
 			["Unburned.Pretty_Patch:Prefix"] = 0xE153E3D01BE0AC50,                                                // Unburned 1.7, 2026-11-09
 			["VEF.Weapons.MeleeReachCombatUtility:IsVanillaMeleeAttack"] = 0xAED0762AE41E6D48,                    // VEF 1.7, 2026-11-09
 			["SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix"] = 0xEA4FA1B085907595,     // Smarter Visitors 1.7.0, 2026-11-08
-			["UIRethemed.MainBar.MenuWindow:Face"] = 0xDA9AAC9E54D1FF0A,                               // UI Rethemed - Main Bar 1.7, 2026-11-12
-			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0x02160D2EC5042D09,
+			["UIRethemed.MainBar.MenuWindow:Face"] = 0x5EA84E7C0767049F,                               // UI Rethemed - Main Bar 1.7, 2026-11-12 14:26
+			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0xEF81461ADE4000AB,
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0x6BEE64F14A0C8B7D,                               // UI Rethemed - Notifications 1.7, 2026-11-12
 			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0xA287A5FBF229B64E,
 			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0x8CE5181883AB492A,

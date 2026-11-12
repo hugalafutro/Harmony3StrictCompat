@@ -401,6 +401,15 @@ namespace Harmony3StrictCompat
 				harmony.Patch(uirToggle, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirSpeedTileShiftClick)));
 				harmony.Patch(uirSetSpeed, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirSpeedFlyoutShiftClick)));
 			}
+			if (Target("AdaptiveMealBill.AdaptiveRecipeSelection:RecoverRecipe") is { } ambRecover)
+			{
+				var ambDef = AccessTools.TypeByName("AdaptiveMealBill.AdaptiveRecipeDef");
+				ambMixed = AccessTools.Field(ambDef, "mixedRecipe");
+				ambMeat = AccessTools.Field(ambDef, "meatRecipe");
+				ambVeg = AccessTools.Field(ambDef, "vegRecipe");
+				if (ambMixed != null && ambMeat != null && ambVeg != null)
+					harmony.Patch(ambRecover, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AmbRecoverByKind)));
+			}
 			var uirRowDraw = Target("UIRethemed.Notifications.StatusRow:Draw");
 			var uirRowWidth = Target("UIRethemed.Notifications.StatusRow:WidthFor");
 			var uirColorOf = Target("UIRethemed.Notifications.NotificationStyles:ColorOf");
@@ -681,6 +690,27 @@ namespace Harmony3StrictCompat
 		}
 
 		static void UirSpeedFlyoutShiftClick() => StopForcedSlowdown();
+
+		// ---- AdaptiveMealBill + Hauler's Dream: batch-cooked adaptive meals pick their meal kind ----
+		// Hauler's Dream swaps the DoBill job for its own batch job, so AMB's chosen sub-recipe (keyed on the old job) is
+		// lost, and HD splits the batch by AMB's dummy recipe (any raw food), so a rep can be lopsided (mostly meat, a
+		// little veg). AMB's RecoverRecipe then fits none of its three recipes by amount, logs "Could not recover the meal
+		// recipe" and cooks the dummy's product. Fall back by kind instead: veg-only or meat-only when every ingredient fits
+		// that recipe's filters, else mixed.
+		static FieldInfo ambMixed, ambMeat, ambVeg;
+
+		static void AmbRecoverByKind(RecipeDef adaptiveRecipe, List<Thing> ingredients, ref RecipeDef __result)
+		{
+			if (__result != null || ingredients.NullOrEmpty()) return;
+			foreach (var field in new[] { ambVeg, ambMeat })
+				if (field.GetValue(adaptiveRecipe) is RecipeDef only
+					&& ingredients.All(t => only.ingredients.Any(i => i.filter.Allows(t))))
+				{
+					__result = only;
+					return;
+				}
+			__result = ambMixed.GetValue(adaptiveRecipe) as RecipeDef;
+		}
 
 		// ---- UI Rethemed - Notifications: the top-left messages drawn as rows in its notification stack ----
 		// UIR restyles letters, conditions and alerts into one column but leaves the game's transient messages
@@ -2069,6 +2099,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0xEF81461ADE4000AB,
 			["UIRethemed.MainBar.BarControls:Toggle"] = 0xBFFF4D6AF367B2C5,
 			["UIRethemed.MainBar.BarControls:SetSpeed"] = 0xC298A9F6CE3648A8,
+			["AdaptiveMealBill.AdaptiveRecipeSelection:RecoverRecipe"] = 0x62FA21FEB38C0B91,             // AdaptiveMealBill 1.7, DLL of 2026-11-08
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0x6BEE64F14A0C8B7D,                               // UI Rethemed - Notifications 1.7, 2026-11-12
 			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0xA287A5FBF229B64E,
 			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0x8CE5181883AB492A,

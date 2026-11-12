@@ -117,7 +117,7 @@ Build: `Tools/build.ps1` (compiles `Source/*.cs` against the game's DLLs into `1
 <!-- MODLIST:START -->
 ## Active mod list
 
-756 mods in load order, RimWorld 1.7.5005 rev1082. Generated from ModsConfig.xml by `Tools/modlist.py`.
+757 mods in load order, RimWorld 1.7.5005 rev1082. Generated from ModsConfig.xml by `Tools/modlist.py`.
 
 | # | Mod | Package ID |
 |---:|---|---|
@@ -877,4 +877,5 @@ Build: `Tools/build.ps1` (compiles `Source/*.cs` against the game's DLLs into `1
 | 754 | [Pacing Manager](https://steamcommunity.com/sharedfiles/filedetails/?id=3613142246) | `ferny.pacingmanager` |
 | 755 | [Architect Menu Optimizer](https://steamcommunity.com/sharedfiles/filedetails/?id=3697920753) | `mrk.architectmenuoptimizer` |
 | 756 | [Facial Animation Performance Patch](https://steamcommunity.com/sharedfiles/filedetails/?id=3790129900) | `astryl.facialanimationperformancepatch` |
+| 757 | [Turret Performance Tweaks](https://steamcommunity.com/sharedfiles/filedetails/?id=3621644930) | `jaeger972.turretperformancetweaks` |
 <!-- MODLIST:END -->

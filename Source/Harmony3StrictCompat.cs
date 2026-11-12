@@ -2620,6 +2620,24 @@ namespace Harmony3StrictCompat
 		}
 	}
 
+	// ---- Biosculpter Pod and Neural Supercharger Resize + Vanilla Textures Expanded: pod icon at its new size ----
+	// The resizer swaps the pod's size and graphic and sets uiIcon to the new south texture from a callback queued in
+	// its Mod constructor, which runs before the defs' own icon loading. VTE patches a uiIconPath (the full 3x2 menu
+	// art) onto BiosculpterPod, so that later load put the wide icon back, and blueprints and the architect button drew
+	// it squeezed into the new 1x2 proportions. Static constructors run after both: set the icon the resizer meant.
+	// Only when the resizer's own graphic is in use (its texPath), so the standard size keeps VTE's icon.
+	[StaticConstructorOnStartup]
+	static class ResizedBiosculpterIcon
+	{
+		static ResizedBiosculpterIcon()
+		{
+			var pod = DefDatabase<ThingDef>.GetNamedSilentFail("BiosculpterPod");
+			if (pod?.graphicData?.texPath == null || !pod.graphicData.texPath.StartsWith("BiosculpterPod/BiosculpterPod_") || pod.graphic == null)
+				return;
+			pod.uiIcon = (Texture2D)pod.graphic.MatSouth.mainTexture;
+		}
+	}
+
 	// ---- Weapons with two equipment comps --------------------------------------------------------------------
 	// A gun def that adds CompProperties_EquippableAbility(Reloadable) without <comps Inherit="False"> also inherits
 	// BaseWeapon's plain CompEquippable (vanilla's Hellcat uses Inherit="False" for exactly this). Both comps save a

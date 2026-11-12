@@ -27,6 +27,7 @@
 - Loadout Compositing + Better Workbench Management: per-tag bills get the "count pawns away / on caravan" option back (BWM's new Debug build broke LC's transpiler).
 - Better Workbench Management: its bill options no longer overlap the "Use global style" dropdown (vanilla classic mode or Style Change Anytime).
 - Better Workbench Management (personal tweak): previous/next bill arrows drawn 7 px higher, clear of the ingredient filter.
+- Biosculpter Pod and Neural Supercharger Resize + Vanilla Textures Expanded: a resized biosculpter pod shows its resized icon (not VTE's squeezed 3x2 one) on blueprints and the architect button.
 - Busywork + LTO Colony Groups: "Upper" job icons show on Colony Groups portraits (Busywork only hooked the vanilla colonist bar).
 - Sensible Bed Ownership: OwnedBed answers cached per pawn until bed ownership changes (was rescanning every bed hundreds of thousands of times a minute); spot-checked against SBO; also used by the parallel render threads, and SBO's bed list scan is locked (sleeping animals in animal beds halved FPS, render jobs threw "Collection was modified").
 - Hauler's Dream + Compositable Loadouts: loadout items are kept during surplus unload again (CL's items now list several defs; HD only knew Item.Def).

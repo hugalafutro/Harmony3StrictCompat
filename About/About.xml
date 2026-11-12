@@ -56,6 +56,7 @@
 - UI Rethemed - Main Bar (personal tweak): left- or right-click on the temperature readout toggles the temperature overlay (Heat Map's colours when it is active).
 - UI Rethemed - Main Bar + TD Enhancement Pack: Shift-click on the speed tile (or a flyout speed) ends the forced 1x slowdown, as TD does on the vanilla time controls.
 - UI Rethemed - Inspector Tabs + Auto Extract Genes: the Auto-Extract Genes switch is back, in the themed Health tab's Care section.
+- Colony Manager Redux + MSS Tweaks and Fun: loading a save no longer counts as researching a tech, so it stops granting a free reformation point.
 - UI Rethemed - Notifications (visual tweak): the top-left messages are drawn as rows in its bottom-right notification stack, live 30 s, a hovered one stays and shows UI Rethemed's hover card, under a folding "Messages" heading.
 - UI Rethemed - Quests + Quality Colors (Continued) (visual tweak): quest reward tiles and their hover card titles are drawn in the item's quality colour, and the market value sits on the line under the name instead of beside it.
 - Auto-Cast Specialist Commands + Det's Xenotypes - Stoneborn (personal tweak): Stonecall is auto-cast when mining or finishing construction, following the Auto-Cast Mining Command setting, which right-click on the Stonecall gizmo toggles (check icon shown).

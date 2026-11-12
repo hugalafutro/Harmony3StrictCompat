@@ -417,6 +417,8 @@ namespace Harmony3StrictCompat
 				aegComp = (Func<Pawn, ThingComp>)aegGet.CreateDelegate(typeof(Func<Pawn, ThingComp>));
 				harmony.Patch(uirCareFor, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AegCareSwitchFor)));
 			}
+			if (Target("ColonyManagerRedux.Manager:FinalizeInit") is { } cmrInit)
+				harmony.Patch(cmrInit, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(CmrStartResearchOnce)));
 			var uirRowDraw = Target("UIRethemed.Notifications.StatusRow:Draw");
 			var uirRowWidth = Target("UIRethemed.Notifications.StatusRow:WidthFor");
 			var uirColorOf = Target("UIRethemed.Notifications.NotificationStyles:ColorOf");
@@ -733,6 +735,33 @@ namespace Harmony3StrictCompat
 		public static void AegSet(Pawn pawn, bool flag)
 		{
 			if (aegComp?.Invoke(pawn) is { } comp) aegEnabled.SetValue(comp, flag);
+		}
+
+		// Colony Manager Redux finishes its starting research (managing spot/desk) in every map's FinalizeInit, on every
+		// load, without checking IsFinished. Each call sends vanilla's "ResearchCompleted" signal, which MSS Tweaks counts
+		// toward its "reformation points for tech levels" bonus: reloading a save gave free ideology points.
+		static void CmrFinishUnlessDone(ResearchManager manager, ResearchProjectDef proj, bool doCompletionDialog, Pawn researcher, bool doCompletionLetter)
+		{
+			if (!proj.IsFinished)
+				manager.FinishProject(proj, doCompletionDialog, researcher, doCompletionLetter);
+		}
+
+		static IEnumerable<CodeInstruction> CmrStartResearchOnce(IEnumerable<CodeInstruction> instructions)
+		{
+			var finish = AccessTools.Method(typeof(ResearchManager), nameof(ResearchManager.FinishProject));
+			int replaced = 0;
+			foreach (var code in instructions)
+			{
+				if (code.Calls(finish))
+				{
+					code.opcode = OpCodes.Call;
+					code.operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(CmrFinishUnlessDone));
+					replaced++;
+				}
+				yield return code;
+			}
+			if (replaced != 1)
+				Log.Error($"[Harmony3StrictCompat] Colony Manager starting research: expected one FinishProject call, replaced {replaced}");
 		}
 
 		static void AegCareSwitchFor(Def __instance, Pawn pawn, ref bool __result)
@@ -2144,6 +2173,7 @@ namespace Harmony3StrictCompat
 			["AdaptiveMealBill.AdaptiveRecipeSelection:RecoverRecipe"] = 0x62FA21FEB38C0B91,             // AdaptiveMealBill 1.7, DLL of 2026-11-08
 			["UIRethemed.InspectorTabs.CareSwitchDef:For"] = 0x0766755B744724C3,                         // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-06
 			["AutoExtractGenes.Utils:GetAutoExtractGenesComponent"] = 0x41DC32D5B21682AC,                // AutoExtractGenes 1.7, DLL of 2026-11-08
+			["ColonyManagerRedux.Manager:FinalizeInit"] = 0x6E9B8BF106F9034A,                           // Colony Manager Redux 1.7, DLL of 2026-11-02
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0x6BEE64F14A0C8B7D,                               // UI Rethemed - Notifications 1.7, 2026-11-12
 			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0xA287A5FBF229B64E,
 			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0x8CE5181883AB492A,

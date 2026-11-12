@@ -33,6 +33,7 @@
 - Hauler's Dream + Smart Medicine - Continued: Stock Up amounts count as kept even on stacks Hauler's Dream tagged as its own haul (no more unload / re-fetch loop and "Cannot unload inventory" alert).
 - Hauler's Dream + Kanban Stockpile Continue: HD respects Kanban's max stack size when it plans pick-ups and unloads into capped storage (no more overfill / remove-excess churn).
 - Kanban Stockpile Continue: the similar stack limit counts every stack of the same def when accepting, like its remove-excess job does (no more pawns shuttling unmergeable meals between a capped fridge and the next storage).
+- Useful Marks: selected items and buildings show one info card button, not two.
 - Vanilla Ideology + Alpha Memes (heart extraction): sacrificing an innocent prisoner in a ritual no longer counts as executing an innocent or as a prisoner death through neglect (no opinion / mood penalties for the ideoligion's own ritual).
 - Common Sense: no "random element from empty collection" warnings for food no recipe makes (meal ingredients lookup skipped).
 - Common Sense: clean-before-eating moves on when its filth is already gone instead of erroring out of the eating job.

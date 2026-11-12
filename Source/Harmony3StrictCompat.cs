@@ -461,6 +461,21 @@ namespace Harmony3StrictCompat
 				if (umNames != null && umTextboxName != null)
 					harmony.Patch(umDialog, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UmMarksOnlyBesideTitleRow)));
 			}
+			if (Target("UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix") is { } umInspect)
+				harmony.Patch(umInspect, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UmInspectButtonsPawnOnly)));
+		}
+
+		// ---- Useful Marks: second info card button on selected things ----
+		// Its prefix on MainTabWindow_Inspect.DoInspectPaneButtons redraws vanilla's buttons (info card first) to add the
+		// mark button, but only skips vanilla for pawns: for any other single selected thing it draws the info card
+		// button and returns true, so vanilla draws another one at the same spot. Plain vanilla stacks them; UI Rethemed's
+		// header gives each its own slot, so items and buildings showed two "i". Run Useful Marks' prefix for pawns only;
+		// anything else gets vanilla's buttons alone.
+		static bool UmInspectButtonsPawnOnly(ref bool __result)
+		{
+			if (Find.Selector.NumSelected == 1 && Find.Selector.SingleSelectedThing is Pawn) return true;
+			__result = true;
+			return false;
 		}
 
 		// ---- Useful Marks: its two mark widgets (label-in-world checkbox, colour square) sit at a fixed offset from the
@@ -2109,6 +2124,7 @@ namespace Harmony3StrictCompat
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPostfix"] = 0xEAEA3D4FF6046A94,
 			["UsefulMarks.Dialog_NamePawn_DoWindowContents_Patch:Postfix"] = 0xF33AD5F31EB56B3B,        // Useful Marks 1.7, DLL of 2026-10-22
+			["UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix"] = 0xD2A3A440ED802D16,
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an

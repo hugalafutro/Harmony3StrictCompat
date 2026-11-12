@@ -95,5 +95,6 @@
 - Vanilla: no needs while no world exists (quest pawns built before the world loads).
 - Vanilla: shuttle passengers are no longer evicted (and dropped from their lord) on landing because they last left a map more than a day ago; the one-day eviction now counts time spent inside the shuttle.
 - Vanilla/unknown: trade ship slave also saved as a world pawn no longer loads twice.
-- Vanilla (personal tweak): install and implant-removal operations get the implant item as their menu icon instead of a grey square.</description>
+- Vanilla (personal tweak): install and implant-removal operations get the implant item as their menu icon instead of a grey square.
+- Vanilla (personal tweak): clicking a plant pot or hydroponics basin selects the grower first, the plant on a second click.</description>
 </ModMetaData>

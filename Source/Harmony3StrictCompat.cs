@@ -207,6 +207,9 @@ namespace Harmony3StrictCompat
 			Target("ModernNeedsTab.Patch_Pawn_JobTracker_EndCurrentJob:Prefix");
 			harmony.Patch(AccessTools.PropertyGetter(typeof(MinifiedThing), nameof(MinifiedThing.LabelNoCount)),
 				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(EmptyMinifiedLabel)));
+			Target("RimWorld.Selector:SelectUnderMouse"); // fingerprint only: its lambda numbering can shift on a game update
+			if (Target("RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0") is { } selectOrder)
+				harmony.Patch(selectOrder, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PlantGrowerSelectedFirst)));
 			// Vanilla: CompShuttle evicts quest escorts whose last despawn is years old; fingerprinted so a vanilla change gets re-checked.
 			Target("RimWorld.CompShuttle:CompTick");
 			harmony.Patch(AccessTools.Method(typeof(CompTransporter), nameof(CompTransporter.Notify_ThingAdded)),
@@ -2013,7 +2016,9 @@ namespace Harmony3StrictCompat
 		static readonly Dictionary<string, ulong> Fingerprints = new()
 		{
 			["SensibleBedOwnership.Patch_ReservationManager:Prefix"] = 0xC02F4F892C656903,                       // 2026-10-28
-			["RimWorld.CompShuttle:CompTick"] = 0x335012F801042105,                                              // game 1.7.5000, 2026-11-08
+			["RimWorld.CompShuttle:CompTick"] = 0x335012F801042105,
+			["RimWorld.Selector:SelectUnderMouse"] = 0x54910574CE0CAD28,                                    // game 1.7.5005, 2026-11-12
+			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,                                              // game 1.7.5000, 2026-11-08
 			["TraitTracker.TraitHediffApplier:ApplyHediffsToPawnsWithTraits"] = 0x67BDC9BB976E9B72,                // 2026-10-22
 			// VEF 1.7 MVCF.dll, 2026-10-31
 			["MVCF.Utilities.VerbStatsUtility:GetStatValue"] = 0x691C1FF55EB56CE6,
@@ -2091,10 +2096,10 @@ namespace Harmony3StrictCompat
 			["Flourish.Everyday.JobAnimationWorker_Anchored:Evaluate"] = 0x817B489F5395FF01,                // Flourish Everyday 1.7, 2026-10-25
 			["VFETribals.FactionUIUtility_DoWindowContents_Patch:Postfix"] = 0x8824F2B542A8AC6E,             // VFE Tribals 1.6 build, 2026-10-14
 			["UIRethemed.Factions.FactionsTab:Themed"] = 0x6464010BFAB662C3,                               // UI Rethemed 1.7, 2026-11-06
-			["UIRethemed.Core.CoreWidgets:Button"] = 0x429AF8247B696ADE,                             // UI Rethemed - Core 1.7, 2026-11-11
-			["UIRethemed.Core.CoreWidgets:Icon"] = 0xE1598AF2628D6365,
-			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0x8F145EC7572F4C7A,
-			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0xC62AB6FF16C5404C,
+			["UIRethemed.Core.CoreWidgets:Button"] = 0x5BDC283DA593C1FD,                             // UI Rethemed - Core 1.7, 2026-11-12
+			["UIRethemed.Core.CoreWidgets:Icon"] = 0x2AA2B8BF853AB7CD,
+			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0x57EAA76915754D58,
+			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0x71C05A187F90A70A,
 			["UIRethemed.InspectorTabs.HoverCard:LineHeight"] = 0xBC638E0C842420E6,                        // UI Rethemed - Inspector Tabs 1.7, 2026-11-06
 			["UIRethemed.InspectorTabs.HoverCard:DrawGroup"] = 0x983CB3913E7492E4,
 			["UIRethemed.InspectorTabs.Theme:StatLine"] = 0xE7BF59AB7C8A20D5,
@@ -2343,6 +2348,16 @@ namespace Harmony3StrictCompat
 		// check; a bed that was just despawned (e.g. replaced via Replace Stuff) has no map, so it throws and
 		// the pawn's tick errors out. For an unspawned bed, skip SBO's prefix and let vanilla Reserve decide.
 		// __1 is SBO's "target" parameter; __result is SBO's own return value (true = run vanilla Reserve).
+		// ---- Vanilla: a click on a plant grower selects the grower first ---------------------------------------------
+		// Personal tweak: Selector.SelectUnderMouse sorts what is under the mouse by this key (0 first) and a repeat
+		// click on the same spot moves to the next entry. Vanilla gives 0 only to storage, so a click on a plant pot or a
+		// hydroponics basin picked the plant. Plant growers (any Building_PlantGrower subclass) get 0 too: first click the
+		// grower, second the plant.
+		static void PlantGrowerSelectedFirst(object x, ref int __result)
+		{
+			if (x is Building_PlantGrower) __result = 0;
+		}
+
 		// ---- TD Enhancement Pack: deterioration alert without corpses ---------------------------------------------
 		// Personal tweak: the "Deteriorating" alert already leaves out rotting corpses, but lists every fresh one left
 		// outside (raid dead), burying real items in the list. Drop all corpses from it.

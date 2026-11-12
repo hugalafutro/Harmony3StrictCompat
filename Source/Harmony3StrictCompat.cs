@@ -419,6 +419,9 @@ namespace Harmony3StrictCompat
 			}
 			if (Target("ColonyManagerRedux.Manager:FinalizeInit") is { } cmrInit)
 				harmony.Patch(cmrInit, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(CmrStartResearchOnce)));
+			mfProps = AccessTools.TypeByName("MuzzleFlash.MuzzleFlashProps");
+			if (mfProps != null && Target("Flourish.AnimEventWorkers:HasMuzzle") is { } flHasMuzzle)
+				harmony.Patch(flHasMuzzle, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FlSkipMuzzleFlashGuns)));
 			var uirRowDraw = Target("UIRethemed.Notifications.StatusRow:Draw");
 			var uirRowWidth = Target("UIRethemed.Notifications.StatusRow:WidthFor");
 			var uirColorOf = Target("UIRethemed.Notifications.NotificationStyles:ColorOf");
@@ -762,6 +765,16 @@ namespace Harmony3StrictCompat
 			}
 			if (replaced != 1)
 				Log.Error($"[Harmony3StrictCompat] Colony Manager starting research: expected one FinishProject call, replaced {replaced}");
+		}
+
+		// Flourish + Muzzle Flash: both drew a flash on every shot. Muzzle Flash only covers guns that carry its
+		// MuzzleFlashProps extension (vanilla and its add-on packs), with art made for each gun; Flourish's generic
+		// bloom and flash now stay off for those guns and still cover every other gun.
+		static Type mfProps;
+		static void FlSkipMuzzleFlashGuns(Pawn pawn, ref bool __result)
+		{
+			if (__result && pawn?.equipment?.Primary?.def.modExtensions is { } extensions && extensions.Any(e => mfProps.IsInstanceOfType(e)))
+				__result = false;
 		}
 
 		static void AegCareSwitchFor(Def __instance, Pawn pawn, ref bool __result)
@@ -2174,6 +2187,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.InspectorTabs.CareSwitchDef:For"] = 0x0766755B744724C3,                         // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-06
 			["AutoExtractGenes.Utils:GetAutoExtractGenesComponent"] = 0x41DC32D5B21682AC,                // AutoExtractGenes 1.7, DLL of 2026-11-08
 			["ColonyManagerRedux.Manager:FinalizeInit"] = 0x6E9B8BF106F9034A,                           // Colony Manager Redux 1.7, DLL of 2026-11-02
+			["Flourish.AnimEventWorkers:HasMuzzle"] = 0x09D80ABDB9276A61,                               // Flourish - Combat Animations 2.1.5
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0x6BEE64F14A0C8B7D,                               // UI Rethemed - Notifications 1.7, 2026-11-12
 			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0xA287A5FBF229B64E,
 			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0x8CE5181883AB492A,

@@ -66,9 +66,6 @@
 - Mod Settings Framework (VEF): slider settings reach every def their xpath matches, not just the first (ReBuild's grate speed slider now covers the sterile grate tile).
 - MSS Tweaks and Fun: haunt portraits no longer saved upside down on 1.7/Vulkan.
 - MSS Tweaks and Fun: VFE Pirates Buckoneer culture patch remapped to the VFEP_Mercenaries faction.
-- Eternal Pawns (personal tweak): the memory and notes gizmo also shows on your prisoners.
-- Eternal Pawns: faction leaders, leader kinds and warcasket wearers stay out of the veteran draw; MustBeCapableOfViolence honoured.
-- Eternal Pawns: an issued veteran leaves the world pawn list, so vanilla cannot redress it a second time in the same group (duplicate caravan pawns, stuck trade caravans).
 - Hospitality: Casino: tables given Casino's vending comp by LocalTweaks (tongo, billiards) charge visitors once per game.
 - Hospitality: Casino: the inspect pane shows the pricing setting and the silver charged per game.
 - Hospitality: Casino: only casino visitors and trade caravans at their chill spot play slot machines (bestowers, shuttle guards and leaving caravans keep their duty).
@@ -96,6 +93,8 @@
 - Vanilla: no needs while no world exists (quest pawns built before the world loads).
 - Vanilla: shuttle passengers are no longer evicted (and dropped from their lord) on landing because they last left a map more than a day ago; the one-day eviction now counts time spent inside the shuttle.
 - Vanilla/unknown: trade ship slave also saved as a world pawn no longer loads twice.
+- Vanilla + GUI Performance Patch + VEF: small psycast/ability buttons on the top row show their tooltips again.
+- Vanilla: a failing sibling relation no longer aborts a whole raid group (a RimPacts defend wave froze the game retrying it).
 - Vanilla (personal tweak): install and implant-removal operations get the implant item as their menu icon instead of a grey square.
 - Vanilla (personal tweak): clicking a plant pot or hydroponics basin selects the grower first, the plant on a second click.</description>
 </ModMetaData>

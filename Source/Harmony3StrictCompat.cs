@@ -58,6 +58,8 @@ namespace Harmony3StrictCompat
 			var turretRadius = Target("RimWorld.PlaceWorker_ShowTurretRadius:AllowsPlacing");
 			if (turretRadius != null)
 				harmony.Patch(turretRadius, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(TurretRadiusAnyVerb)));
+			if (Target("RimWorld.PawnRelationWorker_Sibling:CreateRelation") is { } siblingRelation)
+				harmony.Patch(siblingRelation, finalizer: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SiblingRelationGuard)));
 			var normalCanGenerate = Target("RimWorld.PawnGroupKindWorker_Normal:CanGenerateFrom");
 			if (normalCanGenerate != null)
 				harmony.Patch(normalCanGenerate, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(NormalGroupYieldsPawns)));
@@ -116,11 +118,6 @@ namespace Harmony3StrictCompat
 			if (hospGuestComps != null)
 				harmony.Patch(AccessTools.Method(typeof(MemoryUtility), nameof(MemoryUtility.ClearAllMapsAndWorld)),
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ClearHospitalityGuestComps)));
-			var epDispatch = Target("FinitePopulationVeterans.WorldPopulationManager:IsPawnAvailableForDispatch");
-			if (epDispatch != null)
-				harmony.Patch(epDispatch, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(EpNoLeaderVeterans)));
-			if (Target("FinitePopulationVeterans.FPUtility:IsPawnSavable") != null)
-				EpInitPrisonerMemory(harmony);
 			var hospRegear = Target("Hospitality.Utilities.SpawnGroupUtility:GenerateNewGearFor");
 			if (hospRegear != null)
 				harmony.Patch(hospRegear, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospKeepWarcasketGear)));
@@ -149,12 +146,6 @@ namespace Harmony3StrictCompat
 			svStayTimer = AccessTools.TypeByName("Hospitality.Trigger_TicksPassedAndOkayToLeave");
 			if (svPrefix != null && svStayTimer != null)
 				harmony.Patch(svPrefix, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SvOnlyStayTimer)));
-			var epIssue = Target("FinitePopulationVeterans.WorldPopulationManager:TryGetVeteran");
-			if (epIssue != null)
-				harmony.Patch(epIssue, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(EpIssuedLeavesWorld)));
-			var epMatch = Target("FinitePopulationVeterans.WorldPopulationManager:PawnMatchesRequest");
-			if (epMatch != null)
-				harmony.Patch(epMatch, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(EpViolenceCheck)));
 			var mssSave = Target("MSSFP.Utils.PawnGraphicUtils+<>c__DisplayClass4_0:<SaveTextureToFile>b__0");
 			if (mssSave != null)
 				harmony.Patch(mssSave, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(MssFlipHauntPng)));
@@ -210,6 +201,8 @@ namespace Harmony3StrictCompat
 			Target("RimWorld.Selector:SelectUnderMouse"); // fingerprint only: its lambda numbering can shift on a game update
 			if (Target("RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0") is { } selectOrder)
 				harmony.Patch(selectOrder, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PlantGrowerSelectedFirst)));
+			if (Target("Verse.GizmoGridDrawer:DrawGizmoGrid") is { } gizmoGrid)
+				harmony.Patch(gizmoGrid, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GizmoHeightCoversShrunkRows)));
 			// Vanilla: CompShuttle evicts quest escorts whose last despawn is years old; fingerprinted so a vanilla change gets re-checked.
 			Target("RimWorld.CompShuttle:CompTick");
 			harmony.Patch(AccessTools.Method(typeof(CompTransporter), nameof(CompTransporter.Notify_ThingAdded)),
@@ -1569,6 +1562,21 @@ namespace Harmony3StrictCompat
 		// caps each pawn at MaxPawnCost (the faction curve). A group whose every option costs more than that cap
 		// passes the gate and yields no pawns, e.g. VFE Pirates' melee-only Junker Hussar group below ~5800 points:
 		// the quest "raid of roughly this size:" preview comes out blank. Reject such groups so another one is rolled.
+		// Vanilla (seen with RimPacts defend waves): PawnRelationWorker_Sibling.CreateRelation generates the missing
+		// parents of the existing sibling and then reads other.GetMother().story; when no mother is found afterwards it
+		// throws a NullReferenceException, PawnGenerator rethrows and the whole pawn group fails. RimPacts' defend
+		// mission retried every few seconds (20 s freezes, the wave never came). Swallow that exception: the new pawn
+		// just gets no sibling. Logs what the parents looked like, once per pair, to find the real cause.
+		static Exception SiblingRelationGuard(Exception __exception, Pawn generated, Pawn other)
+		{
+			if (__exception is not NullReferenceException) return __exception;
+			static string Who(Pawn p) => p == null ? "none"
+				: $"{p.LabelShort} ({p.def?.defName}, {p.kindDef?.defName}, {p.genes?.Xenotype?.defName ?? "no xenotype"}, {p.gender}, story {(p.story == null ? "null" : "ok")}, {p.Faction?.Name ?? "no faction"})";
+			Log.WarningOnce($"[Harmony3StrictCompat] vanilla sibling relation failed and was skipped: new pawn {Who(generated)}, existing sibling {Who(other)}, its mother {Who(other?.GetMother())}, its father {Who(other?.GetFather())}. {__exception.Message}",
+				(generated?.thingIDNumber ?? 0) ^ (other?.thingIDNumber ?? 0) ^ 0x5B1B);
+			return null;
+		}
+
 		static void NormalGroupYieldsPawns(PawnGroupMakerParms parms, PawnGroupMaker groupMaker, ref bool __result)
 		{
 			if (!__result || parms.faction == null || groupMaker.kindDef.Worker.GetType() != typeof(PawnGroupKindWorker_Normal))
@@ -1784,94 +1792,6 @@ namespace Harmony3StrictCompat
 			return ImageConversion.EncodeArrayToPNG(data, format, width, height, rowBytes);
 		}
 
-		// ---- Eternal Pawns: memory gizmo on prisoners -----------------------------------------------------------
-		// Personal tweak: FPUtility.IsPawnSavable rejects unreleased prisoners, which is right for the veteran pool but also
-		// hides the memory and notes gizmo. Adds the same gizmo for colony prisoners; the other checks copy IsPawnSavable
-		// (fingerprinted). Keep its veteran pool logic untouched: only the gizmo changes.
-		static Func<Pawn, Window> epMemoryWindow;
-		static Type epManagerType;
-		static FieldInfo epSettings, epShowGizmo, epNotes, epVeterans, epPins;
-
-		static void EpInitPrisonerMemory(Harmony harmony)
-		{
-			var window = AccessTools.Constructor(AccessTools.TypeByName("FinitePopulationVeterans.Window_PawnMemory"), [typeof(Pawn)]);
-			epManagerType = AccessTools.TypeByName("FinitePopulationVeterans.WorldPopulationManager");
-			epSettings = AccessTools.Field(AccessTools.TypeByName("FinitePopulationVeterans.FPMod"), "settings");
-			epShowGizmo = AccessTools.Field(AccessTools.TypeByName("FinitePopulationVeterans.FPSettings"), "showGizmoButton");
-			epNotes = AccessTools.Field(epManagerType, "pawnNotes");
-			epVeterans = AccessTools.Field(epManagerType, "allVeteranIdsCache");
-			epPins = AccessTools.Field(epManagerType, "manualVeteranPins");
-			if (window == null || epSettings == null || epShowGizmo == null || epNotes == null || epVeterans == null || epPins == null)
-			{
-				Log.Error("[Harmony3StrictCompat] Eternal Pawns memory window or settings changed: its mod updated, remove or redo the prisoner gizmo");
-				return;
-			}
-			epMemoryWindow = pawn => (Window)window.Invoke([pawn]);
-			harmony.Patch(AccessTools.Method(typeof(Pawn), nameof(Pawn.GetGizmos)),
-				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(EpPrisonerMemoryGizmo)));
-		}
-
-		static IEnumerable<Gizmo> EpPrisonerMemoryGizmo(IEnumerable<Gizmo> __result, Pawn __instance)
-		{
-			foreach (var gizmo in __result)
-				yield return gizmo;
-			if (!__instance.IsPrisonerOfColony || __instance.guest.Released || !__instance.RaceProps.Humanlike || __instance.Dead
-				|| __instance.Faction == Faction.OfPlayer || __instance.IsMutant || __instance.Faction?.def.defName == "Entities"
-				|| QuestUtility.IsQuestLodger(__instance) || QuestUtility.IsReservedByQuestOrQuestBeingGenerated(__instance)
-				|| __instance.IsCaravanMember())
-				yield break;
-			var settings = epSettings.GetValue(null);
-			if (settings == null || !(bool)epShowGizmo.GetValue(settings) || Find.World?.GetComponent(epManagerType) is not { } manager)
-				yield break;
-			int id = __instance.thingIDNumber;
-			yield return new Command_Action
-			{
-				defaultLabel = "FP_MemoryButton".Translate(),
-				defaultDesc = "FP_OpenPawnMemoryPanelDesc".Translate(),
-				icon = ContentFinder<Texture2D>.Get("UI/Icons/EP_MemoryIcon"),
-				action = () => Find.WindowStack.Add(epMemoryWindow(__instance)),
-				defaultIconColor = ((HashSet<int>)epVeterans.GetValue(manager)).Contains(id) ? Color.cyan
-					: ((HashSet<int>)epPins.GetValue(manager)).Contains(id) || ((Dictionary<int, string>)epNotes.GetValue(manager)).ContainsKey(id) ? Color.yellow
-					: Color.white,
-			};
-		}
-
-		// ---- Eternal Pawns: faction leaders recycled as ordinary raiders/visitors ------------------------------
-		// Eternal Pawns (helldan.eternalpawns, 1.6 build) prefixes PawnGenerator.GeneratePawn at priority 2000 and, with
-		// veteranRecallChance (default 0.5), hands back a pawn from its per-faction veteran pool instead of generating one,
-		// then stores request.KindDef straight into pawn.kindDef. Its pool filter (IsPawnAvailableForDispatch) never checks
-		// for faction leaders, so Nelle (VFEP_General, leader of the Mercenaries) came back as a VFEP_Private visitor;
-		// Hospitality's spawn-time RedressPawn then regenerated Private gear, destroying her warcasket (VEF traitsOnUnequip
-		// added VFEP_Shellcasket). Traced with a tripwire 2026-11-02. Keep faction leaders, leader-kind pawns and pawns
-		// wearing a warcasket out of the veteran draw. PawnMatchesRequest also skips request.MustBeCapableOfViolence
-		// (reported on the workshop as a Hospitality retry loop / freeze), so honour that flag too.
-		static void EpNoLeaderVeterans(Pawn p, ref bool __result)
-		{
-			if (!__result || p == null) return;
-			string why = PawnUtility.IsFactionLeader(p) ? "is a faction leader"
-				: p.kindDef?.factionLeader == true ? $"has the leader kind {p.kindDef.defName}"
-				: p.apparel?.WornApparel.Any(a => a.GetType().Name == "Apparel_Warcasket") == true ? "wears a warcasket"
-				: null;
-			if (why == null) return;
-			__result = false;
-			Log.Message($"[Harmony3StrictCompat] Eternal Pawns: kept {p.LabelShort} ({p.Faction?.Name}) out of the veteran draw, {why}");
-		}
-
-		// TryGetVeteran hands a pawn out but leaves it a Free world pawn until it spawns. Vanilla's own redress
-		// (GenerateOrRedressPawnInternal) takes from that same Free list and removes what it takes, so in the next
-		// GeneratePawn of the same group (Eternal Pawns' 50% roll failing) vanilla could redress the issued veteran
-		// again: ChangeKind + new gear, and the same Pawn object twice in the group. Seen twice with The Patreons'
-		// caravan: trader Patch (Town_Trader) re-picked as a Mercenary_Gunner guard, so the trader became a "gunner";
-		// "Tried to spawn X but it's already spawned" and "Lord tried to add X whom it already controls" for 3 pawns;
-		// Giddy-Up then gave Staunch two pack muffalos, the second waited for him forever at the map edge and the
-		// lord never left LordToil_Travel (caravan starved). Do what vanilla does for a redressed pawn: take it out
-		// of WorldPawns. Eternal Pawns' mission cleanup passes a veteran back to the world if it never reaches a map.
-		static void EpIssuedLeavesWorld(Pawn __result)
-		{
-			if (__result != null && !__result.Spawned && Find.WorldPawns.Contains(__result))
-				Find.WorldPawns.RemovePawn(__result);
-		}
-
 		// ---- Hospitality: visitors in warcaskets re-geared on arrival ---------------------------------------
 		// SpawnGroupUtility.GenerateNewGearFor runs PawnGenerator.RedressPawn on every visitor, which destroys all worn
 		// apparel and rolls a fresh set from the pawn kind. For a warcasket kind that yields casket pieces plus whatever
@@ -1950,12 +1870,6 @@ namespace Harmony3StrictCompat
 		static bool IsCasketPiece(Apparel a) => a?.GetType().Name == "Apparel_Warcasket";
 		static bool WearsCasket(Pawn p) => p?.apparel?.WornApparel.Any(IsCasketPiece) == true;
 
-		static void EpViolenceCheck(Pawn p, PawnGenerationRequest req, ref bool __result)
-		{
-			if (__result && req.MustBeCapableOfViolence && p != null && p.WorkTagIsDisabled(WorkTags.Violent))
-				__result = false;
-		}
-
 		// ---- Hospitality: guests with a claimed bed sleep on the floor after a save is loaded --------------------
 		// Seen 2026-11-01, 11-04, 11-08 (Vache, Katie, Drikus, Apaturf, Courtni): every guest that was already a guest
 		// in the game loaded before. Hospitality's CompUtility.CompGuest(pawn) caches the comp in a Dictionary<Pawn,
@@ -2018,7 +1932,9 @@ namespace Harmony3StrictCompat
 			["SensibleBedOwnership.Patch_ReservationManager:Prefix"] = 0xC02F4F892C656903,                       // 2026-10-28
 			["RimWorld.CompShuttle:CompTick"] = 0x335012F801042105,
 			["RimWorld.Selector:SelectUnderMouse"] = 0x54910574CE0CAD28,                                    // game 1.7.5005, 2026-11-12
-			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,                                              // game 1.7.5000, 2026-11-08
+			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,
+			["Verse.GizmoGridDrawer:DrawGizmoGrid"] = 0xE826E98868C04FD8,
+			["RimWorld.PawnRelationWorker_Sibling:CreateRelation"] = 0xA2FDCD1C567354A3,                                              // game 1.7.5000, 2026-11-08
 			["TraitTracker.TraitHediffApplier:ApplyHediffsToPawnsWithTraits"] = 0x67BDC9BB976E9B72,                // 2026-10-22
 			// VEF 1.7 MVCF.dll, 2026-10-31
 			["MVCF.Utilities.VerbStatsUtility:GetStatValue"] = 0x691C1FF55EB56CE6,
@@ -2034,10 +1950,6 @@ namespace Harmony3StrictCompat
 			["HospitalityCasino.JobGiver_PlaySlotMachines:TryGiveJob"] = 0x886CDC4608E3C02D,                 // Casino 1.7, 2026-11-05
 			["HospitalityCasino.VendingMachineJobHelper:InsertCoin"] = 0xDD3ACDA377763174,                   // Casino 1.7, 2026-11-06
 			["HospitalityCasino.CompVendingMachine:CompInspectStringExtra"] = 0x4C16897C23044EC3,            // Casino 1.7, 2026-11-06
-			["FinitePopulationVeterans.WorldPopulationManager:IsPawnAvailableForDispatch"] = 0x5A8A111FF41E04D8, // Eternal Pawns 1.6 build, 2026-04-13
-			["FinitePopulationVeterans.FPUtility:IsPawnSavable"] = 0xED6ECD2938A4AB2A,                     // Eternal Pawns 1.6 build, 2026-04-13
-			["FinitePopulationVeterans.WorldPopulationManager:PawnMatchesRequest"] = 0xAF54B4F3884BC77E, // Eternal Pawns 1.6 build, 2026-04-13
-			["FinitePopulationVeterans.WorldPopulationManager:TryGetVeteran"] = 0xEEC0813511A23153,      // Eternal Pawns 1.6 build, 2026-04-13
 			["MSSFP.Utils.PawnGraphicUtils+<>c__DisplayClass4_0:<SaveTextureToFile>b__0"] = 0x3C2DDE1F39E984E8,  // MSS Tweaks and Fun 1.7, 2026-10-19
 			["Caveworld_Flora_Unleashed.FruitingBody:get_LabelMouseover"] = 0xB098C8B9BC3CE626,                 // Biomes! Caverns 1.7, 2026-10-20
 			["Caveworld_Flora_Unleashed.GenCaveFungusReproduction:TryGrowMycelium"] = 0x614612774F447421,         // Biomes! Caverns 1.7, 2026-10-20
@@ -2356,6 +2268,32 @@ namespace Harmony3StrictCompat
 		static void PlantGrowerSelectedFirst(object x, ref int __result)
 		{
 			if (x is Building_PlantGrower) __result = 0;
+		}
+
+		// ---- Vanilla (+ GUI Performance Patch + VEF abilities): tooltips on the top row of small gizmos ----
+		// DrawGizmoGrid records how high the grid reaches (HeightDrawnRecently) but for shrunk commands it stores
+		// Mathf.Min(heightDrawn, row top), so small-button rows stacked above the big ones are left out (and the
+		// height even drops to the small row's bottom). WOWGAG's GUI Performance Patch reuses the previous frame's
+		// gizmo objects while the mouse is outside that height; VEF's Command_Ability prepends its label to
+		// defaultDesc on every shrunk draw, so a reused object's tooltip text grew each frame, TooltipHandler saw a
+		// new tip every frame and its delay never ran out: no tooltips on the top small row. Store Mathf.Max instead.
+		static IEnumerable<CodeInstruction> GizmoHeightCoversShrunkRows(IEnumerable<CodeInstruction> instructions)
+		{
+			var codes = instructions.ToList();
+			var min = AccessTools.Method(typeof(Mathf), nameof(Mathf.Min), [typeof(float), typeof(float)]);
+			var max = AccessTools.Method(typeof(Mathf), nameof(Mathf.Max), [typeof(float), typeof(float)]);
+			var height = AccessTools.Field(typeof(GizmoGridDrawer), "heightDrawn");
+			var hits = new List<int>();
+			for (int i = 0; i + 1 < codes.Count; i++)
+				if (codes[i].Calls(min) && codes[i + 1].StoresField(height))
+					hits.Add(i);
+			if (hits.Count != 1 || height == null)
+			{
+				Log.Error($"[Harmony3StrictCompat] GizmoGridDrawer.DrawGizmoGrid shrunk-row height not found ({hits.Count} matches): the game updated, redo this fix");
+				return codes;
+			}
+			codes[hits[0]].operand = max;
+			return codes;
 		}
 
 		// ---- TD Enhancement Pack: deterioration alert without corpses ---------------------------------------------

@@ -514,8 +514,19 @@ namespace Harmony3StrictCompat
 				if (umNames != null && umTextboxName != null)
 					harmony.Patch(umDialog, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UmMarksOnlyBesideTitleRow)));
 			}
-			if (Target("UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix") is { } umInspect)
+			var umInspect = Target("UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix");
+			if (umInspect != null)
 				harmony.Patch(umInspect, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UmInspectButtonsPawnOnly)));
+			var uirccTheming = Target("UIRethemed.ColonistCard.Card:get_ThemingHeader");
+			var uirccSlot = Target("UIRethemed.ColonistCard.Card:NextHeaderSlot");
+			if (uirccTheming != null && uirccSlot != null)
+			{
+				uirccThemingHeader = (Func<bool>)uirccTheming.CreateDelegate(typeof(Func<bool>));
+				uirccNextSlot = (Func<Rect>)uirccSlot.CreateDelegate(typeof(Func<Rect>));
+				foreach (var drawer in new[] { Target("RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"), umInspect })
+					if (drawer != null)
+						harmony.Patch(drawer, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirccGuiltyIconInSlot)));
+			}
 			Target("UIRethemed.Animals.Motion:Key"); // fingerprint only: the key the patched Hover hands its rect to
 			if (Target("UIRethemed.Animals.Motion:Hover") is { } uiraHover)
 				harmony.Patch(uiraHover, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UiraHoverKeyOnScreen)));
@@ -564,6 +575,48 @@ namespace Harmony3StrictCompat
 			if (Find.Selector.NumSelected == 1 && Find.Selector.SingleSelectedThing is Pawn) return true;
 			__result = true;
 			return false;
+		}
+
+		// ---- UI Rethemed - Colonist Card: guilty icon over a header button ----
+		// The card header runs the pane's DoInspectPaneButtons and moves each button it draws (Widgets.ButtonImage,
+		// the hostility response button) into its own 24 px slot from the right (Card.NextHeaderSlot). The guilty icon
+		// is a plain GUI.DrawTexture, so it stayed at vanilla's spot and covered a slotted button (Useful Marks' marker).
+		// In vanilla's DoInspectPaneButtons and Useful Marks' copy of it, the rect local handed to that DrawTexture (and
+		// to its tooltip right after) is moved into the next slot while the card header is drawing.
+		static Func<bool> uirccThemingHeader;
+		static Func<Rect> uirccNextSlot;
+
+		static Rect UirccGuiltySlot(Rect rect) => uirccThemingHeader() ? uirccNextSlot() : rect;
+
+		// The rect reaches DrawTexture either as `newobj Rect; dup` (vanilla: the copy left on the stack feeds the
+		// tooltip) or as `ldloc rect` (tooltip reloads the local). Swap it for the slot right there: before the dup, or
+		// after the ldloc with the local written back.
+		static IEnumerable<CodeInstruction> UirccGuiltyIconInSlot(IEnumerable<CodeInstruction> instructions, MethodBase __originalMethod)
+		{
+			var guilty = AccessTools.Field(typeof(TexUI), nameof(TexUI.GuiltyTex));
+			var draw = AccessTools.Method(typeof(GUI), nameof(GUI.DrawTexture), new[] { typeof(Rect), typeof(Texture) });
+			var slot = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(UirccGuiltySlot));
+			var codes = instructions.ToList();
+			int done = 0;
+			for (int i = 1; i + 1 < codes.Count; i++)
+			{
+				if (!codes[i].LoadsField(guilty) || !codes[i + 1].Calls(draw)) continue;
+				if (codes[i - 1].opcode == OpCodes.Dup)
+				{
+					codes.Insert(i - 1, new CodeInstruction(OpCodes.Call, slot).MoveLabelsFrom(codes[i - 1]));
+					i++;
+				}
+				else if (codes[i - 1].IsLdloc())
+				{
+					codes.InsertRange(i, new[] { new CodeInstruction(OpCodes.Call, slot), new CodeInstruction(OpCodes.Dup), CodeInstruction.StoreLocal(codes[i - 1].LocalIndex()) });
+					i += 3;
+				}
+				else continue;
+				done++;
+			}
+			if (done != 1)
+				Log.Error($"[Harmony3StrictCompat] guilty icon slot: expected one guilty icon draw in {__originalMethod.DeclaringType?.Name}.{__originalMethod.Name}, found {done}");
+			return codes;
 		}
 
 		// ---- Useful Marks: its two mark widgets (label-in-world checkbox, colour square) sit at a fixed offset from the
@@ -899,7 +952,8 @@ namespace Harmony3StrictCompat
 
 		// Quiet Wonders reads the map's world tile for its season calendar; a pocket map (cave, undercave) has none,
 		// so pollen, leaves and shedding threw "Index was out of range" when the camera was on one. Its outdoor
-		// effects have no place underground: skip them on pocket maps.
+		// effects have no place underground: skip them on pocket maps. Its 2026-11-13 build added an "Also in pocket maps"
+		// option, but its season calendar (cals: LongLatOf(map.Tile)) still reads the tile unchecked, so this stays.
 		static bool QwSkipPocketMaps(Map map) => map == null || !map.IsPocketMap;
 
 		// Colony Groups: the load ID is type name + groupID, but colony groups and task forces number separately (a
@@ -2387,7 +2441,7 @@ namespace Harmony3StrictCompat
 			["AutoExtractGenes.Utils:GetAutoExtractGenesComponent"] = 0x41DC32D5B21682AC,                // AutoExtractGenes 1.7, DLL of 2026-11-08
 			["ColonyManagerRedux.Manager:FinalizeInit"] = 0x6E9B8BF106F9034A,                           // Colony Manager Redux 1.7, DLL of 2026-11-02
 			["Flourish.AnimEventWorkers:HasMuzzle"] = 0x09D80ABDB9276A61,                               // Flourish - Combat Animations 2.1.5
-			["QuietWonders.QWEffects:Frame"] = 0x43D61EC90E750997,                                       // Quiet Wonders, DLL as of 2026-11-12
+			["QuietWonders.QWEffects:Frame"] = 0x2526635D69FEE95C,                                       // Quiet Wonders, DLL as of 2026-11-13
 			["TacticalGroups.ColonistGroup:GetUniqueLoadID"] = 0x5F30AAACFB7C28AE,                      // Colony Groups 1.6 build
 			["SmartDeconstruct.SmartDeconstructMod:getDesignation"] = 0x53C1CCCAD3316AC2,               // Smart Deconstruct 1.7
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0xD114A40AEA1C6E25,                               // UI Rethemed - Notifications 1.7, 2026-11-13 02:27
@@ -2418,6 +2472,9 @@ namespace Harmony3StrictCompat
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPostfix"] = 0xEAEA3D4FF6046A94,
 			["UsefulMarks.Dialog_NamePawn_DoWindowContents_Patch:Postfix"] = 0xF33AD5F31EB56B3B,        // Useful Marks 1.7, DLL of 2026-10-22
 			["UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix"] = 0xD2A3A440ED802D16,
+			["RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"] = 0x7BC03B6DECA267E3,               // vanilla 1.7.5005, guilty icon slot
+			["UIRethemed.ColonistCard.Card:get_ThemingHeader"] = 0x237BE2558E2524A1,                     // UI Rethemed - Colonist Card 1.7, 2026-11-12 09:27
+			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0x254E0288AFF3E043,
 			["UIRethemed.Animals.Motion:Key"] = 0xD8B1E64161CEBA55,                                     // UI Rethemed - Animals 1.7, DLL of 2026-11-09
 			["UIRethemed.Animals.Motion:Hover"] = 0x647430A1557F69F6,
 			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0x65D7341A9378180F,                  // UI Rethemed - Architect 1.7, 2026-11-13 03:48

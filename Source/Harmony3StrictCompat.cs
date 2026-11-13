@@ -450,6 +450,14 @@ namespace Harmony3StrictCompat
 			Target("UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler");
 			var uirStyle = AccessTools.TypeByName("UIRethemed.Notifications.NotificationStyle");
 			var uirWidgets = AccessTools.TypeByName("UIRethemed.Notifications.NotificationsWidgets");
+			if (uirPosition != null)
+			{
+				uirPositionCall = uirPosition;
+				uirTopRight = (int)Enum.Parse(uirPosition.ReturnType, "TopRight");
+				uirMinimapType = AccessTools.TypeByName("SatelliteMinimap.MinimapWindow");
+				if (uirMinimapType != null && Target("UIRethemed.Notifications.Placement:TopStart") is { } uirTopStart)
+					harmony.Patch(uirTopStart, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirTopRightUnderMinimap)));
+			}
 			if (uirRowDraw != null && uirRowWidth != null && uirColorOf != null && uirColumnX != null && uirPosition != null && uirHover != null
 				&& uirStyle != null && uirWidgets != null)
 			{
@@ -457,8 +465,8 @@ namespace Harmony3StrictCompat
 				uirRowWidthCall = (Func<string, float>)uirRowWidth.CreateDelegate(typeof(Func<string, float>));
 				uirColumnXCall = (Func<float, float>)uirColumnX.CreateDelegate(typeof(Func<float, float>));
 				uirHoverCall = (Func<Rect, int, bool, float>)uirHover.CreateDelegate(typeof(Func<Rect, int, bool, float>));
-				uirPositionCall = uirPosition;
 				uirBottomRight = (int)Enum.Parse(uirPosition.ReturnType, "BottomRight");
+				uirMiddleRight = (int)Enum.Parse(uirPosition.ReturnType, "MiddleRight");
 				if (Target("UIRethemed.Notifications.HoverCard:Region") is { } uirHoverCard)
 					uirHoverRegion = (Action<Rect, string, string, string, Color?>)uirHoverCard.CreateDelegate(typeof(Action<Rect, string, string, string, Color?>));
 				uirPlacedDraw = Target("UIRethemed.Notifications.HoverCard:DrawPlaced");
@@ -917,10 +925,10 @@ namespace Harmony3StrictCompat
 		// ---- UI Rethemed - Notifications: the top-left messages drawn as rows in its notification stack ----
 		// UIR restyles letters, conditions and alerts into one column but leaves the game's transient messages
 		// (Messages.MessagesDoGUI) as plain text in the top-left; its own patch there only shifts them sideways when
-		// its column sits top-left. While a game is loaded and the column is bottom-right (its default), draw each live
-		// message as a StatusRow, the widget its alert rows use, stacked upward from the top of the alerts
-		// (LetterStack.LastTopY - AlertsReadout.AlertsHeight, which UIR keeps vanilla in that position), newest nearest
-		// the stack. Colour and icon come from UIR's own four kinds, so they match the alert rows below. Behaviour is
+		// its column sits top-left. While a game is loaded and the column is bottom-right, middle-right (the default
+		// since 2026-11-13) or top-right, draw each live message as a StatusRow, the widget its alert rows use, next to the alerts:
+		// bottom-right stacked upward from their top (LetterStack.LastTopY - AlertsReadout.AlertsHeight), middle-right and
+		// top-right hanging below their bottom (LastTopY, set by UIR's Placement.EndLetters), newest nearest the alerts. Colour and icon come from UIR's own four kinds, so they match the alert rows below. Behaviour is
 		// vanilla Message.Draw: left-click jumps or opens the quest, right-click dismisses (with UIR's card click sound), hover highlights the target
 		// and shows UIR's own hover card as its alerts do (HoverCard.DrawPlaced beside the column, at once, no tooltip
 		// delay: a header, its rule, then the body) in the row's colour, the header naming the message type (English,
@@ -933,7 +941,23 @@ namespace Harmony3StrictCompat
 		static Func<string, float> uirRowWidthCall;
 		static Func<float, float> uirColumnXCall;
 		static Func<Rect, int, bool, float> uirHoverCall;
-		static int uirBottomRight;
+		static int uirBottomRight, uirMiddleRight, uirTopRight;
+		static Type uirMinimapType;
+
+		// UIR's top-right column starts 12 px from the top (lower only under colonist portraits or the learning helper)
+		// and knows nothing of Satellite Minimap, whose window then covers its top. Start below the minimap window while
+		// it is open. ponytail: assumes the minimap sits in the top-right corner (the user's layout); a minimap moved
+		// elsewhere still pushes the column down by its bottom edge.
+		static void UirTopRightUnderMinimap(ref float __result)
+		{
+			if ((int)uirPositionCall.Invoke(null, null) != uirTopRight) return;
+			foreach (var window in Find.WindowStack.Windows)
+				if (window.GetType() == uirMinimapType)
+				{
+					__result = Mathf.Max(__result, window.windowRect.yMax + 10f);
+					return;
+				}
+		}
 		// Styles are built on first draw (main thread, defs loaded): touching NotificationsWidgets' texture fields or
 		// NotificationColorDefOf from the mod constructor runs UIR's texture loading off the main thread (and sees null
 		// DefOfs).
@@ -1009,7 +1033,11 @@ namespace Harmony3StrictCompat
 			var nameOf = Target("UIRethemed.Notifications.SectionHeading:NameOf");
 			var iconOf = Target("UIRethemed.Notifications.SectionHeading:IconOf");
 			var shared = Target("UIRethemed.Notifications.HudColumn:get_Shared");
-			if (sectionType == null || shows == null || folded == null || draw == null || widthFor == null || nameOf == null || iconOf == null || shared == null)
+			var unseen = Target("UIRethemed.Notifications.SectionHeading:Unseen");
+			var see = Target("UIRethemed.Notifications.SectionHeading:See");
+			var widestName = Target("UIRethemed.Notifications.SectionHeading:get_WidestName");
+			if (sectionType == null || shows == null || folded == null || draw == null || widthFor == null || nameOf == null || iconOf == null || shared == null
+				|| unseen == null || see == null || widestName == null)
 				return;
 			if (Enum.IsDefined(sectionType, UirMessagesSectionValue))
 			{
@@ -1022,7 +1050,33 @@ namespace Harmony3StrictCompat
 			harmony.Patch(shared, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirSharedWithMessages)));
 			harmony.Patch(nameOf, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirMessagesSectionName)));
 			harmony.Patch(iconOf, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirMessagesSectionIcon)));
+			harmony.Patch(unseen, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirMessagesSectionUnseen)));
+			harmony.Patch(see, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirMessagesSectionSee)));
+			harmony.Patch(widestName, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirWidestWithMessages)));
 		}
+
+		// Heading width (Static: every heading's width; Dynamic: the column width a heading asks for) is sized for the
+		// widest name among UIR's own sections, so "Messages" got cut to "Mess...". Count it too, measured as UIR's
+		// NotificationsWidgets.Width does (Small font).
+		static void UirWidestWithMessages(ref float __result)
+		{
+			var font = Text.Font;
+			Text.Font = GameFont.Small;
+			__result = Mathf.Max(__result, Mathf.Ceil(Text.CalcSize("Messages").x));
+			Text.Font = font;
+		}
+
+		// UIR (2026-11-13) counts items that arrived while a section was folded, in arrays sized to its 3 sections and
+		// indexed by the section value, so value 3 would throw. The Messages heading opts out: no "new" count or glow.
+		// ponytail: messages expire in 30 s anyway; give it its own seen set if the glow is wanted while folded.
+		static bool UirMessagesSectionUnseen(object section, ref int __result)
+		{
+			if (Convert.ToInt32(section) != UirMessagesSectionValue) return true;
+			__result = 0;
+			return false;
+		}
+
+		static bool UirMessagesSectionSee(object section) => Convert.ToInt32(section) != UirMessagesSectionValue;
 
 		// Messages' wanted column width from the last draw (0 when none show). UIR's sections read the shared width
 		// before drawing, so they follow the messages one frame later.
@@ -1070,8 +1124,10 @@ namespace Harmony3StrictCompat
 
 		static bool UirMessagesInStack()
 		{
+			int position = (int)uirPositionCall.Invoke(null, null);
+			bool hanging = position == uirMiddleRight || position == uirTopRight;
 			if (Current.ProgramState != ProgramState.Playing || Find.LetterStack == null || Find.Alerts == null
-				|| (int)uirPositionCall.Invoke(null, null) != uirBottomRight)
+				|| (position != uirBottomRight && !hanging))
 			{
 				uirMessagesWanted = 0f;
 				return true;
@@ -1093,27 +1149,30 @@ namespace Harmony3StrictCompat
 			uirMessagesWanted = wanted;
 			float width = uirColumnShared != null ? uirColumnShared() : wanted;
 			float x = uirColumnXCall(width);
-			float y = Find.LetterStack.LastTopY - Find.Alerts.AlertsHeight - UirStackGap;
+			// Slots top-down: heading, then rows. Bottom-right: the block ends above the alerts, newest row lowest.
+			// Middle-right and top-right: LastTopY is the alerts' bottom (UIR's EndLetters), the block hangs below, newest row highest.
+			int slots = (heading ? 1 : 0) + (folded ? 0 : messages.Count);
+			float y = hanging ? Find.LetterStack.LastTopY + UirStackGap
+				: Find.LetterStack.LastTopY - Find.Alerts.AlertsHeight - UirStackGap - (slots - 1) * UirRowStep - UirRowHeight;
 			if (heading)
 			{
 				// Its colour is the most pressing message (bad, then warning).
-				float headWidth = width;
 				int pressing = -1;
 				foreach (var msg in messages)
 				{
 					int kind = UirKindOf(msg.def);
 					if ((kind == 3 || kind == 2) && kind > pressing) pressing = kind;
 				}
-				float headY = folded ? y : y - messages.Count * UirRowStep;
-				uirHeadingDraw.Invoke(null, new object[] { new Rect(uirColumnXCall(headWidth), Mathf.Round(headY - UirRowHeight), headWidth, UirRowHeight),
+				uirHeadingDraw.Invoke(null, new object[] { new Rect(x, Mathf.Round(y), width, UirRowHeight),
 					uirMessagesSection, messages.Count, pressing < 0 ? null : uirMessageColorDefs[pressing], float.MaxValue,
-					(Func<string>)(() => string.Join("\n", messages.Select(m => m.text).Reverse())) });
+					(Func<string>)(() => string.Join("\n", messages.Select(m => m.text).Reverse())), (Func<IEnumerable<object>>)(() => messages) });
+				y += UirRowStep;
 			}
 			if (folded) return false;
-			for (int i = messages.Count - 1; i >= 0; i--, y -= UirRowStep)
+			for (int j = 0; j < messages.Count; j++, y += UirRowStep)
 			{
-				var msg = messages[i];
-				var rect = new Rect(x, Mathf.Round(y - UirRowHeight), width, UirRowHeight);
+				var msg = messages[hanging ? messages.Count - 1 - j : j];
+				var rect = new Rect(x, Mathf.Round(y), width, UirRowHeight);
 				msg.lastDrawRect = rect;
 				bool over = Mouse.IsOver(rect);
 				float hover = uirHoverCall(rect, Gen.HashCombineInt(messageId(msg), 0x5A17), over);
@@ -2266,7 +2325,7 @@ namespace Harmony3StrictCompat
 			["VEF.Buildings.CompRandomBuildingGraphic:ChangeGraphic"] = 0xC22ADB911FDB5E90,                  // VEF 1.7, 2026-11-04
 			["AdaptiveStorage.StorageGraphicWorker:GetGraphicFor"] = 0x2899906440FC5118,                     // ASF 1.6 build, 2025-11-12
 			["RimPacts.WorldComponent_RimPacts:DismissExilePawn"] = 0x2FC46E10652807CE,                        // RimPacts 1.7, 2026-11-07 (added Discarded guard; still no successor)
-			["PrisonerRealism.JobGiver_CleanCell:ShouldClean"] = 0xD2061DA02821F6FC,                          // Prisoner Realism 1.7, 2026-11-06
+			["PrisonerRealism.JobGiver_CleanCell:ShouldClean"] = 0x7B21CD085E9E96A1,                          // Prisoner Realism 1.7, 2026-11-12 23:37
 			["CleaningAreaRelaunched.CleaningAreaRelaunched_Util:GetCleanArea"] = 0xD9B02D52DE61B82C,          // CAR 1.6 build, 2025-11-12
 			["aRandomKiwi.HFM.JobGiver_AnimalHunt:TryGiveJob"] = 0x865CBA567579063A,                            // Hunt For Me 1.6 build, 2025-12-25
 			["Merthsoft.DesignatorShapes.Shapes.FloodFill:IsStructure"] = 0x01F3F2D215BA16DB,                 // Designator Shapes 1.7, 2026-11-02
@@ -2297,10 +2356,10 @@ namespace Harmony3StrictCompat
 			["Unburned.Pretty_Patch:Prefix"] = 0xE153E3D01BE0AC50,                                                // Unburned 1.7, 2026-11-09
 			["VEF.Weapons.MeleeReachCombatUtility:IsVanillaMeleeAttack"] = 0xAED0762AE41E6D48,                    // VEF 1.7, 2026-11-09
 			["SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix"] = 0xEA4FA1B085907595,     // Smarter Visitors 1.7.0, 2026-11-08
-			["UIRethemed.MainBar.MenuWindow:Face"] = 0x5EA84E7C0767049F,                               // UI Rethemed - Main Bar 1.7, 2026-11-12 14:26
-			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0xEF81461ADE4000AB,
+			["UIRethemed.MainBar.MenuWindow:Face"] = 0x03E8D9C0464DB49A,                               // UI Rethemed - Main Bar 1.7, 2026-11-13 02:21
+			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0x43FA9231B29A4DB7,
 			["UIRethemed.MainBar.BarControls:Toggle"] = 0xBFFF4D6AF367B2C5,
-			["UIRethemed.MainBar.BarControls:SetSpeed"] = 0xC298A9F6CE3648A8,
+			["UIRethemed.MainBar.BarControls:SetSpeed"] = 0x0CC478B5E9B1667B,
 			["AdaptiveMealBill.AdaptiveRecipeSelection:RecoverRecipe"] = 0x62FA21FEB38C0B91,             // AdaptiveMealBill 1.7, DLL of 2026-11-08
 			["UIRethemed.InspectorTabs.CareSwitchDef:For"] = 0x0766755B744724C3,                         // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-06
 			["AutoExtractGenes.Utils:GetAutoExtractGenesComponent"] = 0x41DC32D5B21682AC,                // AutoExtractGenes 1.7, DLL of 2026-11-08
@@ -2309,24 +2368,28 @@ namespace Harmony3StrictCompat
 			["QuietWonders.QWEffects:Frame"] = 0x43D61EC90E750997,                                       // Quiet Wonders, DLL as of 2026-11-12
 			["TacticalGroups.ColonistGroup:GetUniqueLoadID"] = 0x5F30AAACFB7C28AE,                      // Colony Groups 1.6 build
 			["SmartDeconstruct.SmartDeconstructMod:getDesignation"] = 0x53C1CCCAD3316AC2,               // Smart Deconstruct 1.7
-			["UIRethemed.Notifications.StatusRow:Draw"] = 0x6BEE64F14A0C8B7D,                               // UI Rethemed - Notifications 1.7, 2026-11-12
-			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0xA287A5FBF229B64E,
-			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0x8CE5181883AB492A,
-			["UIRethemed.Notifications.Placement:ColumnX"] = 0x255C8D8FDA4AD782,
-			["UIRethemed.Notifications.Placement:get_Position"] = 0x6E9C3CE11AB1233B,
-			["UIRethemed.Notifications.Motion:Hover"] = 0x17C0C8C26E9E5E8C,
-			["UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler"] = 0x566F33B9E2756339,
-			["UIRethemed.Notifications.HoverCard:Region"] = 0x87CD76DF955BD12D,
-			["UIRethemed.Notifications.HoverCard:DrawPlaced"] = 0x715F0B982CB075F7,
-			["UIRethemed.Notifications.HoverCard:PlacedSize"] = 0xFBE4C039CFEEE631,
-			["UIRethemed.Notifications.Placement:BesideX"] = 0x0ECE03C314383AC3,
-			["UIRethemed.Notifications.SectionHeading:Shows"] = 0xF2F76453A964688D,
-			["UIRethemed.Notifications.SectionHeading:Folded"] = 0xBF21CDC6AB4FC035,
-			["UIRethemed.Notifications.SectionHeading:Draw"] = 0x70581AEF9E892620,
-			["UIRethemed.Notifications.SectionHeading:WidthFor"] = 0x3754E69BF054542A,
-			["UIRethemed.Notifications.SectionHeading:NameOf"] = 0x170F2A882CA52CF1,
-			["UIRethemed.Notifications.SectionHeading:IconOf"] = 0xC5286049B8494351,
-			["UIRethemed.Notifications.HudColumn:get_Shared"] = 0x3B646CDFB184B6CA,
+			["UIRethemed.Notifications.StatusRow:Draw"] = 0xD114A40AEA1C6E25,                               // UI Rethemed - Notifications 1.7, 2026-11-13 02:27
+			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0x1024852E6426BE13,
+			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0x0B0A9C730B228F6E,
+			["UIRethemed.Notifications.Placement:ColumnX"] = 0x819B43E7869D4A22,
+			["UIRethemed.Notifications.Placement:get_Position"] = 0x88B8926AD9A4572B,
+			["UIRethemed.Notifications.Motion:Hover"] = 0xF1588758DF414375,
+			["UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler"] = 0x4F4563D2B2719116,
+			["UIRethemed.Notifications.HoverCard:Region"] = 0xC3227518BAB837B8,
+			["UIRethemed.Notifications.HoverCard:DrawPlaced"] = 0xF91FEED8B7604F77,
+			["UIRethemed.Notifications.HoverCard:PlacedSize"] = 0x373B2E92584C816A,
+			["UIRethemed.Notifications.Placement:BesideX"] = 0xFC32606E995AF086,
+			["UIRethemed.Notifications.SectionHeading:Shows"] = 0x5E9F5F423C6961F8,
+			["UIRethemed.Notifications.SectionHeading:Folded"] = 0x023A9154E069FF61,
+			["UIRethemed.Notifications.SectionHeading:Draw"] = 0x102FD0DFC62F77E1,
+			["UIRethemed.Notifications.SectionHeading:WidthFor"] = 0xD00608883E5284A5,
+			["UIRethemed.Notifications.SectionHeading:NameOf"] = 0xCA5A7DF1AAC7715A,
+			["UIRethemed.Notifications.SectionHeading:IconOf"] = 0x37A1C599B75A4FA9,
+			["UIRethemed.Notifications.HudColumn:get_Shared"] = 0x81AB8E16BA55C948,
+			["UIRethemed.Notifications.SectionHeading:Unseen"] = 0xDCEBBEF4B458D176,
+			["UIRethemed.Notifications.SectionHeading:See"] = 0x0B111B38C787D2A3,
+			["UIRethemed.Notifications.SectionHeading:get_WidestName"] = 0x825351BA582B24E9,
+			["UIRethemed.Notifications.Placement:TopStart"] = 0xB66BBFD57F93B4D8,
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,

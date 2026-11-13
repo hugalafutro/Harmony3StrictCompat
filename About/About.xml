@@ -61,7 +61,8 @@
 - Leo - Events + Biomes! Caverns: the mineral seams cave gets a random Caverns biome.
 - Quiet Wonders: no errors on pocket maps (caves).
 - Colony Groups and rituals: no more duplicate load ID errors when loading a save.
-- UI Rethemed - Notifications (visual tweak): the top-left messages are drawn as rows in its bottom-right notification stack, live 30 s, a hovered one stays and shows UI Rethemed's hover card, under a folding "Messages" heading.
+- UI Rethemed - Notifications (visual tweak): the top-left messages are drawn as rows in its bottom-right, middle-right or top-right notification stack, live 30 s, a hovered one stays and shows UI Rethemed's hover card, under a folding "Messages" heading.
+- UI Rethemed - Notifications + Satellite Minimap (personal tweak): the top-right notification column starts below the minimap instead of under it.
 - UI Rethemed - Quests + Quality Colors (Continued) (visual tweak): quest reward tiles and their hover card titles are drawn in the item's quality colour, and the market value sits on the line under the name instead of beside it.
 - Auto-Cast Specialist Commands + Det's Xenotypes - Stoneborn (personal tweak): Stonecall is auto-cast when mining or finishing construction, following the Auto-Cast Mining Command setting, which right-click on the Stonecall gizmo toggles (check icon shown).
 - Vanilla (found through Modern Needs Tab): an emptied minified thing has a label again, so job reports no longer throw and MNT keeps recording job history.

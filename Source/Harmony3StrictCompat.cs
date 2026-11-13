@@ -467,6 +467,20 @@ namespace Harmony3StrictCompat
 				if (uirMinimapType != null && Target("UIRethemed.Notifications.Placement:TopStart") is { } uirTopStart)
 					harmony.Patch(uirTopStart, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirTopRightUnderMinimap)));
 			}
+			if (Target("UIRethemed.Notifications.FoodReadout:Read") is { } uirFoodRead && Target("UIRethemed.Notifications.FoodReadout:Draw") is { } uirFoodDraw
+				&& AccessTools.Field(uirFoodRead.DeclaringType, "nextRead") is { IsStatic: true } uirFoodNext && AccessTools.Field(uirFoodRead.DeclaringType, "shows") is { IsStatic: true } uirFoodShows)
+			{
+				uirFoodNextRead = uirFoodNext;
+				uirFoodShowsField = uirFoodShows;
+				harmony.Patch(uirFoodDraw, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirFoodNoteHover)));
+				harmony.Patch(uirFoodRead, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirFoodHoldWhileHovered)),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirFoodReadEvery5s)));
+			}
+			if (Target("UIRethemed.ColonistCard.InfoList:Defer") is { } uirInfoDefer && Target("UIRethemed.ColonistCard.InfoList:DrawRow") is { } uirInfoDrawRow)
+			{
+				harmony.Patch(uirInfoDefer, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirInfoStripStackNote)));
+				harmony.Patch(uirInfoDrawRow, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirInfoRowHoverCard)));
+			}
 			if (uirRowDraw != null && uirRowWidth != null && uirColorOf != null && uirColumnX != null && uirPosition != null && uirHover != null
 				&& uirStyle != null && uirWidgets != null)
 			{
@@ -1095,6 +1109,87 @@ namespace Harmony3StrictCompat
 					__result = Mathf.Max(__result, window.windowRect.yMax + 10f);
 					return;
 				}
+		}
+
+		// UIR Notifications "days of food" row: FoodReadout.Read re-counts every real second and rebuilds the hover card's
+		// text, so its card restarts each second and can only be read while paused. Re-count every 5 s, and not at all
+		// while the row is hovered (hover seen this frame or the last), so the card holds still until the mouse leaves.
+		static FieldInfo uirFoodNextRead, uirFoodShowsField;
+		static int uirFoodHoverFrame = -10;
+		static void UirFoodNoteHover(Rect row)
+		{
+			if (Mouse.IsOver(row)) uirFoodHoverFrame = Time.frameCount;
+		}
+		static bool UirFoodHoldWhileHovered(out float __state)
+		{
+			__state = (float)uirFoodNextRead.GetValue(null);
+			return !(Time.frameCount - uirFoodHoverFrame <= 1 && (bool)uirFoodShowsField.GetValue(null));
+		}
+		static void UirFoodReadEvery5s(float __state)
+		{
+			if ((float)uirFoodNextRead.GetValue(null) != __state)
+				uirFoodNextRead.SetValue(null, Time.realtimeSinceStartup + 5f);
+		}
+
+		// UIR Colonist Card info rows: the meal "Ingredients" line ends with " (* only stacks with similar meals)", which
+		// takes a third of the row. The row shows the line without that note; its tooltip shows the whole line.
+		// The rows are drawn outside the inspect window's own pass, so Mouse.IsOver (and with it TooltipHandler.TipRegion)
+		// says "blocked" for them: no row hover, no tooltip. In DrawRow the mouse test is the plain rect test, and the
+		// tooltip is entered straight into TooltipHandler's active tips (what TipRegion does once IsOver passes); UIR Core
+		// draws it as its hover card.
+		static readonly Dictionary<string, string> uirInfoFullLines = [];
+		static readonly AccessTools.FieldRef<Dictionary<int, ActiveTip>> tipActive = AccessTools.StaticFieldRefAccess<Dictionary<int, ActiveTip>>(AccessTools.Field(typeof(TooltipHandler), "activeTips"));
+		static readonly AccessTools.FieldRef<int> tipFrame = AccessTools.StaticFieldRefAccess<int>(AccessTools.Field(typeof(TooltipHandler), "frame"));
+		static string uirStackNote;
+		static void UirInfoStripStackNote(ref string str)
+		{
+			if (str == null) return;
+			uirStackNote ??= " (* " + "OnlyStacksWithCompatibleMeals".Translate().Resolve() + ")";
+			if (!str.Contains(uirStackNote)) return;
+			if (uirInfoFullLines.Count > 200) uirInfoFullLines.Clear();
+			foreach (var line in str.Split('\n'))
+				if (line.Contains(uirStackNote))
+					uirInfoFullLines[line.Replace(uirStackNote, "").TrimEnd('\r')] = line.TrimEnd('\r');
+			str = str.Replace(uirStackNote, "");
+		}
+
+		static bool UirInfoRowMouseIn(Rect rect) => rect.Contains(Event.current.mousePosition);
+
+		static void UirInfoRowTip(Rect rect, TipSignal tip)
+		{
+			if (Event.current.type != EventType.Repaint || tip.text == null || !rect.Contains(Event.current.mousePosition)) return;
+			string text = uirInfoFullLines.TryGetValue(tip.text, out var full) ? full : tip.text;
+			var tips = tipActive();
+			if (!tips.TryGetValue(tip.uniqueId, out var active))
+			{
+				tips[tip.uniqueId] = active = new ActiveTip(tip);
+				active.firstTriggerTime = Time.realtimeSinceStartup;
+			}
+			active.lastTriggerFrame = tipFrame();
+			active.signal.text = text;
+		}
+
+		static IEnumerable<CodeInstruction> UirInfoRowHoverCard(IEnumerable<CodeInstruction> instructions)
+		{
+			var tipRegion = AccessTools.Method(typeof(TooltipHandler), nameof(TooltipHandler.TipRegion), [typeof(Rect), typeof(TipSignal)]);
+			var isOver = AccessTools.Method(typeof(Mouse), nameof(Mouse.IsOver), [typeof(Rect)]);
+			int tips = 0, overs = 0;
+			foreach (var code in instructions)
+			{
+				if (code.Calls(tipRegion))
+				{
+					code.operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(UirInfoRowTip));
+					tips++;
+				}
+				else if (code.Calls(isOver))
+				{
+					code.operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(UirInfoRowMouseIn));
+					overs++;
+				}
+				yield return code;
+			}
+			if (tips != 1 || overs == 0)
+				Log.Error($"[Harmony3StrictCompat] UIR Colonist Card info row: expected one TipRegion and some Mouse.IsOver calls, replaced {tips} and {overs}");
 		}
 		// Styles are built on first draw (main thread, defs loaded): touching NotificationsWidgets' texture fields or
 		// NotificationColorDefOf from the mod constructor runs UIR's texture loading off the main thread (and sees null
@@ -2528,6 +2623,10 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Notifications.SectionHeading:See"] = 0x0B111B38C787D2A3,
 			["UIRethemed.Notifications.SectionHeading:get_WidestName"] = 0x825351BA582B24E9,
 			["UIRethemed.Notifications.Placement:TopStart"] = 0xB66BBFD57F93B4D8,
+			["UIRethemed.Notifications.FoodReadout:Read"] = 0x3A9FE28F59673276,                          // UIR Notifications 1.7, 2026-11-13
+			["UIRethemed.Notifications.FoodReadout:Draw"] = 0x6D18FED08A1E6587,
+			["UIRethemed.ColonistCard.InfoList:Defer"] = 0xD3C27319BD548F5E,                            // UIR Colonist Card 1.7, 2026-11-13
+			["UIRethemed.ColonistCard.InfoList:DrawRow"] = 0x17F7A704CD818794,
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,

@@ -519,6 +519,28 @@ namespace Harmony3StrictCompat
 			Target("UIRethemed.Animals.Motion:Key"); // fingerprint only: the key the patched Hover hands its rect to
 			if (Target("UIRethemed.Animals.Motion:Hover") is { } uiraHover)
 				harmony.Patch(uiraHover, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UiraHoverKeyOnScreen)));
+			if (Target("UIRethemed.Architect.ArchitectData:ShownApart") is { } uirShownApart)
+			{
+				var entryType = AccessTools.TypeByName("UIRethemed.Architect.Entry");
+				uirEntryCategory = AccessTools.Field(entryType, "category");
+				uirEntryIsOrder = AccessTools.Field(entryType, "isOrder");
+				if (uirEntryCategory != null && uirEntryIsOrder != null)
+					harmony.Patch(uirShownApart, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirOrdersTogether)));
+			}
+		}
+
+		// ---- UI Rethemed - Architect + Vanilla Plants Expanded: Tilled soil among the orders ----
+		// UIR moves a category's orders (designators that place nothing) to its side Orders column whenever that category
+		// also has something to build (ArchitectData.ShownApart). VPE's Tilled soil is the only buildable in Orders, so
+		// it got a one-card "Orders" group of its own while Cancel, Mine, Haul and the rest sat in the column. Keep
+		// Orders' orders in the grid, one group with Tilled soil, as Zone shows its buttons.
+		static FieldInfo uirEntryCategory, uirEntryIsOrder;
+
+		static void UirOrdersTogether(object entry, ref bool __result)
+		{
+			if (__result && (bool)uirEntryIsOrder.GetValue(entry)
+				&& (uirEntryCategory.GetValue(entry) as DesignationCategoryDef)?.defName == "Orders")
+				__result = false;
 		}
 
 		// ---- UI Rethemed - Animals: hover highlight mirrored into other groups ----
@@ -2398,6 +2420,7 @@ namespace Harmony3StrictCompat
 			["UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix"] = 0xD2A3A440ED802D16,
 			["UIRethemed.Animals.Motion:Key"] = 0xD8B1E64161CEBA55,                                     // UI Rethemed - Animals 1.7, DLL of 2026-11-09
 			["UIRethemed.Animals.Motion:Hover"] = 0x647430A1557F69F6,
+			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0x65D7341A9378180F,                  // UI Rethemed - Architect 1.7, 2026-11-13 03:48
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an

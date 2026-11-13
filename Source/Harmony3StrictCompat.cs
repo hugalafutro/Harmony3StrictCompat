@@ -417,6 +417,8 @@ namespace Harmony3StrictCompat
 				aegComp = (Func<Pawn, ThingComp>)aegGet.CreateDelegate(typeof(Func<Pawn, ThingComp>));
 				harmony.Patch(uirCareFor, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AegCareSwitchFor)));
 			}
+			if (Target("VFEF.CompScaresAnimals:ScareAnimals") is { } vfefScare)
+				harmony.Patch(vfefScare, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ScarecrowSpawnedOnly)));
 			if (Target("ColonyManagerRedux.Manager:FinalizeInit") is { } cmrInit)
 				harmony.Patch(cmrInit, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(CmrStartResearchOnce)));
 			mfProps = AccessTools.TypeByName("MuzzleFlash.MuzzleFlashProps");
@@ -427,8 +429,14 @@ namespace Harmony3StrictCompat
 					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LeoSeamsRandomCavern)),
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LeoSeamsRoofLava)));
 			if (PipeTapsAndDrains.Init())
+			{
+				harmony.Patch(AccessTools.Method(typeof(StoreUtility), nameof(StoreUtility.IsGoodStoreCell)),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PipeTapDrainCell)));
+				harmony.Patch(AccessTools.Method(typeof(StoreUtility), nameof(StoreUtility.IsValidStorageFor), [typeof(IntVec3), typeof(Map), typeof(Thing)]),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PipeTapDrainValidCell)));
 				harmony.Patch(AccessTools.Method(typeof(StorageSettings), nameof(StorageSettings.AllowedToAccept), [typeof(Thing)]),
-					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PipeTapDrainNoHaulIn)));
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PipeTapOverMaxUnstored)));
+			}
 			foreach (var alert in new[] { typeof(Alert_NeedResearchProject), typeof(Alert_NeedAnomalyProject) })
 				harmony.Patch(AccessTools.Method(alert, "OnClick"), prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ResearchAlertOpenTab)));
 			if (Target("SmartDeconstruct.SmartDeconstructMod:getDesignation") is { } sdGetDesignation)
@@ -850,6 +858,28 @@ namespace Harmony3StrictCompat
 				manager.FinishProject(proj, doCompletionDialog, researcher, doCompletionLetter);
 		}
 
+		// VFE Farming scarecrow: CompScaresAnimals.ScareAnimals walks map.mapPawns.AllPawns, which also lists pawns that
+		// are not spawned (held in a building or container). For such a wild animal in range it asks for a flee cell on
+		// its null map: NullReferenceException in CellFinderLoose.GetFleeDestAnimal ("Exception ticking VFE_Scarecrow"),
+		// and the animals after it in the list are not scared. Walk only spawned pawns.
+		static IEnumerable<CodeInstruction> ScarecrowSpawnedOnly(IEnumerable<CodeInstruction> instructions)
+		{
+			var all = AccessTools.PropertyGetter(typeof(MapPawns), nameof(MapPawns.AllPawns));
+			var spawned = AccessTools.PropertyGetter(typeof(MapPawns), nameof(MapPawns.AllPawnsSpawned));
+			int replaced = 0;
+			foreach (var code in instructions)
+			{
+				if (code.Calls(all))
+				{
+					code.operand = spawned;
+					replaced++;
+				}
+				yield return code;
+			}
+			if (replaced != 1)
+				Log.Error($"[Harmony3StrictCompat] VFE Farming scarecrow: expected one AllPawns call, replaced {replaced}");
+		}
+
 		static IEnumerable<CodeInstruction> CmrStartResearchOnce(IEnumerable<CodeInstruction> instructions)
 		{
 			var finish = AccessTools.Method(typeof(ResearchManager), nameof(ResearchManager.FinishProject));
@@ -882,20 +912,38 @@ namespace Harmony3StrictCompat
 		// it makes from the network, so haulers filled taps to the item's stack limit; Hauler's Dream "haul to stack" even
 		// prefers the tap (always a partial stack) over the drain next to it. A drain only feeds the network while its
 		// tanks have room, so with full tanks it became a pile. Now a tap accepts only its own output already on its cell,
-		// up to the set max (a bigger stack gets hauled off, to the drain). A drain refuses hauled-in items while its
-		// network has no free storage; what already sits on it stays and is fed in once room frees up.
-		// Patched on StorageSettings.AllowedToAccept, not Building_Storage.Accepts: vanilla's destination search
-		// (TryFindBestBetterStoreCellFor) only asks the settings, so an Accepts-only check made the over-max stack
-		// "unstored" while the search still picked the tap cell for it, and pawns lifted and re-dropped it in a loop.
-		static void PipeTapDrainNoHaulIn(StorageSettings __instance, Thing t, ref bool __result)
+		// up to the set max (a bigger stack gets hauled off, to the drain). A drain is storage only while its network
+		// has free storage: when the tanks are full, nothing is hauled onto it and what sits on it is hauled off to
+		// ordinary storage (even lower priority); once room frees up, that storage feeds the drain again.
+		// Two checks, both per cell, so linked taps ("Link storage", where the settings belong to the StorageGroup and
+		// not to a building) work too; a linked group otherwise shuttled one tap's output onto the other tap:
+		//  - destination: StoreUtility.IsGoodStoreCell, which vanilla's search and Hauler's Dream ask for every
+		//    candidate cell. A tap cell takes only the stack already on it, up to the max; a drain cell takes a stack
+		//    only when all of it fits in the network's free storage (a part left on the drain would be hauled back
+		//    off once the tanks fill: churn).
+		//  - stored or not: StorageSettings.AllowedToAccept (behind IsInValidStorage). A stack on a tap above its max,
+		//    or on a drain whose network is full, counts as unstored, so it gets hauled off; the search above then
+		//    cannot pick the same cell again.
+		//  - target check: StoreUtility.IsValidStorageFor, the same cell rule. Vanilla's merge job (WorkGiver_Merge) only
+		//    asks this: with linked taps it carried one tap's output onto the other tap's (20 on one, refill on the
+		//    other, the 20 off to the drain, and again). It is also the drop-time check of a haul.
+		static void PipeTapDrainCell(IntVec3 c, Map map, Thing t, ref bool __result) => __result = PipeCellTakes(c, map, t, __result);
+		static void PipeTapDrainValidCell(IntVec3 c, Map map, Thing storable, ref bool __result) => __result = PipeCellTakes(c, map, storable, __result);
+
+		static bool PipeCellTakes(IntVec3 c, Map map, Thing t, bool vanilla)
 		{
-			if (!__result || t == null || __instance.owner is not Building_Storage b || !PipeTapsAndDrains.Watched(b.def, out bool tap))
-				return;
-			bool onCell = t.Spawned && t.Position == b.Position;
-			if (tap)
-				__result = onCell && t.stackCount <= PipeTapsAndDrains.TapMax(b, t.def.stackLimit);
-			else if (!onCell)
-				__result = PipeTapsAndDrains.DrainHasRoom(b);
+			if (!vanilla || t == null || c.GetEdifice(map) is not Building_Storage b || !PipeTapsAndDrains.Watched(b.def, out bool tap))
+				return vanilla;
+			bool onCell = t.Spawned && t.Position == c;
+			return tap ? onCell && t.stackCount <= PipeTapsAndDrains.TapMax(b, t.def.stackLimit)
+				: PipeTapsAndDrains.DrainHasRoom(b, onCell ? 1 : t.stackCount);
+		}
+
+		static void PipeTapOverMaxUnstored(StorageSettings __instance, Thing t, ref bool __result)
+		{
+			if (__result && t is { Spawned: true } && t.Position.GetEdifice(t.Map) is Building_Storage b && b.GetStoreSettings() == __instance
+				&& PipeTapsAndDrains.Watched(b.def, out bool tap))
+				__result = tap ? t.stackCount <= PipeTapsAndDrains.TapMax(b, t.def.stackLimit) : PipeTapsAndDrains.DrainHasRoom(b, 1);
 		}
 
 		// Leo - Events + Biomes! Caverns (personal tweak): the "unexpected mineral seams" cave is a pocket map whose
@@ -2441,6 +2489,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.InspectorTabs.CareSwitchDef:For"] = 0x0766755B744724C3,                         // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-06
 			["AutoExtractGenes.Utils:GetAutoExtractGenesComponent"] = 0x41DC32D5B21682AC,                // AutoExtractGenes 1.7, DLL of 2026-11-08
 			["ColonyManagerRedux.Manager:FinalizeInit"] = 0x6E9B8BF106F9034A,                           // Colony Manager Redux 1.7, DLL of 2026-11-02
+			["VFEF.CompScaresAnimals:ScareAnimals"] = 0xA4407F9189E92650,                               // VFE Farming (1.6 DLL), 2026-11-13
 			["Flourish.AnimEventWorkers:HasMuzzle"] = 0x09D80ABDB9276A61,                               // Flourish - Combat Animations 2.1.5
 			["TacticalGroups.ColonistGroup:GetUniqueLoadID"] = 0x5F30AAACFB7C28AE,                      // Colony Groups 1.6 build
 			["SmartDeconstruct.SmartDeconstructMod:getDesignation"] = 0x53C1CCCAD3316AC2,               // Smart Deconstruct 1.7
@@ -3021,7 +3070,7 @@ namespace Harmony3StrictCompat
 		}
 	}
 
-	// Reflection for Harmony3StrictCompatMod.PipeTapDrainNoHaulIn (VE PipeSystem taps and drains).
+	// Reflection for Harmony3StrictCompatMod.PipeTapDrainCell / PipeTapOverMaxUnstored (VE PipeSystem taps and drains).
 	static class PipeTapsAndDrains
 	{
 		static Type tapComp, drainComp;
@@ -3073,10 +3122,10 @@ namespace Harmony3StrictCompat
 		internal static int TapMax(Building_Storage tap, int stackLimit) =>
 			Comp(tap, tapComp) is { } c ? Math.Min(tapMax(c), stackLimit) : stackLimit;
 
-		internal static bool DrainHasRoom(Building_Storage drain)
+		internal static bool DrainHasRoom(Building_Storage drain, int needed)
 		{
 			var net = Comp(drain, drainComp) is { } c ? netOf.GetValue(c) : null;
-			return net != null && netStorages.GetValue(net) is ICollection { Count: > 0 } && (float)netFree.GetValue(net) >= 1f;
+			return net != null && netStorages.GetValue(net) is ICollection { Count: > 0 } && (float)netFree.GetValue(net) >= Math.Max(needed, 1);
 		}
 	}
 
@@ -3401,21 +3450,35 @@ namespace Harmony3StrictCompat
 			harmony.Patch(find, postfix: new HarmonyMethod(typeof(HdKanbanStackCap), nameof(WrapFindToil)));
 		}
 
-		// Same sum as vanilla (room in same-def stacks + free slots), with mss in place of stackLimit. New stacks per
-		// cell are also capped at the similar stack limit; Kanban's own cell check enforces it group-wide.
+		// Same sum as vanilla (room in same-def stacks + free slots), counted the way Kanban's cell check
+		// (NoStorageBlockersIn) decides: a stack takes more only below the refill threshold (count*100 <= size*srt),
+		// and new stacks only while the storage's similar stacks (each ceil(count/mss), over the building's slot group)
+		// stay under the similar stack limit. Counting the limit per cell made HD see room in two linked animal feeders
+		// that already held their one hay stack each: it picked cellar hay up, Kanban refused every feeder cell, and the
+		// hay went straight back (6x net-zero, HD backoff, "yielded no actual job").
 		static void CapSpace(IntVec3 c, Map map, ThingDef itemDef, ref int __result)
 		{
 			if (__result <= 0 || !hdInsideSpaceScan() || map.haulDestinationManager.SlotGroupAt(c) is not { } group
-				|| !kanbanGet(group.Settings.owner, out _, out int ssl, out int mss) || mss <= 0 || mss >= itemDef.stackLimit) return;
+				|| !kanbanGet(group.Settings.owner, out int srt, out int ssl, out int mss)
+				|| (mss <= 0 || mss >= itemDef.stackLimit) && ssl <= 0 && srt >= 100) return;
+			int size = mss > 0 ? Math.Min(mss, itemDef.stackLimit) : itemDef.stackLimit;
 			int room = 0, items = 0;
 			foreach (var t in map.thingGrid.ThingsListAt(c))
 			{
 				if (t.def.category == ThingCategory.Item) items++;
-				if (t.def == itemDef) room += Math.Max(mss - t.stackCount, 0);
+				if (t.def == itemDef && t.stackCount * 100L <= (long)size * srt) room += Math.Max(size - t.stackCount, 0);
 			}
 			int newStacks = Math.Max(c.GetMaxItemsAllowedInCell(map) - items, 0);
-			if (ssl > 0) newStacks = Math.Min(newStacks, ssl);
-			__result = Math.Min(__result, room + newStacks * mss);
+			if (ssl > 0 && newStacks > 0)
+			{
+				int similar = 0;
+				foreach (var cell in group.CellsList)
+					foreach (var t in map.thingGrid.ThingsListAt(cell))
+						if (t.def == itemDef)
+							similar += mss > 0 ? (t.stackCount + mss - 1) / mss : 1;
+				newStacks = Math.Min(newStacks, Math.Max(ssl - similar, 0));
+			}
+			__result = Math.Min(__result, room + newStacks * size);
 		}
 
 		static void WrapFindToil(JobDriver __instance, Toil __result)

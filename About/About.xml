@@ -32,7 +32,7 @@
 - Sensible Bed Ownership: OwnedBed answers cached per pawn until bed ownership changes (was rescanning every bed hundreds of thousands of times a minute); spot-checked against SBO; also used by the parallel render threads, and SBO's bed list scan is locked (sleeping animals in animal beds halved FPS, render jobs threw "Collection was modified").
 - Hauler's Dream + Compositable Loadouts: loadout items are kept during surplus unload again (CL's items now list several defs; HD only knew Item.Def).
 - Hauler's Dream + Smart Medicine - Continued: Stock Up amounts count as kept even on stacks Hauler's Dream tagged as its own haul (no more unload / re-fetch loop and "Cannot unload inventory" alert).
-- Hauler's Dream + Kanban Stockpile Continue: HD respects Kanban's max stack size when it plans pick-ups and unloads into capped storage (no more overfill / remove-excess churn).
+- Hauler's Dream + Kanban Stockpile Continue: HD respects Kanban's max stack size, refill threshold and similar stack limit when it plans pick-ups and unloads into capped storage (no more overfill / remove-excess churn).
 - AdaptiveMealBill + Hauler's Dream: batch-cooked adaptive meals come out veg-only, meat-only or mixed by their ingredients, no "Could not recover the meal recipe" error.
 - Kanban Stockpile Continue: the similar stack limit counts every stack of the same def when accepting, like its remove-excess job does (no more pawns shuttling unmergeable meals between a capped fridge and the next storage).
 - Useful Marks: selected items and buildings show one info card button, not two.
@@ -59,7 +59,8 @@
 - Colony Manager Redux + MSS Tweaks and Fun: loading a save no longer counts as researching a tech, so it stops granting a free reformation point.
 - Flourish + Muzzle Flash: no double flash; guns with Muzzle Flash art use it, every other gun uses Flourish's flash.
 - Leo - Events + Biomes! Caverns: the mineral seams cave gets a random Caverns biome.
-- Vanilla Expanded pipe networks: nothing is hauled onto taps (they hold only their own output, up to their max), and drains stop taking items while their tanks are full.
+- Vanilla Expanded pipe networks: nothing is hauled onto taps (they hold only their own output, up to their max), and a drain whose tanks are full hands its items to ordinary storage.
+- VFE Farming: scarecrows no longer error on animals held inside buildings or containers.
 - Colony Groups and rituals: no more duplicate load ID errors when loading a save.
 - UI Rethemed - Notifications (visual tweak): the top-left messages are drawn as rows in its bottom-right, middle-right or top-right notification stack, live 30 s, a hovered one stays and shows UI Rethemed's hover card, under a folding "Messages" heading.
 - UI Rethemed - Notifications + Satellite Minimap (personal tweak): the top-right notification column starts below the minimap instead of under it.

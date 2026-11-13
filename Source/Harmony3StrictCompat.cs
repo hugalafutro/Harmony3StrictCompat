@@ -422,8 +422,6 @@ namespace Harmony3StrictCompat
 			mfProps = AccessTools.TypeByName("MuzzleFlash.MuzzleFlashProps");
 			if (mfProps != null && Target("Flourish.AnimEventWorkers:HasMuzzle") is { } flHasMuzzle)
 				harmony.Patch(flHasMuzzle, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FlSkipMuzzleFlashGuns)));
-			harmony.Patch(AccessTools.Method(typeof(CompAssignableToPawn), nameof(CompAssignableToPawn.ForceRemovePawn)),
-				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AwayBedLossProbe)));
 			if (AccessTools.TypeByName("Leo.Events.MineEntrance") != null && AccessTools.TypeByName("BiomesCore.DefModExtensions.BiomesMap") != null)
 				harmony.Patch(AccessTools.Method(typeof(PocketMapUtility), nameof(PocketMapUtility.GeneratePocketMap)),
 					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LeoSeamsRandomCavern)),
@@ -875,18 +873,6 @@ namespace Harmony3StrictCompat
 		{
 			if (__result && pawn?.equipment?.Primary?.def.modExtensions is { } extensions && extensions.Any(e => mfProps.IsInstanceOfType(e)))
 				__result = false;
-		}
-
-		// Diagnostic (log only): Shamble lost her home bed and deathrest casket at a quest site on 2026-11-12. Under SBO a
-		// pawn with no bed on the map she is on reports her home bed as OwnedBed (and SBO counts the casket as a bed), so
-		// any vanilla "unclaim bed" run while she is away unassigns home beds. The save cannot show which call did it:
-		// warn (with stack) whenever a colonist is removed from a spawned bed or casket on a map she is not on.
-		static void AwayBedLossProbe(CompAssignableToPawn __instance, Pawn pawn)
-		{
-			if (__instance.parent is Building_Bed bed && bed.Spawned && pawn is { Dead: false, Destroyed: false, IsColonist: true }
-				&& pawn.MapHeld != bed.Map && __instance.AssignedPawnsForReading.Contains(pawn))
-				Log.Warning($"[Harmony3StrictCompat] Away bed loss: {pawn.LabelShort} unassigned from {bed.LabelShort} ({bed.ThingID}, {bed.Map}) " +
-					$"while on {pawn.MapHeld?.ToString() ?? "the world map"}. Stack shows who did it.\n{new System.Diagnostics.StackTrace(1)}");
 		}
 
 		// Leo - Events + Biomes! Caverns (personal tweak): the "unexpected mineral seams" cave is a pocket map whose

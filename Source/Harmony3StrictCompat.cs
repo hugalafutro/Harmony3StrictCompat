@@ -434,8 +434,6 @@ namespace Harmony3StrictCompat
 				harmony.Patch(sdGetDesignation, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SdVeinDesignation)));
 			harmony.Patch(AccessTools.Method(typeof(WildAnimalSpawner), "CommonalityOfAnimalNow"),
 				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PocketMapAnimalCommonality)));
-			if (Target("QuietWonders.QWEffects:Frame") is { } qwFrame)
-				harmony.Patch(qwFrame, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(QwSkipPocketMaps)));
 			tgTaskForce = AccessTools.Field("TacticalGroups.ColonistGroup:isTaskForce");
 			if (tgTaskForce != null && Target("TacticalGroups.ColonistGroup:GetUniqueLoadID") is { } tgLoadId)
 				harmony.Patch(tgLoadId, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(TgTaskForceLoadId)));
@@ -949,12 +947,6 @@ namespace Harmony3StrictCompat
 			if (__result == null && def == DesignationDefOf.Mine && DesignationDefOf.MineVein != null && b != null && map != null)
 				__result = map.designationManager.DesignationAt(b.Position, DesignationDefOf.MineVein);
 		}
-
-		// Quiet Wonders reads the map's world tile for its season calendar; a pocket map (cave, undercave) has none,
-		// so pollen, leaves and shedding threw "Index was out of range" when the camera was on one. Its outdoor
-		// effects have no place underground: skip them on pocket maps. Its 2026-11-13 build added an "Also in pocket maps"
-		// option, but its season calendar (cals: LongLatOf(map.Tile)) still reads the tile unchecked, so this stays.
-		static bool QwSkipPocketMaps(Map map) => map == null || !map.IsPocketMap;
 
 		// Colony Groups: the load ID is type name + groupID, but colony groups and task forces number separately (a
 		// task force for a second map, e.g. Leo's cave, is "1" next to "Colony 1"), so loading logged "An item with the
@@ -2441,7 +2433,6 @@ namespace Harmony3StrictCompat
 			["AutoExtractGenes.Utils:GetAutoExtractGenesComponent"] = 0x41DC32D5B21682AC,                // AutoExtractGenes 1.7, DLL of 2026-11-08
 			["ColonyManagerRedux.Manager:FinalizeInit"] = 0x6E9B8BF106F9034A,                           // Colony Manager Redux 1.7, DLL of 2026-11-02
 			["Flourish.AnimEventWorkers:HasMuzzle"] = 0x09D80ABDB9276A61,                               // Flourish - Combat Animations 2.1.5
-			["QuietWonders.QWEffects:Frame"] = 0x2526635D69FEE95C,                                       // Quiet Wonders, DLL as of 2026-11-13
 			["TacticalGroups.ColonistGroup:GetUniqueLoadID"] = 0x5F30AAACFB7C28AE,                      // Colony Groups 1.6 build
 			["SmartDeconstruct.SmartDeconstructMod:getDesignation"] = 0x53C1CCCAD3316AC2,               // Smart Deconstruct 1.7
 			["UIRethemed.Notifications.StatusRow:Draw"] = 0xD114A40AEA1C6E25,                               // UI Rethemed - Notifications 1.7, 2026-11-13 02:27

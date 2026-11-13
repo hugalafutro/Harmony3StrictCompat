@@ -59,6 +59,7 @@
 - Colony Manager Redux + MSS Tweaks and Fun: loading a save no longer counts as researching a tech, so it stops granting a free reformation point.
 - Flourish + Muzzle Flash: no double flash; guns with Muzzle Flash art use it, every other gun uses Flourish's flash.
 - Leo - Events + Biomes! Caverns: the mineral seams cave gets a random Caverns biome.
+- Vanilla Expanded pipe networks: nothing is hauled onto taps (they hold only their own output, up to their max), and drains stop taking items while their tanks are full.
 - Colony Groups and rituals: no more duplicate load ID errors when loading a save.
 - UI Rethemed - Notifications (visual tweak): the top-left messages are drawn as rows in its bottom-right, middle-right or top-right notification stack, live 30 s, a hovered one stays and shows UI Rethemed's hover card, under a folding "Messages" heading.
 - UI Rethemed - Notifications + Satellite Minimap (personal tweak): the top-right notification column starts below the minimap instead of under it.

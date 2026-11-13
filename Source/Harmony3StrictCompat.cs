@@ -426,6 +426,9 @@ namespace Harmony3StrictCompat
 				harmony.Patch(AccessTools.Method(typeof(PocketMapUtility), nameof(PocketMapUtility.GeneratePocketMap)),
 					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LeoSeamsRandomCavern)),
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LeoSeamsRoofLava)));
+			if (PipeTapsAndDrains.Init())
+				harmony.Patch(AccessTools.Method(typeof(StorageSettings), nameof(StorageSettings.AllowedToAccept), [typeof(Thing)]),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PipeTapDrainNoHaulIn)));
 			foreach (var alert in new[] { typeof(Alert_NeedResearchProject), typeof(Alert_NeedAnomalyProject) })
 				harmony.Patch(AccessTools.Method(alert, "OnClick"), prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ResearchAlertOpenTab)));
 			if (Target("SmartDeconstruct.SmartDeconstructMod:getDesignation") is { } sdGetDesignation)
@@ -873,6 +876,26 @@ namespace Harmony3StrictCompat
 		{
 			if (__result && pawn?.equipment?.Primary?.def.modExtensions is { } extensions && extensions.Any(e => mfProps.IsInstanceOfType(e)))
 				__result = false;
+		}
+
+		// VE pipe networks (PipeSystem): taps and drains are plain one-cell Building_Storage. A tap's "max" only caps what
+		// it makes from the network, so haulers filled taps to the item's stack limit; Hauler's Dream "haul to stack" even
+		// prefers the tap (always a partial stack) over the drain next to it. A drain only feeds the network while its
+		// tanks have room, so with full tanks it became a pile. Now a tap accepts only its own output already on its cell,
+		// up to the set max (a bigger stack gets hauled off, to the drain). A drain refuses hauled-in items while its
+		// network has no free storage; what already sits on it stays and is fed in once room frees up.
+		// Patched on StorageSettings.AllowedToAccept, not Building_Storage.Accepts: vanilla's destination search
+		// (TryFindBestBetterStoreCellFor) only asks the settings, so an Accepts-only check made the over-max stack
+		// "unstored" while the search still picked the tap cell for it, and pawns lifted and re-dropped it in a loop.
+		static void PipeTapDrainNoHaulIn(StorageSettings __instance, Thing t, ref bool __result)
+		{
+			if (!__result || t == null || __instance.owner is not Building_Storage b || !PipeTapsAndDrains.Watched(b.def, out bool tap))
+				return;
+			bool onCell = t.Spawned && t.Position == b.Position;
+			if (tap)
+				__result = onCell && t.stackCount <= PipeTapsAndDrains.TapMax(b, t.def.stackLimit);
+			else if (!onCell)
+				__result = PipeTapsAndDrains.DrainHasRoom(b);
 		}
 
 		// Leo - Events + Biomes! Caverns (personal tweak): the "unexpected mineral seams" cave is a pocket map whose
@@ -2995,6 +3018,65 @@ namespace Harmony3StrictCompat
 			}
 			if (fixedDefs.Count > 0)
 				Log.Message($"[Harmony3StrictCompat] dropped duplicate plain CompEquippable from {fixedDefs.Count} weapon(s): {string.Join(", ", fixedDefs)}");
+		}
+	}
+
+	// Reflection for Harmony3StrictCompatMod.PipeTapDrainNoHaulIn (VE PipeSystem taps and drains).
+	static class PipeTapsAndDrains
+	{
+		static Type tapComp, drainComp;
+		static AccessTools.FieldRef<object, int> tapMax;     // CompConvertToThing.maxHeldThingStackSize (the tap's +/- setting)
+		static PropertyInfo netOf, netFree;                  // CompResource.PipeNet, PipeNet.AvailableCapacity
+		static FieldInfo netStorages;                        // PipeNet.storages
+		static HashSet<ThingDef> taps, drains;               // filled once defs are loaded
+
+		internal static bool Init()
+		{
+			tapComp = AccessTools.TypeByName("PipeSystem.CompConvertToThing");
+			drainComp = AccessTools.TypeByName("PipeSystem.CompConvertToResource");
+			var net = AccessTools.TypeByName("PipeSystem.PipeNet");
+			if (tapComp == null || drainComp == null || net == null)
+				return false;
+			netOf = AccessTools.Property(AccessTools.TypeByName("PipeSystem.CompResource"), "PipeNet");
+			netFree = AccessTools.Property(net, "AvailableCapacity");
+			netStorages = AccessTools.Field(net, "storages");
+			if (AccessTools.Field(tapComp, "maxHeldThingStackSize") == null || netOf == null || netFree == null || netStorages == null)
+			{
+				Log.Error("[Harmony3StrictCompat] PipeSystem changed (tap max or PipeNet members missing); tap and drain hauling fix not applied.");
+				return false;
+			}
+			tapMax = AccessTools.FieldRefAccess<int>(tapComp, "maxHeldThingStackSize");
+			LongEventHandler.ExecuteWhenFinished(() =>
+			{
+				bool Has(ThingDef d, Type comp) => d.comps?.Any(c => comp.IsAssignableFrom(c.compClass)) == true;
+				var storage = DefDatabase<ThingDef>.AllDefs.Where(d => typeof(Building_Storage).IsAssignableFrom(d.thingClass)).ToList();
+				drains = [.. storage.Where(d => Has(d, drainComp))];
+				taps = [.. storage.Where(d => Has(d, tapComp))];
+			});
+			return true;
+		}
+
+		internal static bool Watched(ThingDef def, out bool tap)
+		{
+			tap = taps?.Contains(def) == true;
+			return tap || drains?.Contains(def) == true;
+		}
+
+		static ThingComp Comp(Building_Storage b, Type type)
+		{
+			foreach (var c in b.AllComps)
+				if (type.IsInstanceOfType(c))
+					return c;
+			return null;
+		}
+
+		internal static int TapMax(Building_Storage tap, int stackLimit) =>
+			Comp(tap, tapComp) is { } c ? Math.Min(tapMax(c), stackLimit) : stackLimit;
+
+		internal static bool DrainHasRoom(Building_Storage drain)
+		{
+			var net = Comp(drain, drainComp) is { } c ? netOf.GetValue(c) : null;
+			return net != null && netStorages.GetValue(net) is ICollection { Count: > 0 } && (float)netFree.GetValue(net) >= 1f;
 		}
 	}
 

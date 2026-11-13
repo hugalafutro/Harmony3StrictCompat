@@ -434,6 +434,8 @@ namespace Harmony3StrictCompat
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PipeTapDrainCell)));
 				harmony.Patch(AccessTools.Method(typeof(StoreUtility), nameof(StoreUtility.IsValidStorageFor), [typeof(IntVec3), typeof(Map), typeof(Thing)]),
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PipeTapDrainValidCell)));
+				harmony.Patch(AccessTools.Method(typeof(GridsUtility), nameof(GridsUtility.GetItemStackSpaceLeftFor)),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PipeDrainSpaceLeft)));
 				harmony.Patch(AccessTools.Method(typeof(StorageSettings), nameof(StorageSettings.AllowedToAccept), [typeof(Thing)]),
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PipeTapOverMaxUnstored)));
 			}
@@ -918,9 +920,9 @@ namespace Harmony3StrictCompat
 		// Two checks, both per cell, so linked taps ("Link storage", where the settings belong to the StorageGroup and
 		// not to a building) work too; a linked group otherwise shuttled one tap's output onto the other tap:
 		//  - destination: StoreUtility.IsGoodStoreCell, which vanilla's search and Hauler's Dream ask for every
-		//    candidate cell. A tap cell takes only the stack already on it, up to the max; a drain cell takes a stack
-		//    only when all of it fits in the network's free storage (a part left on the drain would be hauled back
-		//    off once the tanks fill: churn).
+		//    candidate cell. A tap cell takes only the stack already on it, up to the max; a drain cell takes items once
+		//    its network has room for the stack or at least DrainMinTrip items (no trickle of tiny hauls), and the haul
+		//    is sized to that room (PipeDrainSpaceLeft below), so nothing is left on the drain to be hauled back off.
 		//  - stored or not: StorageSettings.AllowedToAccept (behind IsInValidStorage). A stack on a tap above its max,
 		//    or on a drain whose network is full, counts as unstored, so it gets hauled off; the search above then
 		//    cannot pick the same cell again.
@@ -930,13 +932,24 @@ namespace Harmony3StrictCompat
 		static void PipeTapDrainCell(IntVec3 c, Map map, Thing t, ref bool __result) => __result = PipeCellTakes(c, map, t, __result);
 		static void PipeTapDrainValidCell(IntVec3 c, Map map, Thing storable, ref bool __result) => __result = PipeCellTakes(c, map, storable, __result);
 
+		// ponytail: fixed minimum trip; half a stack limit was too big under Ogre Stack (a 663 chemfuel stack never fit 514 free).
+		const int DrainMinTrip = 50;
+
 		static bool PipeCellTakes(IntVec3 c, Map map, Thing t, bool vanilla)
 		{
 			if (!vanilla || t == null || c.GetEdifice(map) is not Building_Storage b || !PipeTapsAndDrains.Watched(b.def, out bool tap))
 				return vanilla;
 			bool onCell = t.Spawned && t.Position == c;
 			return tap ? onCell && t.stackCount <= PipeTapsAndDrains.TapMax(b, t.def.stackLimit)
-				: PipeTapsAndDrains.DrainHasRoom(b, onCell ? 1 : t.stackCount);
+				: PipeTapsAndDrains.DrainHasRoom(b, onCell ? 1 : Math.Min(t.stackCount, DrainMinTrip));
+		}
+
+		// A drain cell offers only what its network can still absorb, so vanilla's haul count (HaulToCellStorageJob sums
+		// GetItemStackSpaceLeftFor over the target cells) and Hauler's Dream's space count carry no more than that.
+		static void PipeDrainSpaceLeft(IntVec3 c, Map map, ref int __result)
+		{
+			if (__result > 0 && c.GetEdifice(map) is Building_Storage b && PipeTapsAndDrains.Watched(b.def, out bool tap) && !tap)
+				__result = Math.Min(__result, PipeTapsAndDrains.DrainFreeItems(b));
 		}
 
 		static void PipeTapOverMaxUnstored(StorageSettings __instance, Thing t, ref bool __result)
@@ -3077,6 +3090,7 @@ namespace Harmony3StrictCompat
 		static AccessTools.FieldRef<object, int> tapMax;     // CompConvertToThing.maxHeldThingStackSize (the tap's +/- setting)
 		static PropertyInfo netOf, netFree;                  // CompResource.PipeNet, PipeNet.AvailableCapacity
 		static FieldInfo netStorages;                        // PipeNet.storages
+		static FieldInfo drainRatio;                         // CompProperties_ConvertThingToResource.ratio (resource per item)
 		static HashSet<ThingDef> taps, drains;               // filled once defs are loaded
 
 		internal static bool Init()
@@ -3089,6 +3103,7 @@ namespace Harmony3StrictCompat
 			netOf = AccessTools.Property(AccessTools.TypeByName("PipeSystem.CompResource"), "PipeNet");
 			netFree = AccessTools.Property(net, "AvailableCapacity");
 			netStorages = AccessTools.Field(net, "storages");
+			drainRatio = AccessTools.Field(AccessTools.TypeByName("PipeSystem.CompProperties_ConvertThingToResource"), "ratio");
 			if (AccessTools.Field(tapComp, "maxHeldThingStackSize") == null || netOf == null || netFree == null || netStorages == null)
 			{
 				Log.Error("[Harmony3StrictCompat] PipeSystem changed (tap max or PipeNet members missing); tap and drain hauling fix not applied.");
@@ -3122,10 +3137,15 @@ namespace Harmony3StrictCompat
 		internal static int TapMax(Building_Storage tap, int stackLimit) =>
 			Comp(tap, tapComp) is { } c ? Math.Min(tapMax(c), stackLimit) : stackLimit;
 
-		internal static bool DrainHasRoom(Building_Storage drain, int needed)
+		internal static bool DrainHasRoom(Building_Storage drain, int needed) => DrainFreeItems(drain) >= Math.Max(needed, 1);
+
+		// How many items the drain's network can still absorb (free tank space / the drain's item ratio); 0 without tanks.
+		internal static int DrainFreeItems(Building_Storage drain)
 		{
-			var net = Comp(drain, drainComp) is { } c ? netOf.GetValue(c) : null;
-			return net != null && netStorages.GetValue(net) is ICollection { Count: > 0 } && (float)netFree.GetValue(net) >= Math.Max(needed, 1);
+			if (Comp(drain, drainComp) is not { } c || netOf.GetValue(c) is not { } net || netStorages.GetValue(net) is not ICollection { Count: > 0 })
+				return 0;
+			int ratio = drainRatio != null && c.props != null && drainRatio.DeclaringType.IsInstanceOfType(c.props) ? Math.Max((int)drainRatio.GetValue(c.props), 1) : 1;
+			return (int)((float)netFree.GetValue(net) / ratio);
 		}
 	}
 

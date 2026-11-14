@@ -8,3 +8,11 @@ $refs = @('System.Private.CoreLib','System.Runtime','System.Collections','System
 $refs += "-r:M:\Steam\steamapps\workshop\content\294100\2009463077\1.7\Assemblies\0Harmony.dll"
 & dotnet $csc -nologo -nostdlib -noconfig -target:library -optimize+ -langversion:latest -nowarn:CS1701,CS1702 `
     -out:"$mod\1.7\Assemblies\Harmony3StrictCompat.dll" @refs (Get-ChildItem "$mod\Source\*.cs").FullName
+
+# Useful Marks add-on: derives from its types, so it is its own DLL, outside Assemblies; the main DLL loads it at startup.
+$um = 'M:\Steam\steamapps\workshop\content\294100\3506573327\1.7\Assemblies\UsefulColonistBar.dll'
+if (Test-Path $um) {
+    New-Item -ItemType Directory -Force "$mod\Compat" | Out-Null
+    & dotnet $csc -nologo -nostdlib -noconfig -target:library -optimize+ -langversion:latest -nowarn:CS1701,CS1702 `
+        -out:"$mod\Compat\Harmony3StrictCompat.UsefulMarks.dll" @refs "-r:$um" (Get-ChildItem "$mod\Source\UsefulMarks\*.cs").FullName
+}

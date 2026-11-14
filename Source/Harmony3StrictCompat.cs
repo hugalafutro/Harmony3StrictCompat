@@ -3164,6 +3164,31 @@ namespace Harmony3StrictCompat
 	// verbTracker with the same CompEquippable_<id>_N load IDs, so every such weapon in a save logs "Exception registering
 	// ... in loaded object directory" on load, and GetComp<CompEquippable> returns the plain one. Seen: Pulse Weaponry
 	// DV_PulseRifle (1.6 build). Drop the plain comp when a subclass is present; the extra saved verbTracker is ignored.
+	// ---- Useful Marks: "Considered guilty" mark condition (Source/UsefulMarks) ----
+	// That class derives from a Useful Marks type, so it sits in a DLL of its own that RimWorld does not load itself.
+	// Load it once every mod is in, and list it with this mod's assemblies so a saved mark finds the class by name.
+	[StaticConstructorOnStartup]
+	static class LoadUsefulMarksAddon
+	{
+		static LoadUsefulMarksAddon()
+		{
+			if (!ModsConfig.IsActive("Andromeda.UsefulMarks")) return;
+			try
+			{
+				var pack = LoadedModManager.GetMod<Harmony3StrictCompatMod>().Content;
+				var path = Path.Combine(pack.RootDir, "Compat", "Harmony3StrictCompat.UsefulMarks.dll");
+				if (!File.Exists(path)) return;
+				var addon = Assembly.Load(File.ReadAllBytes(path));
+				pack.assemblies.loadedAssemblies.Add(addon);
+				addon.GetType("Harmony3StrictCompat.UsefulMarksCompat.RegisterGuilty").GetMethod("Run").Invoke(null, null);
+			}
+			catch (Exception e)
+			{
+				Log.Warning("[Harmony3StrictCompat] Useful Marks 'Considered guilty' condition not loaded: " + e);
+			}
+		}
+	}
+
 	[StaticConstructorOnStartup]
 	static class DedupeEquippableComps
 	{

@@ -79,6 +79,13 @@ namespace Harmony3StrictCompat
 			var rpDismiss = Target("RimPacts.WorldComponent_RimPacts:DismissExilePawn");
 			if (rpDismiss != null)
 				harmony.Patch(rpDismiss, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpReplaceDismissedLeader)));
+			// Too Many Mods' Merchant Guild x Vehicle Framework patches fail on VF 1.7; Source/Vehicles replaces them.
+			if (AccessTools.TypeByName("TooManyMods.Compat_MerchantGuild_TradeArrivalOption")?.TypeInitializer is { } tmmGuild)
+			{
+				Fingerprint("TooManyMods.Compat_MerchantGuild_TradeArrivalOption:.cctor", tmmGuild);
+				harmony.Patch(tmmGuild, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SkipOriginal)));
+				tmmGuildSkipped = true;
+			}
 			var btApply = Target("TraitTracker.TraitHediffApplier:ApplyHediffsToPawnsWithTraits");
 			if (btApply != null)
 				harmony.Patch(btApply, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DropLogMessages)));
@@ -2551,13 +2558,19 @@ namespace Harmony3StrictCompat
 			["KanbanStockpileContinue.KSUtil:CountStoredSimilarStacks"] = 0x0D6509A3EE0A8A5F,
 			["KanbanStockpileContinue.KSUtil:IsSimilarStack"] = 0xA9EA56B4765CDEAF,
 			["KanbanStockpileContinue.KSUtil:BuildSslExcessSet"] = 0x3D125057D3A69CBC,
-			["RimPacts.WorldComponent_RimPacts:ForceExpoParty"] = 0x10CC2F2A440997B2,                          // RimPacts 1.7, 2026-11-13 23:42
+			["UIRethemed.Ideology.StyleTip+Content:get_Width"] = 0x5F8988FF18236D28,                          // UI Rethemed - Ideology 1.7, 2026-11-11 11:53
+			["UIRethemed.Ideology.StyleTip+Content:Height"] = 0x462CB1102C73464A,
+			["UIRethemed.Ideology.StyleTip+Content:CellWidth"] = 0x1BA8AD0685968F98,
+			["UIRethemed.Ideology.StyleTip+Content:SectionHeight"] = 0x5D3E075BAF5A7BCC,
+			["UIRethemed.Ideology.StyleTip+Content:Draw"] = 0xA3596C43EB640C82,
+			["TooManyMods.Compat_MerchantGuild_TradeArrivalOption:.cctor"] = 0x8DD5B3B38F9ACDDF,              // TMM VFEM2_VF.dll, 2026-01-24 (built for Vehicle Framework 1.6)
+			["RimPacts.WorldComponent_RimPacts:ForceExpoParty"] = 0xA202A793E018C333,                          // RimPacts 1.7, 2026-11-14 21:35
 			["SensibleBedOwnership.Patch_Pawn_Ownership_get_OwnedBed:Prefix"] = 0x696E7432D36527D8,       // SBO 1.6 build, 2026-11-05
 			["SensibleBedOwnership.Utility:GetMainBed"] = 0xAE5863A6DF81EAD6,                                // (Pawn) overload
 			["SensibleBedOwnership.Utility:AllAssignedBedsAndDeathrestCaskets"] = 0x8560CE17C9797D18,
 			["VEF.Buildings.CompRandomBuildingGraphic:ChangeGraphic"] = 0xC22ADB911FDB5E90,                  // VEF 1.7, 2026-11-04
 			["AdaptiveStorage.StorageGraphicWorker:GetGraphicFor"] = 0x2899906440FC5118,                     // ASF 1.6 build, 2025-11-12
-			["RimPacts.WorldComponent_RimPacts:DismissExilePawn"] = 0xEC6A3550EE96042E,                        // RimPacts 1.7, 2026-11-13 23:42 (ForcefullyKept/Spawned guards; still no successor)
+			["RimPacts.WorldComponent_RimPacts:DismissExilePawn"] = 0x92E96B06B699D9E2,                        // RimPacts 1.7, 2026-11-14 21:35 (ForcefullyKept/Spawned guards; still no successor)
 			["PrisonerRealism.JobGiver_CleanCell:ShouldClean"] = 0x7B21CD085E9E96A1,                          // Prisoner Realism 1.7, 2026-11-12 23:37
 			["CleaningAreaRelaunched.CleaningAreaRelaunched_Util:GetCleanArea"] = 0xD9B02D52DE61B82C,          // CAR 1.6 build, 2025-11-12
 			["aRandomKiwi.HFM.JobGiver_AnimalHunt:TryGiveJob"] = 0x865CBA567579063A,                            // Hunt For Me 1.6 build, 2025-12-25
@@ -2658,6 +2671,9 @@ namespace Harmony3StrictCompat
 			Fingerprint(name, method);
 			return method;
 		}
+
+		internal static bool tmmGuildSkipped;
+		static bool SkipOriginal() => false;
 
 		static void Fingerprint(string name, MethodBase method)
 		{
@@ -3185,6 +3201,120 @@ namespace Harmony3StrictCompat
 			catch (Exception e)
 			{
 				Log.Warning("[Harmony3StrictCompat] Useful Marks 'Considered guilty' condition not loaded: " + e);
+			}
+		}
+	}
+
+	// ---- UI Rethemed - Ideology: style hover card taller than the screen ----
+	// Its style card (StyleTip.Content) is always 340 wide with 5 icon columns (8 for the faded "overridden by"
+	// sections). A style that restyles ~95 things (e.g. a full Mesoamerican-type pack) makes a card about 1600 high,
+	// so most of it runs off the screen. Widen the card in whole multiples of 340 (up to 4x, and never wider than
+	// the screen) until it fits, and scale the column counts with the width so the icons keep their size.
+	[StaticConstructorOnStartup]
+	static class UirStyleCardFits
+	{
+		const float BaseWidth = 340f;
+		static MethodInfo heightOf;
+		static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, float[]> widths = new();
+
+		static UirStyleCardFits()
+		{
+			var width = Harmony3StrictCompatMod.Target("UIRethemed.Ideology.StyleTip+Content:get_Width");
+			if (width == null) return;
+			heightOf = Harmony3StrictCompatMod.Target("UIRethemed.Ideology.StyleTip+Content:Height");
+			var cellWidth = Harmony3StrictCompatMod.Target("UIRethemed.Ideology.StyleTip+Content:CellWidth");
+			var sectionHeight = Harmony3StrictCompatMod.Target("UIRethemed.Ideology.StyleTip+Content:SectionHeight");
+			var draw = Harmony3StrictCompatMod.Target("UIRethemed.Ideology.StyleTip+Content:Draw");
+			if (heightOf == null || cellWidth == null || sectionHeight == null || draw == null) return;
+			foreach (var m in new[] { cellWidth, sectionHeight, draw })
+				if (!HasColumnConstants(m))
+				{
+					Log.Error($"[Harmony3StrictCompat] UI Rethemed - Ideology {m.Name}: column constants not found, style card fix skipped");
+					return;
+				}
+			var harmony = new Harmony("sammael.harmony3strictcompat");
+			harmony.Patch(cellWidth, transpiler: new HarmonyMethod(typeof(UirStyleCardFits), nameof(ColumnsFromWidthArg)));
+			harmony.Patch(sectionHeight, transpiler: new HarmonyMethod(typeof(UirStyleCardFits), nameof(ColumnsFromWidthArg)));
+			harmony.Patch(draw, transpiler: new HarmonyMethod(typeof(UirStyleCardFits), nameof(ColumnsFromRectArg)));
+			harmony.Patch(width, postfix: new HarmonyMethod(typeof(UirStyleCardFits), nameof(WidthThatFits)));
+		}
+
+		// each of the three methods holds exactly one "faded ? 8 : 5"
+		static bool HasColumnConstants(MethodInfo m)
+		{
+			var codes = PatchProcessor.GetOriginalInstructions(m);
+			return codes.Count(c => c.opcode == OpCodes.Ldc_I4_5) == 1 && codes.Count(c => c.opcode == OpCodes.Ldc_I4_8) == 1;
+		}
+
+		static int Scale(float width) => Mathf.Max(1, Mathf.RoundToInt(width / BaseWidth));
+		static int Columns(float width) => 5 * Scale(width);
+		static int SmallColumns(float width) => 8 * Scale(width);
+
+		// CellWidth(Section, float width) and SectionHeight(Section, float width): static, width is argument 1
+		static IEnumerable<CodeInstruction> ColumnsFromWidthArg(IEnumerable<CodeInstruction> instructions)
+		{
+			foreach (var code in instructions)
+			{
+				bool five = code.opcode == OpCodes.Ldc_I4_5, eight = code.opcode == OpCodes.Ldc_I4_8;
+				if (!five && !eight) { yield return code; continue; }
+				yield return new CodeInstruction(OpCodes.Ldarg_1).MoveLabelsFrom(code);
+				yield return new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(UirStyleCardFits), five ? nameof(Columns) : nameof(SmallColumns)));
+			}
+		}
+
+		// Draw(Rect rect, float alpha, float age): instance, rect is argument 1
+		static IEnumerable<CodeInstruction> ColumnsFromRectArg(IEnumerable<CodeInstruction> instructions)
+		{
+			foreach (var code in instructions)
+			{
+				bool five = code.opcode == OpCodes.Ldc_I4_5, eight = code.opcode == OpCodes.Ldc_I4_8;
+				if (!five && !eight) { yield return code; continue; }
+				yield return new CodeInstruction(OpCodes.Ldarga_S, (byte)1).MoveLabelsFrom(code);
+				yield return new CodeInstruction(OpCodes.Call, AccessTools.PropertyGetter(typeof(Rect), nameof(Rect.width)));
+				yield return new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(UirStyleCardFits), five ? nameof(Columns) : nameof(SmallColumns)));
+			}
+		}
+
+		static void WidthThatFits(object __instance, ref float __result)
+		{
+			// the card adds a 30 high title and 16 of padding; keep a small margin to the screen edges
+			float room = UI.screenHeight - 30f - 16f - 24f;
+			int most = Mathf.Clamp(Mathf.FloorToInt((UI.screenWidth - 44f) / BaseWidth), 1, 4);
+			if (!widths.TryGetValue(__instance, out var cached) || cached[0] != room || cached[1] != most)
+			{
+				float best = BaseWidth;
+				for (int k = 1; k <= most; k++)
+				{
+					best = BaseWidth * k;
+					if ((float)heightOf.Invoke(__instance, new object[] { best }) <= room) break;
+				}
+				widths.Remove(__instance);
+				widths.Add(__instance, cached = new[] { room, most, best });
+			}
+			__result = cached[2];
+		}
+	}
+
+	// ---- Vehicle Framework add-on (Source/Vehicles): Too Many Mods' Merchant Guild landing rules ----
+	// Loaded only when TMM's failing patch class was found and skipped, which also means Vehicle Framework and
+	// VFE Medieval 2 are active.
+	[StaticConstructorOnStartup]
+	static class LoadVehiclesAddon
+	{
+		static LoadVehiclesAddon()
+		{
+			if (!Harmony3StrictCompatMod.tmmGuildSkipped) return;
+			try
+			{
+				var pack = LoadedModManager.GetMod<Harmony3StrictCompatMod>().Content;
+				var path = Path.Combine(pack.RootDir, "Compat", "Harmony3StrictCompat.Vehicles.dll");
+				var addon = Assembly.Load(File.ReadAllBytes(path));
+				addon.GetType("Harmony3StrictCompat.VehiclesCompat.TmmMerchantGuild").GetMethod("Run").Invoke(null, null);
+				Log.Message("[Harmony3StrictCompat] Too Many Mods Merchant Guild vehicle patches replaced for Vehicle Framework 1.7");
+			}
+			catch (Exception e)
+			{
+				Log.Error("[Harmony3StrictCompat] Too Many Mods Merchant Guild vehicle patches not replaced: " + e);
 			}
 		}
 	}

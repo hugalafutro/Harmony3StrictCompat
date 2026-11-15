@@ -50,6 +50,8 @@ namespace Harmony3StrictCompat
 			if (tdSkillArrow != null && uirCardSkill != null)
 			{
 				tdLearningArrow = (Action<SkillRecord, Rect, float>)tdSkillArrow.CreateDelegate(typeof(Action<SkillRecord, Rect, float>));
+				uirCardSettings = AccessTools.Field(AccessTools.TypeByName("UIRethemed.ColonistCard.UIRethemedColonistCardMod"), "Settings");
+				uirSkillLevelLeft = AccessTools.Field(AccessTools.TypeByName("UIRethemed.ColonistCard.UIRethemedColonistCardSettings"), "skillLevelLeft");
 				harmony.Patch(uirCardSkill, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCardSkillArrow)));
 			}
 			var vqeaDeliver = Target("VanillaQuestsExpandedAncients.Building_PneumaticTubeLaunchPort:Deliver");
@@ -2088,13 +2090,17 @@ namespace Harmony3StrictCompat
 		// Personal tweak: TD only transpiles the arrow into vanilla SkillUI.DrawSkill, which the card does not use. Its
 		// recording in SkillRecord.Learn runs regardless, so call TD's drawer for each card row. It draws at
 		// x = levelLabelWidth + 70 in the current group: -70 inside a group over the bar's right end puts it at the origin.
+		// UIR's "level number on the left" setting (on by default) runs the bar to the cell's right edge (4 px margin);
+		// with it off, the 20 px level number and its 2 px margin sit at the right end and the arrow goes just before them.
 		static Action<SkillRecord, Rect, float> tdLearningArrow;
+		static FieldInfo uirCardSettings, uirSkillLevelLeft;
 
 		static void UirCardSkillArrow(Rect cell, SkillRecord skill)
 		{
 			const float size = 14f;
-			const float levelLabelWidth = 22f; // UIR's 20 px level number plus its 2 px margin
-			Widgets.BeginGroup(new Rect(cell.xMax - levelLabelWidth - size, Mathf.Round(cell.center.y - size / 2f), size, size));
+			bool levelLeft = uirSkillLevelLeft != null && uirCardSettings?.GetValue(null) is { } settings && (bool)uirSkillLevelLeft.GetValue(settings);
+			float right = levelLeft ? 2f : 22f;
+			Widgets.BeginGroup(new Rect(cell.xMax - right - size, Mathf.Round(cell.center.y - size / 2f), size, size));
 			tdLearningArrow(skill, new Rect(0f, 0f, size, size), -70f);
 			Widgets.EndGroup();
 		}
@@ -2608,7 +2614,7 @@ namespace Harmony3StrictCompat
 			["TD_Enhancement_Pack.Alert_Deterioration:get_DeterioratingThings"] = 0x8774F1B773D667FE,       // TD Enhancement Pack 1.7, 2026-11-12
 			["TD_Enhancement_Pack.Alert_Deterioration+<get_DeterioratingThings>d__1:MoveNext"] = 0x54FBB3FD87CA2948,
 			["TD_Enhancement_Pack.SkillLearningIndicator:LabelLearning"] = 0xA1C6010BAEEDD973,             // TD Enhancement Pack 1.7, DLL of 2026-10-22
-			["UIRethemed.ColonistCard.Glance:DrawSkill"] = 0xB51376B2633BCC8F,                             // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-15 03:21
+			["UIRethemed.ColonistCard.Glance:DrawSkill"] = 0x82923818519A5A1C,                             // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-15 17:43
 			["VanillaQuestsExpandedAncients.Building_PneumaticTubeLaunchPort:Deliver"] = 0x824DD22872D97BE7, // VQE Ancients 1.6 build, DLL of 2026-10-06
 			["SkilledRefueling.HarmonyPatches:GetRefuelDuration"] = 0xFE59863C2B492B65,                    // Skilled Refueling 1.7, DLL of 2026-11-09
 			["SkilledRefueling.RefuelingUtility:RefuelingSpeedForPawn"] = 0x302D7899D7E9DF65,
@@ -2719,7 +2725,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Notifications.FoodReadout:Read"] = 0x3A9FE28F59673276,                          // UIR Notifications 1.7, 2026-11-13
 			["UIRethemed.Notifications.FoodReadout:Draw"] = 0x6D18FED08A1E6587,
 			["UIRethemed.ColonistCard.InfoList:Defer"] = 0x1FEED3057CF9D99E,                            // UIR Colonist Card 1.7, 2026-11-15 03:21
-			["UIRethemed.ColonistCard.InfoList:DrawRow"] = 0xAA8D1075AA7CCE3C,
+			["UIRethemed.ColonistCard.InfoList:DrawRow"] = 0x9A39FDE985280EA8,                          // UIR Colonist Card 1.7, 2026-11-15 17:43
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,
@@ -2731,7 +2737,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0xC489F51FB5DE3A7B,
 			["UIRethemed.Animals.Motion:Key"] = 0xD8B1E64161CEBA55,                                     // UI Rethemed - Animals 1.7, DLL of 2026-11-09
 			["UIRethemed.Animals.Motion:Hover"] = 0xCF658FE8AAEAECFD,
-			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0x51E46164322160E6,                  // UI Rethemed - Architect 1.7, 2026-11-14 18:44
+			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0xB98173E15255C60A,                  // UI Rethemed - Architect 1.7, 2026-11-15 16:11
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an

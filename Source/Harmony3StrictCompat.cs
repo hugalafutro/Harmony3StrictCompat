@@ -60,6 +60,14 @@ namespace Harmony3StrictCompat
 			var turretRadius = Target("RimWorld.PlaceWorker_ShowTurretRadius:AllowsPlacing");
 			if (turretRadius != null)
 				harmony.Patch(turretRadius, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(TurretRadiusAnyVerb)));
+			if (AccessTools.TypeByName("AlphaBooks.StaticCollections") is { } abCollections
+				&& AccessTools.TypeByName("AlphaBooks.AlphaBooks_JobDriver_Reading_ReadBook_Patch") == null
+				&& Target("RimWorld.JobDriver_Reading:ReadBook") is { } readBook)
+			{
+				abRuinedBooks = AccessTools.Field(abCollections, "ruinedBooks");
+				jobFinalizer = AccessTools.FieldRefAccess<JobDriver, Func<JobCondition, Job>>("finalizerJobFactory");
+				harmony.Patch(readBook, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AbRuinedBookCrumbles)));
+			}
 			if (Target("RimWorld.PawnRelationWorker_Sibling:CreateRelation") is { } siblingRelation)
 				harmony.Patch(siblingRelation, finalizer: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SiblingRelationGuard)));
 			var normalCanGenerate = Target("RimWorld.PawnGroupKindWorker_Normal:CanGenerateFrom");
@@ -2171,6 +2179,34 @@ namespace Harmony3StrictCompat
 			return false;
 		}
 
+		// ---- Alpha Books: ruined and burned books crumble after reading ----------------------------------------
+		// Their defs ask for BookReadResult_DestroyBook, but Alpha Books 1.6+ runs read results only inside its own
+		// ABooks_Reading job, which only its Book_NotAutoReadable classes start. Ruined and burned books are plain
+		// Book, so colonists read them with vanilla JobDriver_Reading and drop or store them afterwards (the 1.5 DLL
+		// had a postfix on JobDriver_Reading.ReadBook for this; 1.6 dropped it). A read of a book in Alpha Books'
+		// ruinedBooks set that ends Succeeded (full duration, recreation or learning need full) now destroys it in the
+		// driver's finalizer, before vanilla hands out the haul-to-storage job. Interrupted reads keep the book.
+		// Skipped when Alpha Books ships its own ReadBook patch again.
+		static FieldInfo abRuinedBooks;
+		static AccessTools.FieldRef<JobDriver, Func<JobCondition, Job>> jobFinalizer;
+
+		static void AbRuinedBookCrumbles(JobDriver_Reading __instance)
+		{
+			var book = __instance.Book;
+			if (book == null || !(abRuinedBooks.GetValue(null) is HashSet<ThingDef> ruined) || !ruined.Contains(book.def))
+				return;
+			var vanilla = jobFinalizer(__instance);
+			jobFinalizer(__instance) = condition =>
+			{
+				if (condition == JobCondition.Succeeded && __instance.IsReading && !book.Destroyed)
+				{
+					book.Destroy();
+					return null;
+				}
+				return vanilla?.Invoke(condition);
+			};
+		}
+
 		// Vanilla bug: CanGenerateFrom checks options against the whole point total, but ChoosePawnGenOptionsByPoints
 		// caps each pawn at MaxPawnCost (the faction curve). A group whose every option costs more than that cap
 		// passes the gate and yields no pawns, e.g. VFE Pirates' melee-only Junker Hussar group below ~5800 points:
@@ -2683,6 +2719,7 @@ namespace Harmony3StrictCompat
 			["RimWorld.JobGiver_DropUnusedInventory:Drop"] = 0x80ADDA655AAFAE64,                                  // game 1.7.5000, 2026-11-09
 			["RimWorld.PawnGroupKindWorker_Normal:CanGenerateFrom"] = 0xCE8A5138AE0DBBC4,                       // game 1.7.5000, 2026-11-09
 			["RimWorld.PlaceWorker_ShowTurretRadius:AllowsPlacing"] = 0xA27D64AC3CB5B9DB,                       // game 1.7.5000, 2026-11-10
+			["RimWorld.JobDriver_Reading:ReadBook"] = 0x355454FCC6AB19F9,                                         // game 1.7.5005, 2026-11-15
 			["SmartMedicine.FindBestMedicine:Find"] = 0x5C207A8C7B0E5F6A,                                        // Smart Medicine - Continued 1.7, 2026-11-12
 			["SmartMedicine.StockUpUtility:StockingUpOn"] = 0xE47440ED851F08C2,                                   // (Pawn, Thing) overload, Smart Medicine 1.7, 2026-11-09
 			["Unburned.Pretty_Patch:Prefix"] = 0xE153E3D01BE0AC50,                                                // Unburned 1.7, 2026-11-09

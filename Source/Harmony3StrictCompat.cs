@@ -145,6 +145,9 @@ namespace Harmony3StrictCompat
 				else
 					Log.Error("[Harmony3StrictCompat] VSIE teaching topic members no longer exist: its mod updated, remove or redo this fix");
 			}
+			var denDoors = Target("PositiveConnectionsNmSpc.RoomRoleWorker_Den:CountDoors");
+			if (denDoors != null)
+				harmony.Patch(denDoors, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DenCountDoorsNullSafe)));
 			var gojiParrot = Target("GojisMiscGenes.InteractionWorker_Interacted_Patch:Postfix");
 			if (gojiParrot != null)
 				harmony.Patch(gojiParrot, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GojiParrotNeedsTracker)));
@@ -2579,6 +2582,30 @@ namespace Harmony3StrictCompat
 				duty.focus = __state;
 		}
 
+		// ---- Positive Connections: Den room role null-refs on a one-sided region link ----------------------------
+		// RoomRoleWorker_Den.CountDoors walks region links without the null checks vanilla uses: a link with only one
+		// region registered gives GetOtherRegion / RegionA / RegionB == null. The exception leaves Room.role null
+		// (UpdateRoomStatsAndRole clears its dirty flag first), and null passes Gizmo_RoomStats' "Role != None" test,
+		// so the room stats gizmo then throws for every building in that room and the whole gizmo grid stops drawing
+		// (VVE garage, 2026-11-15). Same count, null regions skipped.
+		static bool DenCountDoorsNullSafe(Room room, ref int __result)
+		{
+			var seen = new HashSet<Region>();
+			var doors = new HashSet<Building_Door>();
+			foreach (var region in room.Regions)
+				foreach (var link in region.links)
+				{
+					var other = link.GetOtherRegion(region);
+					if (other == null || other.type != RegionType.Portal || !seen.Add(other)) continue;
+					var door = other.door;
+					foreach (var l in other.links)
+						if (LeadsOut(l.RegionA) || LeadsOut(l.RegionB)) { doors.Add(door); break; }
+					bool LeadsOut(Region r) => r != null && r.Room != room && r != other && r.door != door;
+				}
+			__result = doors.Count;
+			return false;
+		}
+
 		// ---- Goji's Misc Genes: Parroting null-refs on an unspawned recipient -----------------------------------
 		// Its InteractionWorker.Interacted postfix makes a recipient with the Parroting gene answer with the same
 		// interaction: recipient.interactions.TryInteractWith(...). A despawned pawn has no interactions tracker
@@ -2649,6 +2676,7 @@ namespace Harmony3StrictCompat
 			["VEF.Weapons.VerbUtility+VerbProperties_AdjustedRange_Patch:Finalizer"] = 0x5828134280ED3E2B,
 			["TriumphantResearch.Window_ResearchComplete:.ctor"] = 0x55438039A644309A,                            // 1.6 build, 2026-11-01
 			["GiddyUp.MountUtility:Dismount"] = 0x4D071C5677D8DCC2,                                                // Giddy-Up 2 Continued 1.7, 2026-11-09 (Dismount still parks lord animals)
+			["PositiveConnectionsNmSpc.RoomRoleWorker_Den:CountDoors"] = 0x3CD5612235092B15,                                    // Positive Connections 1.7, 2026-11-15
 			["GojisMiscGenes.InteractionWorker_Interacted_Patch:Postfix"] = 0x0DC1938A4ABAED83,                       // Goji's Misc Genes 1.7, 2026-11-15
 			["Hospitality.Utilities.SpawnGroupUtility:GenerateNewGearFor"] = 0x9968B91075E1A216,                  // Hospitality 1.7, 2026-11-02
 			["Hospitality.Utilities.ItemUtility:PocketHeadgear"] = 0x5500E1A13797F143,                       // Hospitality 1.7, 2026-11-02

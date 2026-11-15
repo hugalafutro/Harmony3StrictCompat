@@ -120,6 +120,9 @@ namespace Harmony3StrictCompat
 			if (guDismount != null)
 				harmony.Patch(guDismount, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GuKeepTravelFocus)),
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GuRestoreTravelFocus)));
+			var gojiParrot = Target("GojisMiscGenes.InteractionWorker_Interacted_Patch:Postfix");
+			if (gojiParrot != null)
+				harmony.Patch(gojiParrot, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GojiParrotNeedsTracker)));
 			harmony.Patch(AccessTools.Method(typeof(TraderCaravanUtility), nameof(TraderCaravanUtility.GetTraderCaravanRole)),
 				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(TraderRoleByTraderKind)));
 			// Hospitality caches CompGuest per pawn (CompUtility.guestComps) and only drops entries on Pawn.DeSpawn.
@@ -2481,6 +2484,14 @@ namespace Harmony3StrictCompat
 				duty.focus = __state;
 		}
 
+		// ---- Goji's Misc Genes: Parroting null-refs on an unspawned recipient -----------------------------------
+		// Its InteractionWorker.Interacted postfix makes a recipient with the Parroting gene answer with the same
+		// interaction: recipient.interactions.TryInteractWith(...). A despawned pawn has no interactions tracker
+		// (PawnComponentsUtility.RemoveComponentsOnDespawned nulls it), and Living Bonds' BabyBabbleName interacts with
+		// a baby while it is carried: NullReferenceException every ~40 s from LivingBonds_Manager.GameComponentTick
+		// (2026-11-15). No tracker, no parroting; the original interaction is already done at this point.
+		static bool GojiParrotNeedsTracker(Pawn recipient) => recipient?.interactions != null;
+
 		// ---- Trade caravan led by a non-trader pawn kind --------------------------------------------------
 		// GetTraderCaravanRole calls a pawn the Trader only when kindDef.trader is set. Some caravans carry their
 		// trader role (Pawn_TraderTracker.traderKind) on a pawn whose kind is not a trader kind (a Patreons
@@ -2516,6 +2527,7 @@ namespace Harmony3StrictCompat
 			["VEF.Weapons.VerbUtility+VerbProperties_AdjustedRange_Patch:Finalizer"] = 0x5828134280ED3E2B,
 			["TriumphantResearch.Window_ResearchComplete:.ctor"] = 0x55438039A644309A,                            // 1.6 build, 2026-11-01
 			["GiddyUp.MountUtility:Dismount"] = 0x4D071C5677D8DCC2,                                                // Giddy-Up 2 Continued 1.7, 2026-11-09 (Dismount still parks lord animals)
+			["GojisMiscGenes.InteractionWorker_Interacted_Patch:Postfix"] = 0x0DC1938A4ABAED83,                       // Goji's Misc Genes 1.7, 2026-11-15
 			["Hospitality.Utilities.SpawnGroupUtility:GenerateNewGearFor"] = 0x9968B91075E1A216,                  // Hospitality 1.7, 2026-11-02
 			["Hospitality.Utilities.ItemUtility:PocketHeadgear"] = 0x5500E1A13797F143,                       // Hospitality 1.7, 2026-11-02
 			["HospitalityCasino.JobGiver_PlaySlotMachines:TryGiveJob"] = 0x886CDC4608E3C02D,                 // Casino 1.7, 2026-11-05

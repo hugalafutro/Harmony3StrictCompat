@@ -88,6 +88,7 @@
 - Hospitality: guests helping out no longer null-ref in the hopper-filling work giver on food outside the guest area.
 - Giddy-Up 2: dismounted caravan animals keep their travel/follow target, so the caravan arrives and leaves.
 - Giddy-Up 2: animals rescuing a downed pawn are not picked as mounts.
+- Goji's Misc Genes + Living Bonds: no Parroting null-ref when a carried baby is talked to.
 - Vanilla/unknown: a caravan guard holding a trader kind counts as the Trader (dismiss works, caravan exits).
 - Vanilla: visitors and trade caravans no longer leave on arrival "because of dangerous temperature" from hypothermia or heatstroke frozen on them while they were stored as world pawns (it now recovers there at the vanilla off-map rate).
 - RimPacts: factions whose exiled leader left or was dismissed get a new leader (also repaired after load), no more "Faction leader for X is null".

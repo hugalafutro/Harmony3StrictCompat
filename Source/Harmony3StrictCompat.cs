@@ -2536,7 +2536,7 @@ namespace Harmony3StrictCompat
 			["TD_Enhancement_Pack.Alert_Deterioration:get_DeterioratingThings"] = 0x8774F1B773D667FE,       // TD Enhancement Pack 1.7, 2026-11-12
 			["TD_Enhancement_Pack.Alert_Deterioration+<get_DeterioratingThings>d__1:MoveNext"] = 0x54FBB3FD87CA2948,
 			["TD_Enhancement_Pack.SkillLearningIndicator:LabelLearning"] = 0xA1C6010BAEEDD973,             // TD Enhancement Pack 1.7, DLL of 2026-10-22
-			["UIRethemed.ColonistCard.Glance:DrawSkill"] = 0xFAACCE0D0C521EF3,                             // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-12 09:50
+			["UIRethemed.ColonistCard.Glance:DrawSkill"] = 0xB51376B2633BCC8F,                             // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-15 03:21
 			["VanillaQuestsExpandedAncients.Building_PneumaticTubeLaunchPort:Deliver"] = 0x824DD22872D97BE7, // VQE Ancients 1.6 build, DLL of 2026-10-06
 			["SkilledRefueling.HarmonyPatches:GetRefuelDuration"] = 0xFE59863C2B492B65,                    // Skilled Refueling 1.7, DLL of 2026-11-09
 			["SkilledRefueling.RefuelingUtility:RefuelingSpeedForPawn"] = 0x302D7899D7E9DF65,
@@ -2644,8 +2644,8 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Notifications.Placement:TopStart"] = 0xB66BBFD57F93B4D8,
 			["UIRethemed.Notifications.FoodReadout:Read"] = 0x3A9FE28F59673276,                          // UIR Notifications 1.7, 2026-11-13
 			["UIRethemed.Notifications.FoodReadout:Draw"] = 0x6D18FED08A1E6587,
-			["UIRethemed.ColonistCard.InfoList:Defer"] = 0xD3C27319BD548F5E,                            // UIR Colonist Card 1.7, 2026-11-13
-			["UIRethemed.ColonistCard.InfoList:DrawRow"] = 0x17F7A704CD818794,
+			["UIRethemed.ColonistCard.InfoList:Defer"] = 0x1FEED3057CF9D99E,                            // UIR Colonist Card 1.7, 2026-11-15 03:21
+			["UIRethemed.ColonistCard.InfoList:DrawRow"] = 0xAA8D1075AA7CCE3C,
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,
@@ -2653,8 +2653,8 @@ namespace Harmony3StrictCompat
 			["UsefulMarks.Dialog_NamePawn_DoWindowContents_Patch:Postfix"] = 0xF33AD5F31EB56B3B,        // Useful Marks 1.7, DLL of 2026-10-22
 			["UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix"] = 0xD2A3A440ED802D16,
 			["RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"] = 0x7BC03B6DECA267E3,               // vanilla 1.7.5005, guilty icon slot
-			["UIRethemed.ColonistCard.Card:get_ThemingHeader"] = 0x237BE2558E2524A1,                     // UI Rethemed - Colonist Card 1.7, 2026-11-12 09:27
-			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0x254E0288AFF3E043,
+			["UIRethemed.ColonistCard.Card:get_ThemingHeader"] = 0x88F2EBA978A05C89,                     // UI Rethemed - Colonist Card 1.7, 2026-11-15 03:21
+			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0xC489F51FB5DE3A7B,
 			["UIRethemed.Animals.Motion:Key"] = 0xD8B1E64161CEBA55,                                     // UI Rethemed - Animals 1.7, DLL of 2026-11-09
 			["UIRethemed.Animals.Motion:Hover"] = 0x647430A1557F69F6,
 			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0x51E46164322160E6,                  // UI Rethemed - Architect 1.7, 2026-11-14 18:44

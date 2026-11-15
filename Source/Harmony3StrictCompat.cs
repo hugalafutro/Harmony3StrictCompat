@@ -3191,6 +3191,26 @@ namespace Harmony3StrictCompat
 		}
 	}
 
+	// ---- Giddy-Up 2: animals carrying a downed pawn are picked as mounts ------------------------------------
+	// MountUtility stops the chosen animal's job the moment a rider takes the Mount job, however far away the rider
+	// is. IsMountable only refuses animals whose job is in its private BusyJobs set, and vanilla's Rescue (trained
+	// animals, JobGiver_RescueNearby) is not in it: a rescuing animal dropped its bleeding patient and waited for a
+	// rider three screens away (2026-11-15). Add Rescue to that set: every IsMountable caller (auto-mount, reserved
+	// mount re-check, right-click menu, which then shows "busy") skips the animal until the rescue ends.
+	[StaticConstructorOnStartup]
+	static class GiddyUpRescueIsBusy
+	{
+		static GiddyUpRescueIsBusy()
+		{
+			var type = AccessTools.TypeByName("GiddyUp.IsMountableUtility");
+			if (type == null) return;
+			if (AccessTools.Field(type, "BusyJobs")?.GetValue(null) is HashSet<JobDef> busy)
+				busy.Add(JobDefOf.Rescue);
+			else
+				Log.Error("[Harmony3StrictCompat] GiddyUp.IsMountableUtility.BusyJobs changed: rescuing animals can be picked as mounts again");
+		}
+	}
+
 	// ---- Weapons with two equipment comps --------------------------------------------------------------------
 	// A gun def that adds CompProperties_EquippableAbility(Reloadable) without <comps Inherit="False"> also inherits
 	// BaseWeapon's plain CompEquippable (vanilla's Hellcat uses Inherit="False" for exactly this). Both comps save a

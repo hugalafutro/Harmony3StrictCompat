@@ -30,6 +30,7 @@
 - Biosculpter Pod and Neural Supercharger Resize + Vanilla Textures Expanded: a resized biosculpter pod shows its resized icon (not VTE's squeezed 3x2 one) on blueprints and the architect button.
 - Busywork + LTO Colony Groups: "Upper" job icons show on Colony Groups portraits (Busywork only hooked the vanilla colonist bar).
 - Sensible Bed Ownership: OwnedBed answers cached per pawn until bed ownership changes (was rescanning every bed hundreds of thousands of times a minute); spot-checked against SBO; also used by the parallel render threads, and SBO's bed list scan is locked (sleeping animals in animal beds halved FPS, render jobs threw "Collection was modified").
+- Hauler's Dream: bulk-hauled loads reach their higher-priority storage instead of going straight back where they came from (no more "bulk-hauled 6 times ... net-zero" loops, food no longer left outside the fridge).
 - Hauler's Dream + Compositable Loadouts: loadout items are kept during surplus unload again (CL's items now list several defs; HD only knew Item.Def).
 - Hauler's Dream + Smart Medicine - Continued: Stock Up amounts count as kept even on stacks Hauler's Dream tagged as its own haul (no more unload / re-fetch loop and "Cannot unload inventory" alert).
 - Hauler's Dream + Kanban Stockpile Continue: HD respects Kanban's max stack size, refill threshold and similar stack limit when it plans pick-ups and unloads into capped storage (no more overfill / remove-excess churn).
@@ -89,6 +90,7 @@
 - Giddy-Up 2: dismounted caravan animals keep their travel/follow target, so the caravan arrives and leaves.
 - Giddy-Up 2: animals rescuing a downed pawn are not picked as mounts.
 - Goji's Misc Genes + Living Bonds: no Parroting null-ref when a carried baby is talked to.
+- Vanilla Social Interactions Expanded + Goji's Misc Genes: a Parroting pupil can answer a teaching interaction without a "key was not present in the dictionary" tick exception.
 - Vanilla/unknown: a caravan guard holding a trader kind counts as the Trader (dismiss works, caravan exits).
 - Vanilla: visitors and trade caravans no longer leave on arrival "because of dangerous temperature" from hypothermia or heatstroke frozen on them while they were stored as world pawns (it now recovers there at the vanilla off-map rate).
 - RimPacts: factions whose exiled leader left or was dismissed get a new leader (also repaired after load), no more "Faction leader for X is null".

@@ -120,6 +120,18 @@ namespace Harmony3StrictCompat
 			if (guDismount != null)
 				harmony.Patch(guDismount, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GuKeepTravelFocus)),
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GuRestoreTravelFocus)));
+			var vsieTeach = Target("VanillaSocialInteractionsExpanded.InteractionWorker_Teaching:Interacted");
+			if (vsieTeach != null)
+			{
+				vsieSkillToTeach = AccessTools.Method(vsieTeach.DeclaringType, "GetSkillDefToTeach");
+				vsieManager = AccessTools.PropertyGetter(AccessTools.TypeByName("VanillaSocialInteractionsExpanded.VSIE_Utils"), "SocialInteractionsManager");
+				vsiePupils = AccessTools.Field(AccessTools.TypeByName("VanillaSocialInteractionsExpanded.SocialInteractionsManager"), "teachersWithPupils");
+				vsieTopic = AccessTools.Constructor(AccessTools.TypeByName("VanillaSocialInteractionsExpanded.TeachingTopic"), [typeof(Pawn), typeof(SkillDef)]);
+				if (vsieSkillToTeach != null && vsieManager != null && vsiePupils != null && vsieTopic != null)
+					harmony.Patch(vsieTeach, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(VsieTeachNeedsTopic)));
+				else
+					Log.Error("[Harmony3StrictCompat] VSIE teaching topic members no longer exist: its mod updated, remove or redo this fix");
+			}
 			var gojiParrot = Target("GojisMiscGenes.InteractionWorker_Interacted_Patch:Postfix");
 			if (gojiParrot != null)
 				harmony.Patch(gojiParrot, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GojiParrotNeedsTracker)));
@@ -236,6 +248,9 @@ namespace Harmony3StrictCompat
 			var hfmHunt = Target("aRandomKiwi.HFM.JobGiver_AnimalHunt:TryGiveJob");
 			if (hfmHunt != null)
 				harmony.Patch(hfmHunt, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HfmPlayerAnimalsOnly)));
+			var hdDelivering = Target("HaulersDream.StorageCommitments:IsDelivering");
+			if (hdDelivering != null)
+				harmony.Patch(hdDelivering, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdInventoryIsDelivering)));
 			var hdInit = Target("HaulersDream.CompositableLoadoutsCompat:InitKeepApi");
 			var hdWanted = Target("HaulersDream.CompositableLoadoutsCompat:LoadoutWantedUnits");
 			hdItemDefs = AccessTools.PropertyGetter(AccessTools.TypeByName("Inventory.Item"), "Defs");
@@ -1951,6 +1966,24 @@ namespace Harmony3StrictCompat
 				__result = true;
 		}
 
+		// ---- Hauler's Dream: a bulk-hauled load goes straight back where it came from (net-zero loop) ------------
+		// HD books "N units of this def are on their way to that storage" per pawn, and its IsGoodStoreCell postfix
+		// refuses a storage whose free room is used up by such claims. A pawn's own claim is meant to be ignored
+		// while it carries the load (StorageCommitments.IsDelivering). For a load in the inventory that test compares
+		// Thing.ParentHolder (the Pawn_InventoryTracker) with inventory.innerContainer (a ThingOwner): never equal, so
+		// it is always false. A bulk haul that claims all the free room of its destination (the usual case with a
+		// Kanban cap, a nearly full feeder, fridge, hopper or log pile) then finds that destination "full of its own
+		// claim" when it unloads, and vanilla's search falls through to the next priority: the storage the load just
+		// left. Pawns with only hauling work (Lifters) pick the same stack again at once: 5-6 round trips a second
+		// until HD backs the stack off ("bulk-hauled 6 times ... net-zero", "yielded no actual job"); food meant for
+		// the fridge stays in the cellar. Found with a probe on 2026-11-15: at unload hdFree=0 for the feeder, and
+		// hdFree=259 (the load) right after HD moved the claim. Count an inventory load as delivering.
+		static void HdInventoryIsDelivering(Pawn asker, Thing subject, ref bool __result)
+		{
+			if (!__result && asker != null && subject is { Spawned: false } && subject.ParentHolder is Pawn_InventoryTracker inv && inv.pawn == asker)
+				__result = true;
+		}
+
 		// ---- Hauler's Dream x Compositable Loadouts: loadout items not kept during surplus unload ---------------
 		// HD keeps a pawn's loadout items out of "adopt all surplus" by reading CL's Item.Def and Item.Quantity. CL's
 		// 1.7 Item holds several alternative defs (members: Defs, RepresentativeDef) and has no Def any more, so HD's
@@ -2492,6 +2525,33 @@ namespace Harmony3StrictCompat
 		// (2026-11-15). No tracker, no parroting; the original interaction is already done at this point.
 		static bool GojiParrotNeedsTracker(Pawn recipient) => recipient?.interactions != null;
 
+		// ---- Vanilla Social Interactions Expanded: teaching without a stored topic throws ------------------------
+		// VSIE stores a teacher's topic (pupil + skill) in RandomSelectionWeight and InteractionWorker_Teaching.Interacted
+		// reads it with teachersWithPupils[initiator]: KeyNotFoundException when the interaction was started any other
+		// way. Goji's Misc Genes' Parroting gene does that: the pupil answers with the same interaction, so the pupil
+		// "teaches" back with no topic and the exception aborts the first teacher's tick ("Exception ticking Gao ...
+		// The given key 'Sarmiento' was not present in the dictionary", 2026-11-15; logged once per pawn, then silent).
+		// Without a topic, pick one the way VSIE does; if the initiator has nothing to teach, end quietly.
+		static MethodInfo vsieSkillToTeach, vsieManager;
+		static FieldInfo vsiePupils;
+		static ConstructorInfo vsieTopic;
+
+		static bool VsieTeachNeedsTopic(object __instance, Pawn initiator, Pawn recipient, ref string letterText, ref string letterLabel,
+			ref LetterDef letterDef, ref LookTargets lookTargets)
+		{
+			if (vsiePupils.GetValue(vsieManager.Invoke(null, null)) is not IDictionary topics || topics.Contains(initiator)) return true;
+			if (initiator.skills != null && recipient?.skills != null && vsieSkillToTeach.Invoke(__instance, [initiator, recipient]) is SkillDef skill)
+			{
+				topics[initiator] = vsieTopic.Invoke([recipient, skill]);
+				return true;
+			}
+			letterText = null;
+			letterLabel = null;
+			letterDef = null;
+			lookTargets = null;
+			return false;
+		}
+
 		// ---- Trade caravan led by a non-trader pawn kind --------------------------------------------------
 		// GetTraderCaravanRole calls a pawn the Trader only when kindDef.trader is set. Some caravans carry their
 		// trader role (Pawn_TraderTracker.traderKind) on a pawn whose kind is not a trader kind (a Patreons
@@ -2560,6 +2620,7 @@ namespace Harmony3StrictCompat
 			["CommonSense.OpportunisticTasks:Cleaning_Opportunity"] = 0xC83F6DDEA821201F,
 			["HaulersDream.CompositableLoadoutsCompat:InitKeepApi"] = 0x3F15140E9ED2D991,                    // Hauler's Dream 1.6 build, 2026-11-05
 			["HaulersDream.CompositableLoadoutsCompat:LoadoutWantedUnits"] = 0x89C4B3F40C058F43,
+			["HaulersDream.StorageCommitments:IsDelivering"] = 0xB2A8CC7128220022,                           // Hauler's Dream 1.24.0 (1.6 build), 2026-08-10
 			["UIRethemed.Quests.Theme:LabelTruncated"] = 0xBCEFD483BBCF25F6,                               // UI Rethemed - Quests 1.7, 2026-11-11
 			["UIRethemed.Quests.HoverCard:Region"] = 0xC63A1FE873265DBA,
 			["UIRethemed.Quests.RewardTiles:Of"] = 0x3656DF7054B80C0C,
@@ -2595,6 +2656,7 @@ namespace Harmony3StrictCompat
 			["Merthsoft.DesignatorShapes.Shapes.FloodFill:IsStructure"] = 0x01F3F2D215BA16DB,                 // Designator Shapes 1.7, 2026-11-02
 			["VanillaSocialInteractionsExpanded.Thought_CuredMyFriend:get_LabelCap"] = 0xF477C9F6906F455E,   // VSIE 1.7, 2026-11-06
 			["VanillaSocialInteractionsExpanded.VSIE_Utils:HaveNoticedTale"] = 0x006E2ED82BADE12D,
+			["VanillaSocialInteractionsExpanded.InteractionWorker_Teaching:Interacted"] = 0x44695C314070FC12,
 			["YayoAnimation.HarmonyPatches.PawnPatches.ParallelGetPreRenderResultsPatch:DataFor"] = 0x70EEFE43592C82C3, // Flourish Everyday 1.7, 2026-10-25
 			["Flourish.Everyday.JobAnimationWorker_Anchored:Evaluate"] = 0x817B489F5395FF01,                // Flourish Everyday 1.7, 2026-10-25
 			["VFETribals.FactionUIUtility_DoWindowContents_Patch:Postfix"] = 0x8824F2B542A8AC6E,             // VFE Tribals 1.6 build, 2026-10-14

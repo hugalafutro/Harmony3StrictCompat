@@ -2521,14 +2521,14 @@ namespace Harmony3StrictCompat
 			["HospitalityCasino.JobGiver_PlaySlotMachines:TryGiveJob"] = 0x886CDC4608E3C02D,                 // Casino 1.7, 2026-11-05
 			["HospitalityCasino.VendingMachineJobHelper:InsertCoin"] = 0xDD3ACDA377763174,                   // Casino 1.7, 2026-11-06
 			["HospitalityCasino.CompVendingMachine:CompInspectStringExtra"] = 0x4C16897C23044EC3,            // Casino 1.7, 2026-11-06
-			["MSSFP.Utils.PawnGraphicUtils+<>c__DisplayClass4_0:<SaveTextureToFile>b__0"] = 0x3C2DDE1F39E984E8,  // MSS Tweaks and Fun 1.7, 2026-10-19
+			["MSSFP.Utils.PawnGraphicUtils+<>c__DisplayClass4_0:<SaveTextureToFile>b__0"] = 0x1918143CABB241A5,  // MSS Tweaks and Fun 1.7, 2026-11-15
 			["Caveworld_Flora_Unleashed.FruitingBody:get_LabelMouseover"] = 0xB098C8B9BC3CE626,                 // Biomes! Caverns 1.7, 2026-10-20
 			["Caveworld_Flora_Unleashed.GenCaveFungusReproduction:TryGrowMycelium"] = 0x614612774F447421,         // Biomes! Caverns 1.7, 2026-10-20
 			["ilyvion.LoadingProgress.StartupImpact.ModInfoList:GetModInfoFor"] = 0x357F68C7E142FD4F,          // Loading Progress 1.7, 2026-10-21
 			["Inventory.BWM_DoWindowContentsPatch_Patch:Transpiler"] = 0x1208A46933A47D41,                     // Loadout Compositing 1.7, 2026-10-28
 			["Inventory.BWM_DoWindowContentsPatch_Patch:ShouldCountAway"] = 0xA22693055B6314E7,                // Loadout Compositing 1.7, 2026-10-28
-			["ImprovedWorkbenches.BillConfig_DoWindowContents_Patch:DrawFilters"] = 0x5FFF926429D5F4D6,        // BWM 1.7 Waylith (Debug build), 2026-11-03
-			["ImprovedWorkbenches.BillConfig_DoWindowContents_Patch:DrawWorkTableNavigation"] = 0x638B64048A13DB3E,
+			["ImprovedWorkbenches.BillConfig_DoWindowContents_Patch:DrawFilters"] = 0x9EC9048AEF0F485C,        // BWM 1.7 Waylith (Debug build), 2026-11-15
+			["ImprovedWorkbenches.BillConfig_DoWindowContents_Patch:DrawWorkTableNavigation"] = 0xCD24E921595CA15E,
 			["VanillaRacesExpandedSanguophage.JobGiver_GetCorpseHemogen:TryGiveJob"] = 0x00285EA300E503C6,   // VRE Sanguophage 1.6 build, 2026-10-01
 			["ModSettingsFramework.PatchOperationSliderFloat:ApplyWorker"] = 0x7D3F07C2C28B20A5,              // VEF 1.7 0ModSettingsFramework.dll, 2026-10-13
 			["ModSettingsFramework.PatchOperationSliderInt:ApplyWorker"] = 0x03DFA38BA62A830B,
@@ -2563,10 +2563,10 @@ namespace Harmony3StrictCompat
 			["KanbanStockpileContinue.KSUtil:IsSimilarStack"] = 0xA9EA56B4765CDEAF,
 			["KanbanStockpileContinue.KSUtil:BuildSslExcessSet"] = 0x3D125057D3A69CBC,
 			["UIRethemed.Ideology.StyleTip+Content:get_Width"] = 0x5F8988FF18236D28,                          // UI Rethemed - Ideology 1.7, 2026-11-11 11:53
-			["UIRethemed.Ideology.StyleTip+Content:Height"] = 0x462CB1102C73464A,
-			["UIRethemed.Ideology.StyleTip+Content:CellWidth"] = 0x1BA8AD0685968F98,
-			["UIRethemed.Ideology.StyleTip+Content:SectionHeight"] = 0x5D3E075BAF5A7BCC,
-			["UIRethemed.Ideology.StyleTip+Content:Draw"] = 0xA3596C43EB640C82,
+			["UIRethemed.Ideology.StyleTip+Content:Height"] = 0x011A611C99D36B61,
+			["UIRethemed.Ideology.StyleTip+Content:CellWidth"] = 0x72A4DC3661404FC9,
+			["UIRethemed.Ideology.StyleTip+Content:SectionHeight"] = 0x7D0C038E62C61F43,
+			["UIRethemed.Ideology.StyleTip+Content:Draw"] = 0x045AEBC779549B88,
 			["TooManyMods.Compat_MerchantGuild_TradeArrivalOption:.cctor"] = 0x8DD5B3B38F9ACDDF,              // TMM VFEM2_VF.dll, 2026-01-24 (built for Vehicle Framework 1.6)
 			["RimPacts.WorldComponent_RimPacts:ApplyProtectionFailure"] = 0x25C966FD0F258433,                  // RimPacts 1.7, 2026-11-14 21:35 (no route check)
 			["RimPacts.WorldComponent_RimPacts:IsProtectedByTradePact"] = 0xCD4509781F3A282C,
@@ -2587,10 +2587,10 @@ namespace Harmony3StrictCompat
 			["Flourish.Everyday.JobAnimationWorker_Anchored:Evaluate"] = 0x817B489F5395FF01,                // Flourish Everyday 1.7, 2026-10-25
 			["VFETribals.FactionUIUtility_DoWindowContents_Patch:Postfix"] = 0x8824F2B542A8AC6E,             // VFE Tribals 1.6 build, 2026-10-14
 			["UIRethemed.Factions.FactionsTab:Themed"] = 0x6464010BFAB662C3,                               // UI Rethemed 1.7, 2026-11-06
-			["UIRethemed.Core.CoreWidgets:Button"] = 0x5BDC283DA593C1FD,                             // UI Rethemed - Core 1.7, 2026-11-12
-			["UIRethemed.Core.CoreWidgets:Icon"] = 0x2AA2B8BF853AB7CD,
-			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0x57EAA76915754D58,
-			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0x71C05A187F90A70A,
+			["UIRethemed.Core.CoreWidgets:Button"] = 0x7E35181C5EFCB9BE,                             // UI Rethemed - Core 1.7, 2026-11-15
+			["UIRethemed.Core.CoreWidgets:Icon"] = 0xECDD3C66CA7972C5,
+			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0x0B38B0F0F41EBC55,
+			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0x1843B4BAE54CCD71,
 			["UIRethemed.InspectorTabs.HoverCard:LineHeight"] = 0xD907DD18913BBC6A,                        // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-14
 			["UIRethemed.InspectorTabs.HoverCard:DrawGroup"] = 0xC3B256B725066D07,
 			["UIRethemed.InspectorTabs.Theme:StatLine"] = 0xBE61FF6FC692F581,
@@ -2608,10 +2608,10 @@ namespace Harmony3StrictCompat
 			["Unburned.Pretty_Patch:Prefix"] = 0xE153E3D01BE0AC50,                                                // Unburned 1.7, 2026-11-09
 			["VEF.Weapons.MeleeReachCombatUtility:IsVanillaMeleeAttack"] = 0xAED0762AE41E6D48,                    // VEF 1.7, 2026-11-09
 			["SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix"] = 0xEA4FA1B085907595,     // Smarter Visitors 1.7.0, 2026-11-08
-			["UIRethemed.MainBar.MenuWindow:Face"] = 0x6184B469A9F54978,                               // UI Rethemed - Main Bar 1.7, 2026-11-14 04:44
-			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0x3F7629E203F0E579,
-			["UIRethemed.MainBar.BarControls:Toggle"] = 0x7C8A43371AC8A702,
-			["UIRethemed.MainBar.BarControls:SetSpeed"] = 0x0CC478B5E9B1667B,
+			["UIRethemed.MainBar.MenuWindow:Face"] = 0x925C75D0D1F3B312,                               // UI Rethemed - Main Bar 1.7, 2026-11-15
+			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0x817E8BAC171C3602,
+			["UIRethemed.MainBar.BarControls:Toggle"] = 0x8B359CF8796161A3,
+			["UIRethemed.MainBar.BarControls:SetSpeed"] = 0x71E7452A5F9EBDD4,
 			["AdaptiveMealBill.AdaptiveRecipeSelection:RecoverRecipe"] = 0x62FA21FEB38C0B91,             // AdaptiveMealBill 1.7, DLL of 2026-11-08
 			["UIRethemed.InspectorTabs.CareSwitchDef:For"] = 0xB747ACCF267B5487,                         // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-14
 			["AutoExtractGenes.Utils:GetAutoExtractGenesComponent"] = 0x41DC32D5B21682AC,                // AutoExtractGenes 1.7, DLL of 2026-11-08
@@ -2656,7 +2656,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.ColonistCard.Card:get_ThemingHeader"] = 0x88F2EBA978A05C89,                     // UI Rethemed - Colonist Card 1.7, 2026-11-15 03:21
 			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0xC489F51FB5DE3A7B,
 			["UIRethemed.Animals.Motion:Key"] = 0xD8B1E64161CEBA55,                                     // UI Rethemed - Animals 1.7, DLL of 2026-11-09
-			["UIRethemed.Animals.Motion:Hover"] = 0x647430A1557F69F6,
+			["UIRethemed.Animals.Motion:Hover"] = 0xCF658FE8AAEAECFD,
 			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0x51E46164322160E6,                  // UI Rethemed - Architect 1.7, 2026-11-14 18:44
 		};
 

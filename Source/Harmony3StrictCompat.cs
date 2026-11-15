@@ -79,6 +79,10 @@ namespace Harmony3StrictCompat
 			var rpDismiss = Target("RimPacts.WorldComponent_RimPacts:DismissExilePawn");
 			if (rpDismiss != null)
 				harmony.Patch(rpDismiss, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpReplaceDismissedLeader)));
+			var rpFail = Target("RimPacts.WorldComponent_RimPacts:ApplyProtectionFailure");
+			rpIsProtected = Target("RimPacts.WorldComponent_RimPacts:IsProtectedByTradePact");
+			if (rpFail != null && rpIsProtected != null)
+				harmony.Patch(rpFail, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpProtectionOnlyRoutes)));
 			// Too Many Mods' Merchant Guild x Vehicle Framework patches fail on VF 1.7; Source/Vehicles replaces them.
 			if (AccessTools.TypeByName("TooManyMods.Compat_MerchantGuild_TradeArrivalOption")?.TypeInitializer is { } tmmGuild)
 			{
@@ -2564,6 +2568,8 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Ideology.StyleTip+Content:SectionHeight"] = 0x5D3E075BAF5A7BCC,
 			["UIRethemed.Ideology.StyleTip+Content:Draw"] = 0xA3596C43EB640C82,
 			["TooManyMods.Compat_MerchantGuild_TradeArrivalOption:.cctor"] = 0x8DD5B3B38F9ACDDF,              // TMM VFEM2_VF.dll, 2026-01-24 (built for Vehicle Framework 1.6)
+			["RimPacts.WorldComponent_RimPacts:ApplyProtectionFailure"] = 0x25C966FD0F258433,                  // RimPacts 1.7, 2026-11-14 21:35 (no route check)
+			["RimPacts.WorldComponent_RimPacts:IsProtectedByTradePact"] = 0xCD4509781F3A282C,
 			["RimPacts.WorldComponent_RimPacts:ForceExpoParty"] = 0xA202A793E018C333,                          // RimPacts 1.7, 2026-11-14 21:35
 			["SensibleBedOwnership.Patch_Pawn_Ownership_get_OwnedBed:Prefix"] = 0x696E7432D36527D8,       // SBO 1.6 build, 2026-11-05
 			["SensibleBedOwnership.Utility:GetMainBed"] = 0xAE5863A6DF81EAD6,                                // (Pawn) overload
@@ -2817,6 +2823,17 @@ namespace Harmony3StrictCompat
 				if (f.leader == p && f.TryGenerateNewLeader())
 					Log.Message($"[Harmony3StrictCompat] RimPacts discarded exiled leader {p.LabelShort}; {f.Name}'s new leader is {f.leader.LabelShort}");
 		}
+
+		// ---- RimPacts trade protection pact: only route settlements count --------------------------------
+		// The pact covers "settlements your trade routes depend on", and RimPacts only offers the defense battle
+		// for a settlement one of the player's trade routes ends at (IsProtectedByTradePact). ApplyProtectionFailure
+		// has no such check: any settlement of the pact faction falling tears up the pact and the trade agreement
+		// (trust -25, "A promise unkept") without the player ever being asked to defend it. Skip the penalty for
+		// settlements that were never protected.
+		static MethodInfo rpIsProtected;
+
+		static bool RpProtectionOnlyRoutes(object __instance, Settlement s) =>
+			(bool)rpIsProtected.Invoke(__instance, new object[] { s });
 
 		// ---- Trade ship pawns duplicated into world pawns ------------------------------------------------
 		// Seen 2026-11-01, three times in one session: a slave for sale aboard an orbital trade ship is also in

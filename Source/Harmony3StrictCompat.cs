@@ -2210,15 +2210,21 @@ namespace Harmony3StrictCompat
 			};
 		}
 
-		// ---- Vanilla: "Read now" on a forbidden book ------------------------------------------------------------
-		// Book's "Read now" float menu does not check forbidden, the pawn picks the book up, and the read toil's
-		// FailOnDestroyedNullOrForbidden ends the job on its first tick: the book is dropped at once (seen on Alpha
-		// Books' ruined library site, where the loot spawns forbidden). Vanilla's Equip and Wear orders unforbid the
-		// item; a player-ordered read (vanilla or Alpha Books' own read job) now does the same when it starts.
+		// ---- Vanilla: "Read now" is dropped at once on a forbidden book or outside recreation time ----------------
+		// The pawn picks the book up, carries it to a seat, and the read toil ends the job within a few ticks, so the
+		// book is dropped (seen 2026-11-15 on Alpha Books' ruined library site):
+		// - the float menu does not check forbidden, and the toil's FailOnDestroyedNullOrForbidden fires (the library
+		//   loot spawns forbidden). Vanilla's Equip and Wear orders unforbid their item; an ordered read does too.
+		// - JoyUtility.JoyTickCheckEnd ends any reading job InterruptForced when the pawn's schedule slot disallows
+		//   recreation (Work) unless job.ignoreJoyTimeAssignment, which "Read now" never sets. Vanilla sets it for
+		//   other jobs it starts outside recreation time (meditating in bed, visiting the sick); an ordered read now too.
+		// Postfix on Notify_Starting of vanilla JobDriver_Reading and Alpha Books' JobDriver_ReadAlphaBook.
 		static void OrderedReadUnforbidsBook(JobDriver __instance)
 		{
-			if (__instance.job.playerForced && __instance.job.targetA.Thing is Book book)
-				book.SetForbidden(false, warnOnFail: false);
+			if (!__instance.job.playerForced || __instance.job.targetA.Thing is not Book book)
+				return;
+			book.SetForbidden(false, warnOnFail: false);
+			__instance.job.ignoreJoyTimeAssignment = true;
 		}
 
 		// Vanilla bug: CanGenerateFrom checks options against the whole point total, but ChoosePawnGenOptionsByPoints

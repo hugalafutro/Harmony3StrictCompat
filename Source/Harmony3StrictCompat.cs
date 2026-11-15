@@ -2737,7 +2737,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0xC489F51FB5DE3A7B,
 			["UIRethemed.Animals.Motion:Key"] = 0xD8B1E64161CEBA55,                                     // UI Rethemed - Animals 1.7, DLL of 2026-11-09
 			["UIRethemed.Animals.Motion:Hover"] = 0xCF658FE8AAEAECFD,
-			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0xB98173E15255C60A,                  // UI Rethemed - Architect 1.7, 2026-11-15 16:11
+			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0x1F1641A7E197296C,                  // UI Rethemed - Architect 1.7, 2026-11-15 17:51
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an

@@ -96,6 +96,19 @@ namespace Harmony3StrictCompat
 			rpIsProtected = Target("RimPacts.WorldComponent_RimPacts:IsProtectedByTradePact");
 			if (rpFail != null && rpIsProtected != null)
 				harmony.Patch(rpFail, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpProtectionOnlyRoutes)));
+			var rpTick = Target("RimPacts.WorldComponent_RimPacts:WorldComponentTick");
+			rpDefAutoTick = Target("RimPacts.WorldComponent_RimPacts:DefAutoTick");
+			Target("RimPacts.WorldComponent_RimPacts:DefAutoOne"); // fingerprint only: applies the pending wounds DefAutoTick reaches
+			if (rpTick != null && rpDefAutoTick != null)
+			{
+				rpDefendMission = AccessTools.PropertyGetter(rpTick.DeclaringType, "DefendMission");
+				rpDefAutoRecs = AccessTools.Field(rpTick.DeclaringType, "defAutoRecs");
+				rpDefAutoSettled = AccessTools.Field(AccessTools.TypeByName("RimPacts.DefAutoRec"), "settled");
+				if (rpDefendMission != null && rpDefAutoRecs != null && rpDefAutoSettled != null)
+					harmony.Patch(rpTick, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpAutoDefenseFinishes)));
+				else
+					Log.Error("[Harmony3StrictCompat] RimPacts DefendMission/defAutoRecs changed: its mod updated, redo the auto-defense wounds fix");
+			}
 			// Too Many Mods' Merchant Guild x Vehicle Framework patches fail on VF 1.7; Source/Vehicles replaces them.
 			if (AccessTools.TypeByName("TooManyMods.Compat_MerchantGuild_TradeArrivalOption")?.TypeInitializer is { } tmmGuild)
 			{
@@ -2689,6 +2702,9 @@ namespace Harmony3StrictCompat
 		static readonly Dictionary<string, ulong> Fingerprints = new()
 		{
 			["SensibleBedOwnership.Patch_ReservationManager:Prefix"] = 0xC02F4F892C656903,                       // 2026-10-28
+			["RimPacts.WorldComponent_RimPacts:WorldComponentTick"] = 0x973CCBC78A2E8805,                  // RimPacts 1.7, 2026-11-16 (auto-defense wounds)
+			["RimPacts.WorldComponent_RimPacts:DefAutoTick"] = 0x6E3C18C760E8BC5E,
+			["RimPacts.WorldComponent_RimPacts:DefAutoOne"] = 0x85090DC9E02B067B,
 			["RimWorld.CompShuttle:CompTick"] = 0x0FE3170CD124F570,
 			["RimWorld.Selector:SelectUnderMouse"] = 0x1A3AD61C82A0379C,                                    // game 1.7.5011, 2026-11-16
 			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,
@@ -3018,6 +3034,26 @@ namespace Harmony3StrictCompat
 			foreach (var f in Find.FactionManager.AllFactionsListForReading)
 				if (f.leader == p && f.TryGenerateNewLeader())
 					Log.Message($"[Harmony3StrictCompat] RimPacts discarded exiled leader {p.LabelShort}; {f.Name}'s new leader is {f.leader.LabelShort}");
+		}
+
+		// ---- RimPacts auto-resolved defense: wounds land weeks late ---------------------------------------
+		// WorldComponentTick runs DefAutoTick (every 250 ticks) only while a defend mission exists. The mission ends
+		// when the auto-defense is settled, but fighters who flew out get their "minor wounds" (bruises added directly,
+		// no damage event) on the first DefAutoTick after they are back: that never comes, the record stays, and the
+		// bruises (and the result letter) appear out of nowhere when the next defense plea arrives, seen 30 days later
+		// on 2026-11-16. Run DefAutoTick on the same 250-tick beat while records are left and no mission is active.
+		// Only when every record is settled: an unsettled one still needs its mission.
+		static MethodInfo rpDefAutoTick, rpDefendMission;
+		static FieldInfo rpDefAutoRecs, rpDefAutoSettled;
+
+		static void RpAutoDefenseFinishes(object __instance)
+		{
+			int ticks = Find.TickManager.TicksGame;
+			if (ticks % 250 != 0 || rpDefendMission.Invoke(__instance, null) != null) return;
+			if (rpDefAutoRecs.GetValue(__instance) is not System.Collections.ICollection { Count: > 0 } recs) return;
+			foreach (var rec in recs)
+				if (rec == null || !(bool)rpDefAutoSettled.GetValue(rec)) return;
+			rpDefAutoTick.Invoke(__instance, [ticks]);
 		}
 
 		// ---- RimPacts trade protection pact: only route settlements count --------------------------------

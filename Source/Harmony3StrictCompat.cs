@@ -502,6 +502,9 @@ namespace Harmony3StrictCompat
 				harmony.Patch(AccessTools.Method(typeof(PocketMapUtility), nameof(PocketMapUtility.GeneratePocketMap)),
 					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LeoSeamsRandomCavern)),
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LeoSeamsRoofLava)));
+			// Temporary probe, see BillProbeDelete.
+			harmony.Patch(AccessTools.Method(typeof(BillStack), nameof(BillStack.Delete)), prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(BillProbeDelete)));
+			harmony.Patch(AccessTools.Method(typeof(BillStack), nameof(BillStack.Clear)), prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(BillProbeClear)));
 			if (Target("PipeSystem.CompResourceTrader:CompInspectStringExtra", optional: true) is { } pipeTraderInspect)
 				harmony.Patch(pipeTraderInspect, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PipeTraderInspectUnspawned)));
 			if (PipeTapsAndDrains.Init())
@@ -1088,6 +1091,24 @@ namespace Harmony3StrictCompat
 			if (__result && t is { Spawned: true } && t.Position.GetEdifice(t.Map) is Building_Storage b && b.GetStoreSettings() == __instance
 				&& PipeTapsAndDrains.Watched(b.def, out bool tap))
 				__result = tap ? t.stackCount <= PipeTapsAndDrains.TapMax(b, t.def.stackLimit) : PipeTapsAndDrains.DrainHasRoom(b, 1);
+		}
+
+		// ---- Temporary probe: who deletes workbench bills -------------------------------------------------------
+		// The "make component until 100" bill on the Fortifications lathe vanished twice with no log line (last between
+		// two saves on 2026-11-13). Vanilla only removes a production bill through BillStack.Delete (the X button and
+		// mods) or BillStack.Clear (workbench changes faction), so both log the bench, the bills and, through the log's
+		// own stack trace, the caller. Workbenches only: surgery bills delete themselves all day. A mod that removes
+		// from BillStack.Bills directly would not show up here. Remove once the cause is known.
+		static void BillProbeDelete(BillStack __instance, Bill bill)
+		{
+			if (__instance.billGiver is Building_WorkTable bench)
+				Log.Message($"[Harmony3StrictCompat] bill probe: Delete \"{bill?.Label}\" ({bill?.recipe?.defName}) on {bench}");
+		}
+
+		static void BillProbeClear(BillStack __instance)
+		{
+			if (__instance.billGiver is Building_WorkTable bench && __instance.Count > 0)
+				Log.Message($"[Harmony3StrictCompat] bill probe: Clear on {bench}: {string.Join(", ", __instance.Bills.Select(b => b.recipe?.defName))}");
 		}
 
 		// VE PipeSystem (1.7 build): CompResourceTrader.CompInspectStringExtra formats its rate with PipeNet.def, and

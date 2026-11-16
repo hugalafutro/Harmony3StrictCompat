@@ -133,7 +133,7 @@ Build: `Tools/build.ps1` (compiles `Source/*.cs` against the game's DLLs into `1
 <!-- MODLIST:START -->
 ## Active mod list
 
-754 mods in load order, RimWorld 1.7.5005 rev1082. Generated from ModsConfig.xml by `Tools/modlist.py`.
+754 mods in load order, RimWorld 1.7.5011 rev24. Generated from ModsConfig.xml by `Tools/modlist.py`.
 
 | # | Mod | Package ID |
 |---:|---|---|

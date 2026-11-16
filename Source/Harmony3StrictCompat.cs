@@ -323,6 +323,14 @@ namespace Harmony3StrictCompat
 			var uirSlotLabel = Target("UIRethemed.InspectorTabs.GearTab:SlotLabel");
 			if (uirSlotLabel != null)
 				harmony.Patch(uirSlotLabel, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirShortSlotLabel)));
+			var uirThingCard = Target("UIRethemed.InspectorTabs.GearTab:BuildThingCard");
+			var uirCardType = AccessTools.TypeByName("UIRethemed.InspectorTabs.HoverCard+Card");
+			uirCardSubtitle = uirCardType == null ? null : AccessTools.Field(uirCardType, "subtitle");
+			uirCardSubtitleColor = uirCardType == null ? null : AccessTools.Field(uirCardType, "subtitleColor");
+			if (uirThingCard != null && uirCardSubtitle != null && uirCardSubtitleColor != null)
+				harmony.Patch(uirThingCard, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCardQualityOnlyColored)));
+			else if (uirThingCard != null)
+				Log.Error("[Harmony3StrictCompat] UIR Inspector Tabs HoverCard.Card subtitle fields changed: its mod updated, redo the quality-only colour tweak");
 			var smStockUpFilter = Target("SmartMedicine.Dialog_StockUp:<DoWindowContents>b__10_0");
 			if (smStockUpFilter != null)
 				harmony.Patch(smStockUpFilter, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SmStockUpExtras)));
@@ -1751,6 +1759,26 @@ namespace Harmony3StrictCompat
 			}
 		}
 
+		// Personal tweak: the gear hover card subtitle is one string, "Masterwork  ·  Hardleather  ·  x3", drawn in one
+		// colour (the quality accent whenever the item has a quality), so the material looked quality-coloured too.
+		// Only the quality word keeps the accent; the rest gets the card's default subtitle colour. The label is drawn
+		// with GUI.color = subtitleColor, which tints rich-text colours, so both parts are tagged and the tint is white.
+		static FieldInfo uirCardSubtitle, uirCardSubtitleColor;
+		const string UirCardSeparator = "  ·  ";
+
+		static void UirCardQualityOnlyColored(Thing thing, object __result)
+		{
+			if (__result == null || !thing.TryGetQuality(out _) || uirCardSubtitle.GetValue(__result) is not string subtitle)
+				return;
+			int cut = subtitle.IndexOf(UirCardSeparator, StringComparison.Ordinal);
+			if (cut <= 0 || subtitle.IndexOf('<') >= 0) return;
+			var accent = (Color)uirCardSubtitleColor.GetValue(__result);
+			var plain = (Color)uirCardSubtitleColor.GetValue(Activator.CreateInstance(__result.GetType()));
+			if (accent == plain) return;
+			uirCardSubtitle.SetValue(__result, $"<color=#{QcHex(accent)}>{subtitle.Substring(0, cut)}</color><color=#{QcHex(plain)}>{subtitle.Substring(cut)}</color>");
+			uirCardSubtitleColor.SetValue(__result, Color.white);
+		}
+
 		// Smart Medicine's stock-up picker lists drugs, medicine and vanilla HemogenPack only; other hemogen packs and
 		// carried meals are plain Foods, so they never show. Postfix on the picker's filter lambda admits these defs.
 		static readonly HashSet<string> SmStockUpDefs = new()
@@ -2760,6 +2788,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.InspectorTabs.Theme:StatLine"] = 0xBE61FF6FC692F581,
 			["UIRethemed.InspectorTabs.GearTab:RefreshVacuumGauge"] = 0x5D57634325E01F85,                // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-14
 			["UIRethemed.InspectorTabs.GearTab:SlotLabel"] = 0x44DFC46DF298F370,
+			["UIRethemed.InspectorTabs.GearTab:BuildThingCard"] = 0x59AE1D23E8A87DB8,                 // gear hover card subtitle, 2026-11-16
 			["UIRethemed.InspectorTabs.GearTab:VanillaSlotFor"] = 0xD4BB7BECCCD46A9E,
 			["UIRethemed.InspectorTabs.GearTab:DrawStatsPanel"] = 0x783CF2114581C793,
 			["SmartMedicine.Dialog_StockUp:<DoWindowContents>b__10_0"] = 0x287F2659618CDD5B,        // Smart Medicine - Continued 1.7, 2026-11-08 (DLL of 2026-11-02)

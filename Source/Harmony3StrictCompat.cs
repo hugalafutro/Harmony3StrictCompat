@@ -68,6 +68,14 @@ namespace Harmony3StrictCompat
 				jobFinalizer = AccessTools.FieldRefAccess<JobDriver, Func<JobCondition, Job>>("finalizerJobFactory");
 				harmony.Patch(readBook, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AbRuinedBookCrumbles)));
 			}
+			if (AccessTools.TypeByName("AlphaBooks.StaticCollections") is { } abCollectionsFamily
+				&& Target("LivingBonds.JobDriver_FamilyReading:MakeNewToils") is { } familyReading)
+			{
+				abRuinedBooks ??= AccessTools.Field(abCollectionsFamily, "ruinedBooks");
+				// The stub only builds the iterator; the toils live in MoveNext, so fingerprint that too.
+				Fingerprint("LivingBonds.JobDriver_FamilyReading:MakeNewToils/MoveNext", AccessTools.EnumeratorMoveNext(familyReading));
+				harmony.Patch(familyReading, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AbFamilyReadBookCrumbles)));
+			}
 			foreach (var readStart in new[] { Target("RimWorld.JobDriver_Reading:Notify_Starting"), Target("AlphaBooks.JobDriver_ReadAlphaBook:Notify_Starting") })
 				if (readStart != null)
 					harmony.Patch(readStart, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(OrderedReadUnforbidsBook)));
@@ -2351,6 +2359,21 @@ namespace Harmony3StrictCompat
 			};
 		}
 
+		// Living Bonds' "read book together" (JobDriver_FamilyReading) is a third reading driver: the initiator carries
+		// the book to a seat, reads for 2000 ticks and places it in the cell. A ruined book was left on the floor.
+		// The job's B target is the book only for the initiator; a job that ends Succeeded has run the whole read.
+		static void AbFamilyReadBookCrumbles(JobDriver __instance)
+		{
+			if (!(__instance.job.GetTarget(TargetIndex.B).Thing is Book book)
+				|| !(abRuinedBooks.GetValue(null) is HashSet<ThingDef> ruined) || !ruined.Contains(book.def))
+				return;
+			__instance.AddFinishAction(condition =>
+			{
+				if (condition == JobCondition.Succeeded && !book.Destroyed)
+					book.Destroy();
+			});
+		}
+
 		// ---- Vanilla: "Read now" is dropped at once on a forbidden book or outside recreation time ----------------
 		// The pawn picks the book up, carries it to a seat, and the read toil ends the job within a few ticks, so the
 		// book is dropped (seen 2026-11-15 on Alpha Books' ruined library site):
@@ -2912,6 +2935,8 @@ namespace Harmony3StrictCompat
 			["RimWorld.PawnGroupKindWorker_Normal:CanGenerateFrom"] = 0x53C95666E47F23F6,                       // game 1.7.5011, 2026-11-16
 			["RimWorld.PlaceWorker_ShowTurretRadius:AllowsPlacing"] = 0x524C60B8C1B219ED,                       // game 1.7.5011, 2026-11-16
 			["RimWorld.JobDriver_Reading:ReadBook"] = 0x5DD71548B9925859,                                         // game 1.7.5011, 2026-11-16
+			["LivingBonds.JobDriver_FamilyReading:MakeNewToils"] = 0xE5AB03BF7DC271E0,                           // Living Bonds 1.7
+			["LivingBonds.JobDriver_FamilyReading:MakeNewToils/MoveNext"] = 0xEDCA9D7D5DC3432B,                 // Living Bonds 1.7
 			["RimWorld.JobDriver_Reading:Notify_Starting"] = 0x1429D82AA682B150,                                  // game 1.7.5011, 2026-11-16
 			["AlphaBooks.JobDriver_ReadAlphaBook:Notify_Starting"] = 0x8C0A0B7B7171326B,                          // Alpha Books 1.6 DLL of 2026-07-22
 			["SmartMedicine.FindBestMedicine:Find"] = 0x5C207A8C7B0E5F6A,                                        // Smart Medicine - Continued 1.7, 2026-11-12

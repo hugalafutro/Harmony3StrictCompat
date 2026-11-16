@@ -116,6 +116,12 @@ namespace Harmony3StrictCompat
 				harmony.Patch(tmmGuild, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SkipOriginal)));
 				tmmGuildSkipped = true;
 			}
+			if (Target("Rachek128.RitualAttenuation.RitualExtendedDataRef:get_Comp") is { } raComp)
+			{
+				raLord = AccessTools.FieldRefAccess<Lord>(raComp.DeclaringType, "lord");
+				raCompIndex = AccessTools.FieldRefAccess<int>(raComp.DeclaringType, "compIndex");
+				harmony.Patch(raComp, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RaCompWithoutPrecept)));
+			}
 			var btApply = Target("TraitTracker.TraitHediffApplier:ApplyHediffsToPawnsWithTraits");
 			if (btApply != null)
 				harmony.Patch(btApply, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DropLogMessages)));
@@ -2745,6 +2751,7 @@ namespace Harmony3StrictCompat
 		static readonly Dictionary<string, ulong> Fingerprints = new()
 		{
 			["SensibleBedOwnership.Patch_ReservationManager:Prefix"] = 0xC02F4F892C656903,                       // 2026-10-28
+			["Rachek128.RitualAttenuation.RitualExtendedDataRef:get_Comp"] = 0x357FBBDFAE580E43,               // Ritual Size Attenuation 1.6 DLL, 2026-11-16
 			["RimPacts.WorldComponent_RimPacts:WorldComponentTick"] = 0x973CCBC78A2E8805,                  // RimPacts 1.7, 2026-11-16 (auto-defense wounds)
 			["RimPacts.WorldComponent_RimPacts:DefAutoTick"] = 0x6E3C18C760E8BC5E,
 			["RimPacts.WorldComponent_RimPacts:DefAutoOne"] = 0x85090DC9E02B067B,
@@ -3243,6 +3250,25 @@ namespace Harmony3StrictCompat
 		static bool CsNoSweepBeforeMedicalRest(Job __0, Pawn __1, ref Job __result)
 		{
 			if (__0?.def != JobDefOf.LayDown || __1?.health == null || !HealthAIUtility.ShouldSeekMedicalRest(__1)) return true;
+			__result = null;
+			return false;
+		}
+
+		// Ritual Size Attenuation keeps quality data per lord ritual and reads its comp from the ritual's precept
+		// (ritual.Ritual.outcomeEffect), or from the bestowing ceremony's outcome. VFE Empire's art exhibit, grand
+		// ball and parade are LordJob_Ritual without a precept (Ritual null) and not bestowings, so the participant
+		// count / quality postfixes throw a NullReferenceException inside the outcome's Apply. For the art exhibit
+		// that aborts StopExhibit after exhibitFinished is set but before the "CeremonyFinished" memo, and the lord
+		// stays in the show toil forever (guests and colonists kept awake, starving). Such a data ref has no comp
+		// (its constructor already logged "Failed to find the ritual quality comp"), so answer null: every caller
+		// of GetFor then skips it and the ritual uses its unattenuated quality.
+		static AccessTools.FieldRef<object, Lord> raLord;
+		static AccessTools.FieldRef<object, int> raCompIndex;
+
+		static bool RaCompWithoutPrecept(object __instance, ref RitualOutcomeComp_Quality __result)
+		{
+			var ritual = raLord(__instance)?.LordJob as LordJob_Ritual;
+			if (raCompIndex(__instance) >= 0 && (ritual is LordJob_BestowingCeremony || ritual?.Ritual != null)) return true;
 			__result = null;
 			return false;
 		}

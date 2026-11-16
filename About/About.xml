@@ -95,6 +95,7 @@
 - Vanilla: visitors and trade caravans no longer leave on arrival "because of dangerous temperature" from hypothermia or heatstroke frozen on them while they were stored as world pawns (it now recovers there at the vanilla off-map rate).
 - RimPacts: factions whose exiled leader left or was dismissed get a new leader (also repaired after load), no more "Faction leader for X is null".
 - RimPacts + vanilla gatherings: the expo party host is picked by vanilla's organizer rules (no more party called off moments after it starts because the host is scheduled for work), the host of any party stays through its own work or sleep schedule until the party ends, and every gathering's called-off message names the reason.
+- Ritual Size Attenuation + VFE Empire: art exhibit, grand ball and parade no longer crash in the outcome (an art exhibit stuck forever, guests starving).
 - VEF (MVCF): multi-verb weapons use the weapon's own accuracy/cooldown when the verb sets none; duplicate stat rows hidden; Range row fixed.
 - VEF: verb range factor applied to the result instead of the shared verb def (no stuck ranges).
 - Unburned + VEF: drafted pawns with reach melee weapons auto-attack at full reach again (Unburned replaced the method VEF patches).

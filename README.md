@@ -7,7 +7,9 @@ once the mod it covers is fixed upstream.
 
 Each C# fix fingerprints the foreign method it touches (FNV-1a of the IL). When that mod updates, the log shows a
 red `[Harmony3StrictCompat] ... changed` error so the fix can be re-checked. XML fixes use PatchOperationTest steps
-that fail loudly the same way.
+that fail loudly the same way. `Tools/fpcheck.py` runs the same fingerprint check offline against the DLLs on disk
+(`Tools/fpcheck.cmd` wraps it for a pre-launch shortcut: silent when nothing changed, otherwise a window listing
+the changed methods per mod).
 
 | Mod | Problem | Fix |
 |---|---|---|

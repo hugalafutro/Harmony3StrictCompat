@@ -349,7 +349,7 @@ namespace Harmony3StrictCompat
 			uirqTile = AccessTools.TypeByName("UIRethemed.Quests.Tile");
 			if (uirqOf != null && uirqTile != null)
 				harmony.Patch(uirqOf, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirqRewardTiles)));
-			var qcMod = AccessTools.TypeByName("QualityColors.QualityColorsMod");
+			var qcMod = AccessTools.TypeByName("QualityColorsMod"); // global namespace; only its settings class is in QualityColors
 			qcSettings = qcMod == null ? null : AccessTools.Field(qcMod, "Settings");
 			qcColors = qcSettings == null ? null : AccessTools.Field(qcSettings.FieldType, "Colors");
 			if (qcColors != null)
@@ -2661,11 +2661,11 @@ namespace Harmony3StrictCompat
 		static readonly Dictionary<string, ulong> Fingerprints = new()
 		{
 			["SensibleBedOwnership.Patch_ReservationManager:Prefix"] = 0xC02F4F892C656903,                       // 2026-10-28
-			["RimWorld.CompShuttle:CompTick"] = 0x335012F801042105,
-			["RimWorld.Selector:SelectUnderMouse"] = 0x54910574CE0CAD28,                                    // game 1.7.5005, 2026-11-12
+			["RimWorld.CompShuttle:CompTick"] = 0x0FE3170CD124F570,
+			["RimWorld.Selector:SelectUnderMouse"] = 0x1A3AD61C82A0379C,                                    // game 1.7.5011, 2026-11-16
 			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,
-			["Verse.GizmoGridDrawer:DrawGizmoGrid"] = 0xE826E98868C04FD8,
-			["RimWorld.PawnRelationWorker_Sibling:CreateRelation"] = 0xA2FDCD1C567354A3,                                              // game 1.7.5000, 2026-11-08
+			["Verse.GizmoGridDrawer:DrawGizmoGrid"] = 0xA95952BCCCDC4A65,
+			["RimWorld.PawnRelationWorker_Sibling:CreateRelation"] = 0x5C0292D679E029F6,                                              // game 1.7.5011, 2026-11-16
 			["TraitTracker.TraitHediffApplier:ApplyHediffsToPawnsWithTraits"] = 0x67BDC9BB976E9B72,                // 2026-10-22
 			// VEF 1.7 MVCF.dll, 2026-10-31
 			["MVCF.Utilities.VerbStatsUtility:GetStatValue"] = 0x691C1FF55EB56CE6,
@@ -2698,7 +2698,7 @@ namespace Harmony3StrictCompat
 			["TD_Enhancement_Pack.Alert_Deterioration:get_DeterioratingThings"] = 0x8774F1B773D667FE,       // TD Enhancement Pack 1.7, 2026-11-12
 			["TD_Enhancement_Pack.Alert_Deterioration+<get_DeterioratingThings>d__1:MoveNext"] = 0x54FBB3FD87CA2948,
 			["TD_Enhancement_Pack.SkillLearningIndicator:LabelLearning"] = 0xA1C6010BAEEDD973,             // TD Enhancement Pack 1.7, DLL of 2026-10-22
-			["UIRethemed.ColonistCard.Glance:DrawSkill"] = 0x82923818519A5A1C,                             // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-15 17:43
+			["UIRethemed.ColonistCard.Glance:DrawSkill"] = 0x85EC22A2204BC67A,                             // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-16 10:44
 			["VanillaQuestsExpandedAncients.Building_PneumaticTubeLaunchPort:Deliver"] = 0x824DD22872D97BE7, // VQE Ancients 1.6 build, DLL of 2026-10-06
 			["SkilledRefueling.HarmonyPatches:GetRefuelDuration"] = 0xFE59863C2B492B65,                    // Skilled Refueling 1.7, DLL of 2026-11-09
 			["SkilledRefueling.RefuelingUtility:RefuelingSpeedForPawn"] = 0x302D7899D7E9DF65,
@@ -2711,11 +2711,11 @@ namespace Harmony3StrictCompat
 			["HaulersDream.CompositableLoadoutsCompat:InitKeepApi"] = 0x3F15140E9ED2D991,                    // Hauler's Dream 1.6 build, 2026-11-05
 			["HaulersDream.CompositableLoadoutsCompat:LoadoutWantedUnits"] = 0x89C4B3F40C058F43,
 			["HaulersDream.StorageCommitments:IsDelivering"] = 0xB2A8CC7128220022,                           // Hauler's Dream 1.24.0 (1.6 build), 2026-08-10
-			["UIRethemed.Quests.Theme:LabelTruncated"] = 0xBCEFD483BBCF25F6,                               // UI Rethemed - Quests 1.7, 2026-11-11
+			["UIRethemed.Quests.Theme:LabelTruncated"] = 0x100BC02BEE333A35,                               // UI Rethemed - Quests 1.7, 2026-11-15 11:06
 			["UIRethemed.Quests.HoverCard:Region"] = 0xC63A1FE873265DBA,
 			["UIRethemed.Quests.RewardTiles:Of"] = 0x3656DF7054B80C0C,
 			["UIRethemed.Quests.HoverCard:ContentRegion"] = 0x13E206A5930D6140,
-			["UIRethemed.Quests.HoverCard:Register"] = 0x24510609E345B99F,
+			["UIRethemed.Quests.HoverCard:Register"] = 0x9CD716D3C79F0120,
 			["HaulersDream.InventorySurplus:KeepCountOf"] = 0x04CE467AFB2AB712,                                 // Hauler's Dream 1.6 build, 2026-11-11
 			["SmartMedicine.StockUpUtility:StockUpCount"] = 0x6CFF64A881BBB050,                                   // (Pawn, ThingDef) overload, Smart Medicine 1.7, 2026-11-11
 			["HaulersDream.StorageCommitments:get_InsideSpaceScan"] = 0x212C16560ED8173E,                     // Hauler's Dream 1.6 build, 2026-11-06
@@ -2751,7 +2751,7 @@ namespace Harmony3StrictCompat
 			["Flourish.Everyday.JobAnimationWorker_Anchored:Evaluate"] = 0x817B489F5395FF01,                // Flourish Everyday 1.7, 2026-10-25
 			["VFETribals.FactionUIUtility_DoWindowContents_Patch:Postfix"] = 0x8824F2B542A8AC6E,             // VFE Tribals 1.6 build, 2026-10-14
 			["UIRethemed.Factions.FactionsTab:Themed"] = 0x6464010BFAB662C3,                               // UI Rethemed 1.7, 2026-11-06
-			["UIRethemed.Core.CoreWidgets:Button"] = 0x7E35181C5EFCB9BE,                             // UI Rethemed - Core 1.7, 2026-11-15
+			["UIRethemed.Core.CoreWidgets:Button"] = 0x876D9C741F316C53,                             // UI Rethemed - Core 1.7, 2026-11-16 10:44
 			["UIRethemed.Core.CoreWidgets:Icon"] = 0xECDD3C66CA7972C5,
 			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0x0B38B0F0F41EBC55,
 			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0x1843B4BAE54CCD71,
@@ -2763,12 +2763,12 @@ namespace Harmony3StrictCompat
 			["UIRethemed.InspectorTabs.GearTab:VanillaSlotFor"] = 0xD4BB7BECCCD46A9E,
 			["UIRethemed.InspectorTabs.GearTab:DrawStatsPanel"] = 0x783CF2114581C793,
 			["SmartMedicine.Dialog_StockUp:<DoWindowContents>b__10_0"] = 0x287F2659618CDD5B,        // Smart Medicine - Continued 1.7, 2026-11-08 (DLL of 2026-11-02)
-			["Verse.AI.HaulAIUtility:PawnCanAutomaticallyHaul"] = 0x4F5511488CF0B191,                            // game 1.7.5000, 2026-11-09
+			["Verse.AI.HaulAIUtility:PawnCanAutomaticallyHaul"] = 0xA915AA993362169F,                            // game 1.7.5011, 2026-11-16
 			["RimWorld.JobGiver_DropUnusedInventory:Drop"] = 0x80ADDA655AAFAE64,                                  // game 1.7.5000, 2026-11-09
-			["RimWorld.PawnGroupKindWorker_Normal:CanGenerateFrom"] = 0xCE8A5138AE0DBBC4,                       // game 1.7.5000, 2026-11-09
-			["RimWorld.PlaceWorker_ShowTurretRadius:AllowsPlacing"] = 0xA27D64AC3CB5B9DB,                       // game 1.7.5000, 2026-11-10
-			["RimWorld.JobDriver_Reading:ReadBook"] = 0x355454FCC6AB19F9,                                         // game 1.7.5005, 2026-11-15
-			["RimWorld.JobDriver_Reading:Notify_Starting"] = 0xFA9F703F1C5EDF64,                                  // game 1.7.5005, 2026-11-15
+			["RimWorld.PawnGroupKindWorker_Normal:CanGenerateFrom"] = 0x53C95666E47F23F6,                       // game 1.7.5011, 2026-11-16
+			["RimWorld.PlaceWorker_ShowTurretRadius:AllowsPlacing"] = 0x524C60B8C1B219ED,                       // game 1.7.5011, 2026-11-16
+			["RimWorld.JobDriver_Reading:ReadBook"] = 0x5DD71548B9925859,                                         // game 1.7.5011, 2026-11-16
+			["RimWorld.JobDriver_Reading:Notify_Starting"] = 0x1429D82AA682B150,                                  // game 1.7.5011, 2026-11-16
 			["AlphaBooks.JobDriver_ReadAlphaBook:Notify_Starting"] = 0x8C0A0B7B7171326B,                          // Alpha Books 1.6 DLL of 2026-07-22
 			["SmartMedicine.FindBestMedicine:Find"] = 0x5C207A8C7B0E5F6A,                                        // Smart Medicine - Continued 1.7, 2026-11-12
 			["SmartMedicine.StockUpUtility:StockingUpOn"] = 0xE47440ED851F08C2,                                   // (Pawn, Thing) overload, Smart Medicine 1.7, 2026-11-09
@@ -2782,7 +2782,7 @@ namespace Harmony3StrictCompat
 			["AdaptiveMealBill.AdaptiveRecipeSelection:RecoverRecipe"] = 0x62FA21FEB38C0B91,             // AdaptiveMealBill 1.7, DLL of 2026-11-08
 			["UIRethemed.InspectorTabs.CareSwitchDef:For"] = 0xB747ACCF267B5487,                         // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-14
 			["AutoExtractGenes.Utils:GetAutoExtractGenesComponent"] = 0x41DC32D5B21682AC,                // AutoExtractGenes 1.7, DLL of 2026-11-08
-			["ColonyManagerRedux.Manager:FinalizeInit"] = 0x6E9B8BF106F9034A,                           // Colony Manager Redux 1.7, DLL of 2026-11-02
+			["ColonyManagerRedux.Manager:FinalizeInit"] = 0xF523FD8F4AA6A9E5,                           // Colony Manager Redux 1.7, DLL of 2026-11-16 10:44
 			["VFEF.CompScaresAnimals:ScareAnimals"] = 0xA4407F9189E92650,                               // VFE Farming (1.6 DLL), 2026-11-13
 			["Flourish.AnimEventWorkers:HasMuzzle"] = 0x09D80ABDB9276A61,                               // Flourish - Combat Animations 2.1.5
 			["TacticalGroups.ColonistGroup:GetUniqueLoadID"] = 0x5F30AAACFB7C28AE,                      // Colony Groups 1.6 build
@@ -2811,20 +2811,20 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Notifications.Placement:TopStart"] = 0xB66BBFD57F93B4D8,
 			["UIRethemed.Notifications.FoodReadout:Read"] = 0x3A9FE28F59673276,                          // UIR Notifications 1.7, 2026-11-13
 			["UIRethemed.Notifications.FoodReadout:Draw"] = 0x6D18FED08A1E6587,
-			["UIRethemed.ColonistCard.InfoList:Defer"] = 0x1FEED3057CF9D99E,                            // UIR Colonist Card 1.7, 2026-11-15 03:21
-			["UIRethemed.ColonistCard.InfoList:DrawRow"] = 0x9A39FDE985280EA8,                          // UIR Colonist Card 1.7, 2026-11-15 17:43
+			["UIRethemed.ColonistCard.InfoList:Defer"] = 0xBF4F05F9D7D0903A,                            // UIR Colonist Card 1.7, 2026-11-16 10:44
+			["UIRethemed.ColonistCard.InfoList:DrawRow"] = 0x193B6FBC6CFC9531,                          // UIR Colonist Card 1.7, 2026-11-16 10:44
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPostfix"] = 0xEAEA3D4FF6046A94,
 			["UsefulMarks.Dialog_NamePawn_DoWindowContents_Patch:Postfix"] = 0xF33AD5F31EB56B3B,        // Useful Marks 1.7, DLL of 2026-10-22
 			["UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix"] = 0xD2A3A440ED802D16,
-			["RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"] = 0x7BC03B6DECA267E3,               // vanilla 1.7.5005, guilty icon slot
+			["RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"] = 0xFC46FFEC8AE41506,               // vanilla 1.7.5011, guilty icon slot
 			["UIRethemed.ColonistCard.Card:get_ThemingHeader"] = 0x88F2EBA978A05C89,                     // UI Rethemed - Colonist Card 1.7, 2026-11-15 03:21
-			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0xC489F51FB5DE3A7B,
+			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0xE2FA8F5061B8B740,
 			["UIRethemed.Animals.Motion:Key"] = 0xD8B1E64161CEBA55,                                     // UI Rethemed - Animals 1.7, DLL of 2026-11-09
 			["UIRethemed.Animals.Motion:Hover"] = 0xCF658FE8AAEAECFD,
-			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0x1F1641A7E197296C,                  // UI Rethemed - Architect 1.7, 2026-11-15 17:51
+			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0x5B60F2AB7CA092D5,                  // UI Rethemed - Architect 1.7, 2026-11-16 10:44
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an

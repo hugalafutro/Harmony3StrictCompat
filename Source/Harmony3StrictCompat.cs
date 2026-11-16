@@ -485,6 +485,8 @@ namespace Harmony3StrictCompat
 			}
 			if (Target("VFEF.CompScaresAnimals:ScareAnimals") is { } vfefScare)
 				harmony.Patch(vfefScare, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ScarecrowSpawnedOnly)));
+			if (Target("Impact.ArmorDeflection:Prefix") is { } impactArmor)
+				harmony.Patch(impactArmor, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ImpactBreachNaturalArmor)));
 			if (Target("ColonyManagerRedux.Manager:FinalizeInit") is { } cmrInit)
 				harmony.Patch(cmrInit, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(CmrStartResearchOnce)));
 			mfProps = AccessTools.TypeByName("MuzzleFlash.MuzzleFlashProps");
@@ -960,6 +962,47 @@ namespace Harmony3StrictCompat
 			}
 			if (replaced != 1)
 				Log.Error($"[Harmony3StrictCompat] VFE Farming scarecrow: expected one AllPawns call, replaced {replaced}");
+		}
+
+		// ---- IMPACT - Combat Overhaul: natural armor of animals, insects and entities can never be breached -------
+		// Impact's armor is deterministic: penetration / armor <= 0.5 always deflects. Its way out is the focal breach
+		// (each deflect wears the armor on that body part down), but for natural armor the breach is only read and
+		// only added when the target is a mechanoid (one `isMechanoid` local). A megaspider, an insect centipede or a
+		// nociosphere therefore deflects a weak attacker forever (seen: a hunting animal on a downed insect). Every use
+		// of that local that gates the breach now reads true; the two metal-armor effect flags keep the real value.
+		static IEnumerable<CodeInstruction> ImpactBreachNaturalArmor(IEnumerable<CodeInstruction> instructions)
+		{
+			var codes = instructions.ToList();
+			var isMech = AccessTools.PropertyGetter(typeof(RaceProperties), nameof(RaceProperties.IsMechanoid));
+			int at = codes.FindIndex(c => c.Calls(isMech));
+			if (at < 0 || at + 1 >= codes.Count || !codes[at + 1].IsStloc() || codes.FindIndex(at + 1, c => c.Calls(isMech)) >= 0)
+			{
+				Log.Error("[Harmony3StrictCompat] Impact ArmorDeflection.Prefix: isMechanoid local not found: its mod updated, redo the natural-armor breach fix");
+				return codes;
+			}
+			var local = codes[at + 1].operand;
+			if (local == null) { Log.Error("[Harmony3StrictCompat] Impact ArmorDeflection.Prefix: isMechanoid local has no operand, natural-armor breach fix skipped"); return codes; }
+			bool Loads(CodeInstruction c) => c.IsLdloc() && Equals(c.operand, local);
+			int gates = 0, kept = 0, flags = 0;
+			for (int i = at + 2; i < codes.Count; i++)
+			{
+				if (Loads(codes[i]))
+				{
+					if (i + 1 < codes.Count && codes[i + 1].opcode == OpCodes.Stind_I1) { kept++; continue; }   // deflectedByMetalArmor = isMechanoid
+					codes[i].opcode = OpCodes.Ldc_I4_1;
+					codes[i].operand = null;
+					gates++;
+				}
+				else if (flags == 0 && codes[i].opcode == OpCodes.Ldc_I4_1 && i > 0 && codes[i - 1].IsLdarg() && i + 1 < codes.Count && codes[i + 1].opcode == OpCodes.Stind_I1)
+				{
+					codes[i].opcode = OpCodes.Ldloc_S;   // diminishedByMetalArmor = isMechanoid (was true inside the mech-only branch)
+					codes[i].operand = local;
+					flags++;
+				}
+			}
+			if (gates != 3 || kept != 1 || flags != 1)
+				Log.Error($"[Harmony3StrictCompat] Impact ArmorDeflection.Prefix: expected 3 breach gates, 1 kept flag and 1 diminished flag, got {gates}/{kept}/{flags}: its mod updated, check the natural-armor breach fix");
+			return codes;
 		}
 
 		static IEnumerable<CodeInstruction> CmrStartResearchOnce(IEnumerable<CodeInstruction> instructions)
@@ -2705,6 +2748,7 @@ namespace Harmony3StrictCompat
 			["RimPacts.WorldComponent_RimPacts:WorldComponentTick"] = 0x973CCBC78A2E8805,                  // RimPacts 1.7, 2026-11-16 (auto-defense wounds)
 			["RimPacts.WorldComponent_RimPacts:DefAutoTick"] = 0x6E3C18C760E8BC5E,
 			["RimPacts.WorldComponent_RimPacts:DefAutoOne"] = 0x85090DC9E02B067B,
+			["Impact.ArmorDeflection:Prefix"] = 0x31A4B4B031D77B6E,                                         // IMPACT - Combat Overhaul 1.7, DLL of 2026-10-29
 			["RimWorld.CompShuttle:CompTick"] = 0x0FE3170CD124F570,
 			["RimWorld.Selector:SelectUnderMouse"] = 0x1A3AD61C82A0379C,                                    // game 1.7.5011, 2026-11-16
 			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,
@@ -2794,11 +2838,11 @@ namespace Harmony3StrictCompat
 			["YayoAnimation.HarmonyPatches.PawnPatches.ParallelGetPreRenderResultsPatch:DataFor"] = 0x70EEFE43592C82C3, // Flourish Everyday 1.7, 2026-10-25
 			["Flourish.Everyday.JobAnimationWorker_Anchored:Evaluate"] = 0x817B489F5395FF01,                // Flourish Everyday 1.7, 2026-10-25
 			["VFETribals.FactionUIUtility_DoWindowContents_Patch:Postfix"] = 0x8824F2B542A8AC6E,             // VFE Tribals 1.6 build, 2026-10-14
-			["UIRethemed.Factions.FactionsTab:Themed"] = 0x6464010BFAB662C3,                               // UI Rethemed 1.7, 2026-11-06
-			["UIRethemed.Core.CoreWidgets:Button"] = 0x876D9C741F316C53,                             // UI Rethemed - Core 1.7, 2026-11-16 10:44
-			["UIRethemed.Core.CoreWidgets:Icon"] = 0xECDD3C66CA7972C5,
-			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0x0B38B0F0F41EBC55,
-			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0x1843B4BAE54CCD71,
+			["UIRethemed.Factions.FactionsTab:Themed"] = 0x69BB80B87A3FDA4F,                               // UI Rethemed 1.7, 2026-11-16 13:03
+			["UIRethemed.Core.CoreWidgets:Button"] = 0xE5FA1B8F57F781C7,                             // UI Rethemed - Core 1.7, 2026-11-16 13:03
+			["UIRethemed.Core.CoreWidgets:Icon"] = 0x8774648DE4592793,
+			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0xE16744FA8392E72D,
+			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0x825B03D63888BFBF,
 			["UIRethemed.InspectorTabs.HoverCard:LineHeight"] = 0xD907DD18913BBC6A,                        // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-14
 			["UIRethemed.InspectorTabs.HoverCard:DrawGroup"] = 0xC3B256B725066D07,
 			["UIRethemed.InspectorTabs.Theme:StatLine"] = 0xBE61FF6FC692F581,
@@ -2820,8 +2864,8 @@ namespace Harmony3StrictCompat
 			["Unburned.Pretty_Patch:Prefix"] = 0xE153E3D01BE0AC50,                                                // Unburned 1.7, 2026-11-09
 			["VEF.Weapons.MeleeReachCombatUtility:IsVanillaMeleeAttack"] = 0xAED0762AE41E6D48,                    // VEF 1.7, 2026-11-09
 			["SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix"] = 0xEA4FA1B085907595,     // Smarter Visitors 1.7.0, 2026-11-08
-			["UIRethemed.MainBar.MenuWindow:Face"] = 0x925C75D0D1F3B312,                               // UI Rethemed - Main Bar 1.7, 2026-11-15
-			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0x817E8BAC171C3602,
+			["UIRethemed.MainBar.MenuWindow:Face"] = 0x43673CF173501798,                               // UI Rethemed - Main Bar 1.7, 2026-11-16 13:03
+			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0x54E7F7BDB97916EC,
 			["UIRethemed.MainBar.BarControls:Toggle"] = 0x8B359CF8796161A3,
 			["UIRethemed.MainBar.BarControls:SetSpeed"] = 0x71E7452A5F9EBDD4,
 			["AdaptiveMealBill.AdaptiveRecipeSelection:RecoverRecipe"] = 0x62FA21FEB38C0B91,             // AdaptiveMealBill 1.7, DLL of 2026-11-08

@@ -502,6 +502,8 @@ namespace Harmony3StrictCompat
 				harmony.Patch(AccessTools.Method(typeof(PocketMapUtility), nameof(PocketMapUtility.GeneratePocketMap)),
 					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LeoSeamsRandomCavern)),
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LeoSeamsRoofLava)));
+			if (Target("PipeSystem.CompResourceTrader:CompInspectStringExtra", optional: true) is { } pipeTraderInspect)
+				harmony.Patch(pipeTraderInspect, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PipeTraderInspectUnspawned)));
 			if (PipeTapsAndDrains.Init())
 			{
 				harmony.Patch(AccessTools.Method(typeof(StoreUtility), nameof(StoreUtility.IsGoodStoreCell)),
@@ -1086,6 +1088,17 @@ namespace Harmony3StrictCompat
 			if (__result && t is { Spawned: true } && t.Position.GetEdifice(t.Map) is Building_Storage b && b.GetStoreSettings() == __instance
 				&& PipeTapsAndDrains.Watched(b.def, out bool tap))
 				__result = tap ? t.stackCount <= PipeTapsAndDrains.TapMax(b, t.def.stackLimit) : PipeTapsAndDrains.DrainHasRoom(b, 1);
+		}
+
+		// VE PipeSystem (1.7 build): CompResourceTrader.CompInspectStringExtra formats its rate with PipeNet.def, and
+		// PipeNet is null while the building is not on a map. Selecting a minified pipe consumer (gas wall lamp) threw
+		// a NullReferenceException every frame. A minified building has no rate or network to report, so no line.
+		static bool PipeTraderInspectUnspawned(ThingComp __instance, ref string __result)
+		{
+			if (__instance.parent.Spawned)
+				return true;
+			__result = "";
+			return false;
 		}
 
 		// Leo - Events + Biomes! Caverns (personal tweak): the "unexpected mineral seams" cave is a pocket map whose
@@ -2846,7 +2859,7 @@ namespace Harmony3StrictCompat
 			["Flourish.Everyday.JobAnimationWorker_Anchored:Evaluate"] = 0x817B489F5395FF01,                // Flourish Everyday 1.7, 2026-10-25
 			["VFETribals.FactionUIUtility_DoWindowContents_Patch:Postfix"] = 0x8824F2B542A8AC6E,             // VFE Tribals 1.6 build, 2026-10-14
 			["UIRethemed.Factions.FactionsTab:Themed"] = 0x69BB80B87A3FDA4F,                               // UI Rethemed 1.7, 2026-11-16 13:03
-			["UIRethemed.Core.CoreWidgets:Button"] = 0xE5FA1B8F57F781C7,                             // UI Rethemed - Core 1.7, 2026-11-16 13:03
+			["UIRethemed.Core.CoreWidgets:Button"] = 0xB29A7080DB95E1E2,                             // UI Rethemed - Core 1.7, 2026-11-16 15:23
 			["UIRethemed.Core.CoreWidgets:Icon"] = 0x8774648DE4592793,
 			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0xE16744FA8392E72D,
 			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0x825B03D63888BFBF,
@@ -2921,6 +2934,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Animals.Motion:Key"] = 0xD8B1E64161CEBA55,                                     // UI Rethemed - Animals 1.7, DLL of 2026-11-09
 			["UIRethemed.Animals.Motion:Hover"] = 0xCF658FE8AAEAECFD,
 			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0x5B60F2AB7CA092D5,                  // UI Rethemed - Architect 1.7, 2026-11-16 10:44
+			["PipeSystem.CompResourceTrader:CompInspectStringExtra"] = 0xD18D2A2921AD575F,           // VEF PipeSystem 1.7
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an

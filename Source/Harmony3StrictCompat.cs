@@ -200,6 +200,8 @@ namespace Harmony3StrictCompat
 				hcItemPrice = AccessTools.Method(hcCompType, "GetSingleItemPrice");
 				harmony.Patch(hcInspect, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HcPricingLine)));
 			}
+			if (Target("Hospitality.JoyGiver_BuyStuff:CanEat") is { } hospCanEat)
+				harmony.Patch(hospCanEat, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospTitleFood)));
 			var hospPocket = Target("Hospitality.Utilities.ItemUtility:PocketHeadgear");
 			if (hospPocket != null)
 				harmony.Patch(hospPocket, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospKeepCasketHelmet)));
@@ -1091,6 +1093,18 @@ namespace Harmony3StrictCompat
 			if (__result && t is { Spawned: true } && t.Position.GetEdifice(t.Map) is Building_Storage b && b.GetStoreSettings() == __instance
 				&& PipeTapsAndDrains.Watched(b.def, out bool tap))
 				__result = tap ? t.stackCount <= PipeTapsAndDrains.TapMax(b, t.def.stackLimit) : PipeTapsAndDrains.DrainHasRoom(b, 1);
+		}
+
+		// ---- Hospitality: nobles shop for food their title accepts ------------------------------------------------
+		// JoyGiver_BuyFood qualifies any nutritious item (JoyGiver_BuyStuff.CanEat) and ranks by FoodOptimality, which
+		// knows nothing of royal titles. A conceited Duke (lavish meals only) bought legendary cheese and simple meals,
+		// would not eat them, and got GuestHasNoFood; GetRequiresFoodFactor counted that same food as "carrying
+		// enough", so he stopped shopping for more. CanEat feeds both, so food vanilla calls inappropriate for the
+		// title (FoodUtility.InappropriateForTitle; starving guests excepted) no longer counts as edible there.
+		static void HospTitleFood(Thing thing, Pawn pawn, ref bool __result)
+		{
+			if (__result && FoodUtility.InappropriateForTitle(thing.def, pawn, allowIfStarving: true))
+				__result = false;
 		}
 
 		// ---- Temporary probe: who deletes workbench bills -------------------------------------------------------
@@ -2956,6 +2970,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Animals.Motion:Hover"] = 0xCF658FE8AAEAECFD,
 			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0x5B60F2AB7CA092D5,                  // UI Rethemed - Architect 1.7, 2026-11-16 10:44
 			["PipeSystem.CompResourceTrader:CompInspectStringExtra"] = 0xD18D2A2921AD575F,           // VEF PipeSystem 1.7
+			["Hospitality.JoyGiver_BuyStuff:CanEat"] = 0x304D1E10604FFCD2,                           // Hospitality 1.7
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an

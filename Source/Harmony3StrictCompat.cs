@@ -2823,9 +2823,9 @@ namespace Harmony3StrictCompat
 		{
 			["SensibleBedOwnership.Patch_ReservationManager:Prefix"] = 0xC02F4F892C656903,                       // 2026-10-28
 			["Rachek128.RitualAttenuation.RitualExtendedDataRef:get_Comp"] = 0x357FBBDFAE580E43,               // Ritual Size Attenuation 1.6 DLL, 2026-11-16
-			["RimPacts.WorldComponent_RimPacts:WorldComponentTick"] = 0x973CCBC78A2E8805,                  // RimPacts 1.7, 2026-11-16 (auto-defense wounds)
-			["RimPacts.WorldComponent_RimPacts:DefAutoTick"] = 0x6E3C18C760E8BC5E,
-			["RimPacts.WorldComponent_RimPacts:DefAutoOne"] = 0x85090DC9E02B067B,
+			["RimPacts.WorldComponent_RimPacts:WorldComponentTick"] = 0x4096EF24F5F80CBB,                  // RimPacts 1.7, 2026-11-17 (auto-defense wounds)
+			["RimPacts.WorldComponent_RimPacts:DefAutoTick"] = 0x991E4F1FBAF188CE,
+			["RimPacts.WorldComponent_RimPacts:DefAutoOne"] = 0xE57F4FE7DF4CEEF6,
 			["Impact.ArmorDeflection:Prefix"] = 0x31A4B4B031D77B6E,                                         // IMPACT - Combat Overhaul 1.7, DLL of 2026-10-29
 			["RimWorld.CompShuttle:CompTick"] = 0x0FE3170CD124F570,
 			["RimWorld.Selector:SelectUnderMouse"] = 0x1A3AD61C82A0379C,                                    // game 1.7.5011, 2026-11-16
@@ -2897,15 +2897,15 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Ideology.StyleTip+Content:SectionHeight"] = 0x7D0C038E62C61F43,
 			["UIRethemed.Ideology.StyleTip+Content:Draw"] = 0x045AEBC779549B88,
 			["TooManyMods.Compat_MerchantGuild_TradeArrivalOption:.cctor"] = 0x8DD5B3B38F9ACDDF,              // TMM VFEM2_VF.dll, 2026-01-24 (built for Vehicle Framework 1.6)
-			["RimPacts.WorldComponent_RimPacts:ApplyProtectionFailure"] = 0x51B5AC09F6E59EFC,                  // RimPacts 1.7, 2026-11-15 20:06 (no route check)
-			["RimPacts.WorldComponent_RimPacts:IsProtectedByTradePact"] = 0x1C2E72966E05494E,
-			["RimPacts.WorldComponent_RimPacts:ForceExpoParty"] = 0xA416641AB8A1FBFD,                          // RimPacts 1.7, 2026-11-15 20:06
+			["RimPacts.WorldComponent_RimPacts:ApplyProtectionFailure"] = 0x8DBC9CF56ECA2BA2,                  // RimPacts 1.7, 2026-11-17 (no route check)
+			["RimPacts.WorldComponent_RimPacts:IsProtectedByTradePact"] = 0xB92AD9C0E8DC91E9,
+			["RimPacts.WorldComponent_RimPacts:ForceExpoParty"] = 0x0C6C9C7247584574,                          // RimPacts 1.7, 2026-11-17
 			["SensibleBedOwnership.Patch_Pawn_Ownership_get_OwnedBed:Prefix"] = 0x696E7432D36527D8,       // SBO 1.6 build, 2026-11-05
 			["SensibleBedOwnership.Utility:GetMainBed"] = 0xAE5863A6DF81EAD6,                                // (Pawn) overload
 			["SensibleBedOwnership.Utility:AllAssignedBedsAndDeathrestCaskets"] = 0x8560CE17C9797D18,
 			["VEF.Buildings.CompRandomBuildingGraphic:ChangeGraphic"] = 0x083F54FF7DB1EDDF,                  // VEF 1.7, 2026-11-16
 			["AdaptiveStorage.StorageGraphicWorker:GetGraphicFor"] = 0x2899906440FC5118,                     // ASF 1.6 build, 2025-11-12
-			["RimPacts.WorldComponent_RimPacts:DismissExilePawn"] = 0xFCC3FA412B66E2A4,                        // RimPacts 1.7, 2026-11-15 20:06 (ForcefullyKept/Spawned guards; still no successor)
+			["RimPacts.WorldComponent_RimPacts:DismissExilePawn"] = 0xC803FB6D38A79CDE,                        // RimPacts 1.7, 2026-11-17 (ForcefullyKept/Spawned guards; still no successor)
 			["PrisonerRealism.JobGiver_CleanCell:ShouldClean"] = 0x7B21CD085E9E96A1,                          // Prisoner Realism 1.7, 2026-11-12 23:37
 			["CleaningAreaRelaunched.CleaningAreaRelaunched_Util:GetCleanArea"] = 0xD9B02D52DE61B82C,          // CAR 1.6 build, 2025-11-12
 			["aRandomKiwi.HFM.JobGiver_AnimalHunt:TryGiveJob"] = 0x865CBA567579063A,                            // Hunt For Me 1.6 build, 2025-12-25

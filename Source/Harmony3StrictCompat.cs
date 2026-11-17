@@ -627,8 +627,6 @@ namespace Harmony3StrictCompat
 				harmony.Patch(umInspect, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UmInspectButtonsPawnOnly)));
 			if (Target("AlteredCarbon.JobGiver_Reload_TryGiveJob_Patch:Postfix") is { } acReload)
 				harmony.Patch(acReload, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AcBeltReloadOnlyWithVefShield)));
-			if (Target("GUIPerformancePatch.GppInlineGuard:Bind") is { } wppBind)
-				harmony.Patch(wppBind, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(WppBindTwoArgDisableInlining)));
 			if (ModsConfig.IsActive("wowgag.RimPacts"))
 				harmony.Patch(AccessTools.Method(typeof(LetterStack), nameof(LetterStack.ReceiveLetter), [typeof(Letter), typeof(string), typeof(int), typeof(bool)]),
 					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RptTitleCaseLetter)));
@@ -780,27 +778,6 @@ namespace Harmony3StrictCompat
 				words[i] = char.ToUpper(w[0]) + w.Substring(1);
 			}
 			let.Label = string.Join(" ", words);
-		}
-
-		// ---- WOWGAG's Performance Patch + Harmony 3.0.3: parallel never opens ----
-		// GppInlineGuard.Bind looks up MonoMod's PlatformTriple.TryDisableInlining(MethodBase) by exact signature. Harmony
-		// 3.0.3's MonoMod has TryDisableInlining(MethodBase, RuntimeMethodHandle handle = default), so the lookup fails,
-		// SafeToOpen reports "표지 기능 없음" and the parallel infrastructure stays on its serial fallback forever (its
-		// "Performance patch preparing" alert sticks at 97%). Bind the two-argument form with the default handle, which is
-		// what a C# caller of the new signature passes. Falls through to WOWGAG's own Bind when the new form is absent.
-		static bool WppBindTwoArgDisableInlining(ref bool ___bindTried, ref Func<MethodBase, bool> ___disable, ref string ___bindNote)
-		{
-			if (___bindTried) return false;
-			var triple = typeof(Harmony).Assembly.GetType("MonoMod.Core.Platforms.PlatformTriple");
-			var tryDisable = triple?.GetMethod("TryDisableInlining", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
-				[typeof(MethodBase), typeof(RuntimeMethodHandle)], null);
-			var current = triple?.GetProperty("Current", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(null);
-			if (tryDisable == null || current == null) return true;
-			var call = (Func<MethodBase, RuntimeMethodHandle, bool>)Delegate.CreateDelegate(typeof(Func<MethodBase, RuntimeMethodHandle, bool>), current, tryDisable);
-			___disable = method => call(method, default);
-			___bindTried = true;
-			___bindNote = "MonoMod PlatformTriple.TryDisableInlining(MethodBase, RuntimeMethodHandle) · Harmony3StrictCompat";
-			return false;
 		}
 
 		// ---- Useful Marks: second info card button on selected things ----
@@ -2948,9 +2925,9 @@ namespace Harmony3StrictCompat
 		{
 			["SensibleBedOwnership.Patch_ReservationManager:Prefix"] = 0xC02F4F892C656903,                       // 2026-10-28
 			["Rachek128.RitualAttenuation.RitualExtendedDataRef:get_Comp"] = 0x357FBBDFAE580E43,               // Ritual Size Attenuation 1.6 DLL, 2026-11-16
-			["RimPacts.WorldComponent_RimPacts:WorldComponentTick"] = 0x4096EF24F5F80CBB,                  // RimPacts 1.7, 2026-11-17 (auto-defense wounds)
-			["RimPacts.WorldComponent_RimPacts:DefAutoTick"] = 0x991E4F1FBAF188CE,
-			["RimPacts.WorldComponent_RimPacts:DefAutoOne"] = 0xE57F4FE7DF4CEEF6,
+			["RimPacts.WorldComponent_RimPacts:WorldComponentTick"] = 0xF6CF51711840F579,                  // RimPacts 1.7, 2026-11-17 (auto-defense wounds)
+			["RimPacts.WorldComponent_RimPacts:DefAutoTick"] = 0xE551C9A77C4672D8,
+			["RimPacts.WorldComponent_RimPacts:DefAutoOne"] = 0xC4DB7EBE746E875E,
 			["Impact.ArmorDeflection:Prefix"] = 0x31A4B4B031D77B6E,                                         // IMPACT - Combat Overhaul 1.7, DLL of 2026-10-29
 			["RimWorld.CompShuttle:CompTick"] = 0x0FE3170CD124F570,
 			["RimWorld.Selector:SelectUnderMouse"] = 0x1A3AD61C82A0379C,                                    // game 1.7.5011, 2026-11-16
@@ -3022,15 +2999,15 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Ideology.StyleTip+Content:SectionHeight"] = 0x7D0C038E62C61F43,
 			["UIRethemed.Ideology.StyleTip+Content:Draw"] = 0x045AEBC779549B88,
 			["TooManyMods.Compat_MerchantGuild_TradeArrivalOption:.cctor"] = 0x8DD5B3B38F9ACDDF,              // TMM VFEM2_VF.dll, 2026-01-24 (built for Vehicle Framework 1.6)
-			["RimPacts.WorldComponent_RimPacts:ApplyProtectionFailure"] = 0x8DBC9CF56ECA2BA2,                  // RimPacts 1.7, 2026-11-17 (no route check)
-			["RimPacts.WorldComponent_RimPacts:IsProtectedByTradePact"] = 0xB92AD9C0E8DC91E9,
-			["RimPacts.WorldComponent_RimPacts:ForceExpoParty"] = 0x0C6C9C7247584574,                          // RimPacts 1.7, 2026-11-17
+			["RimPacts.WorldComponent_RimPacts:ApplyProtectionFailure"] = 0xB370425BA8483DE8,                  // RimPacts 1.7, 2026-11-17 (no route check)
+			["RimPacts.WorldComponent_RimPacts:IsProtectedByTradePact"] = 0x786746778135B518,
+			["RimPacts.WorldComponent_RimPacts:ForceExpoParty"] = 0xF258884A1E73FC6E,                          // RimPacts 1.7, 2026-11-17
 			["SensibleBedOwnership.Patch_Pawn_Ownership_get_OwnedBed:Prefix"] = 0x696E7432D36527D8,       // SBO 1.6 build, 2026-11-05
 			["SensibleBedOwnership.Utility:GetMainBed"] = 0xAE5863A6DF81EAD6,                                // (Pawn) overload
 			["SensibleBedOwnership.Utility:AllAssignedBedsAndDeathrestCaskets"] = 0x8560CE17C9797D18,
 			["VEF.Buildings.CompRandomBuildingGraphic:ChangeGraphic"] = 0x083F54FF7DB1EDDF,                  // VEF 1.7, 2026-11-16
 			["AdaptiveStorage.StorageGraphicWorker:GetGraphicFor"] = 0x2899906440FC5118,                     // ASF 1.6 build, 2025-11-12
-			["RimPacts.WorldComponent_RimPacts:DismissExilePawn"] = 0xC803FB6D38A79CDE,                        // RimPacts 1.7, 2026-11-17 (ForcefullyKept/Spawned guards; still no successor)
+			["RimPacts.WorldComponent_RimPacts:DismissExilePawn"] = 0xDA6EB5C1167E2B11,                        // RimPacts 1.7, 2026-11-17 (ForcefullyKept/Spawned guards; still no successor)
 			["PrisonerRealism.JobGiver_CleanCell:ShouldClean"] = 0x7B21CD085E9E96A1,                          // Prisoner Realism 1.7, 2026-11-12 23:37
 			["CleaningAreaRelaunched.CleaningAreaRelaunched_Util:GetCleanArea"] = 0xD9B02D52DE61B82C,          // CAR 1.6 build, 2025-11-12
 			["aRandomKiwi.HFM.JobGiver_AnimalHunt:TryGiveJob"] = 0x865CBA567579063A,                            // Hunt For Me 1.6 build, 2025-12-25
@@ -3114,7 +3091,6 @@ namespace Harmony3StrictCompat
 			["UsefulMarks.Dialog_NamePawn_DoWindowContents_Patch:Postfix"] = 0xF33AD5F31EB56B3B,        // Useful Marks 1.7, DLL of 2026-10-22
 			["UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix"] = 0xD2A3A440ED802D16,
 			["AlteredCarbon.JobGiver_Reload_TryGiveJob_Patch:Postfix"] = 0xAA1E07B7E7346A11,             // Altered Carbon 2 1.6 DLL, 2026-10-29
-			["GUIPerformancePatch.GppInlineGuard:Bind"] = 0xB73D1C967FC9F4F1,                            // WOWGAG's Performance Patch 1.7, DLL of 2026-11-15 11:06
 			["RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"] = 0xFC46FFEC8AE41506,               // vanilla 1.7.5011, guilty icon slot
 			["UIRethemed.ColonistCard.Card:get_ThemingHeader"] = 0x88F2EBA978A05C89,                     // UI Rethemed - Colonist Card 1.7, 2026-11-15 03:21
 			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0xE2FA8F5061B8B740,

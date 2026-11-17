@@ -541,13 +541,11 @@ namespace Harmony3StrictCompat
 				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RitualSaveCompletedOnce)));
 			var uirRowDraw = Target("UIRethemed.Notifications.StatusRow:Draw");
 			var uirRowWidth = Target("UIRethemed.Notifications.StatusRow:WidthFor");
-			var uirColorOf = Target("UIRethemed.Notifications.NotificationStyles:ColorOf");
+			var uirResolve = Target("UIRethemed.Notifications.NotificationStyles:Resolve");
 			var uirColumnX = Target("UIRethemed.Notifications.Placement:ColumnX");
 			var uirPosition = Target("UIRethemed.Notifications.Placement:get_Position");
-			var uirHover = Target("UIRethemed.Notifications.Motion:Hover");
+			var uirHover = Target("UIRethemed.Core.ThemeMotion:Hover");
 			Target("UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler");
-			var uirStyle = AccessTools.TypeByName("UIRethemed.Notifications.NotificationStyle");
-			var uirWidgets = AccessTools.TypeByName("UIRethemed.Notifications.NotificationsWidgets");
 			if (uirPosition != null)
 			{
 				uirPositionCall = uirPosition;
@@ -570,8 +568,7 @@ namespace Harmony3StrictCompat
 				harmony.Patch(uirInfoDefer, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirInfoStripStackNote)));
 				harmony.Patch(uirInfoDrawRow, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirInfoRowHoverCard)));
 			}
-			if (uirRowDraw != null && uirRowWidth != null && uirColorOf != null && uirColumnX != null && uirPosition != null && uirHover != null
-				&& uirStyle != null && uirWidgets != null)
+			if (uirRowDraw != null && uirRowWidth != null && uirResolve != null && uirColumnX != null && uirPosition != null && uirHover != null)
 			{
 				uirRowDrawCall = uirRowDraw;
 				uirRowWidthCall = (Func<string, float>)uirRowWidth.CreateDelegate(typeof(Func<string, float>));
@@ -579,20 +576,18 @@ namespace Harmony3StrictCompat
 				uirHoverCall = (Func<Rect, int, bool, float>)uirHover.CreateDelegate(typeof(Func<Rect, int, bool, float>));
 				uirBottomRight = (int)Enum.Parse(uirPosition.ReturnType, "BottomRight");
 				uirMiddleRight = (int)Enum.Parse(uirPosition.ReturnType, "MiddleRight");
-				if (Target("UIRethemed.Notifications.HoverCard:Region") is { } uirHoverCard)
+				if (Target("UIRethemed.Core.HoverCard:Region") is { } uirHoverCard)
 					uirHoverRegion = (Action<Rect, string, string, string, Color?>)uirHoverCard.CreateDelegate(typeof(Action<Rect, string, string, string, Color?>));
-				uirPlacedDraw = Target("UIRethemed.Notifications.HoverCard:DrawPlaced");
-				var uirPlacedSize = Target("UIRethemed.Notifications.HoverCard:PlacedSize");
+				uirPlacedDraw = Target("UIRethemed.Core.HoverCard:DrawPlaced");
+				var uirPlacedSize = Target("UIRethemed.Core.HoverCard:PlacedSize");
 				var uirBeside = Target("UIRethemed.Notifications.Placement:BesideX");
-				var uirPartType = AccessTools.TypeByName("UIRethemed.Notifications.NotificationPart");
-				if (uirPlacedDraw != null && uirPlacedSize != null && uirBeside != null && uirPartType != null)
+				if (uirPlacedDraw != null && uirPlacedSize != null && uirBeside != null)
 				{
 					uirPlacedSizeCall = (Func<string, string, Vector2>)uirPlacedSize.CreateDelegate(typeof(Func<string, string, Vector2>));
 					uirBesideCall = (Func<Rect, float, float, float>)uirBeside.CreateDelegate(typeof(Func<Rect, float, float, float>));
-					uirAlertsPart = Enum.Parse(uirPartType, "Alerts");
 				}
 				else uirPlacedDraw = null;
-				uirStyleType = uirStyle; uirWidgetsType = uirWidgets; uirColorOfCall = uirColorOf;
+				uirResolveCall = uirResolve;
 				UirMessagesSectionSetup(harmony);
 				harmony.Patch(AccessTools.Method(typeof(Messages), nameof(Messages.MessagesDoGUI)),
 					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirMessagesInStack)));
@@ -629,6 +624,10 @@ namespace Harmony3StrictCompat
 			var umInspect = Target("UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix");
 			if (umInspect != null)
 				harmony.Patch(umInspect, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UmInspectButtonsPawnOnly)));
+			if (Target("AlteredCarbon.JobGiver_Reload_TryGiveJob_Patch:Postfix") is { } acReload)
+				harmony.Patch(acReload, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AcBeltReloadOnlyWithVefShield)));
+			if (Target("GUIPerformancePatch.GppInlineGuard:Bind") is { } wppBind)
+				harmony.Patch(wppBind, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(WppBindTwoArgDisableInlining)));
 			var uirccTheming = Target("UIRethemed.ColonistCard.Card:get_ThemingHeader");
 			var uirccSlot = Target("UIRethemed.ColonistCard.Card:NextHeaderSlot");
 			if (uirccTheming != null && uirccSlot != null)
@@ -674,6 +673,40 @@ namespace Harmony3StrictCompat
 		static void UiraHoverKeyOnScreen(ref Rect rect)
 		{
 			if (Event.current != null) rect = GUIUtility.GUIToScreenRect(rect);
+		}
+
+		// ---- Altered Carbon + Too Many Mods: Cuirassier belt reload NRE ----
+		// Too Many Mods - Compats and Rebalances swaps the Cuirassier belt's VEF shield (CompShieldBubble) for the vanilla
+		// CompShield. AC's JobGiver_Reload postfix still reads the VEF comp, gets null and throws on every job search of a
+		// pawn wearing the belt. That postfix only adds "charge the belt at a station", which the self-recharging vanilla
+		// shield never needs, so skip it while the belt def has no VEF shield (decided once, defs are loaded by then).
+		static bool? acBeltVefShield;
+		static bool AcBeltReloadOnlyWithVefShield()
+		{
+			acBeltVefShield ??= DefDatabase<ThingDef>.GetNamedSilentFail("AC_CuirassierBelt")?.comps?
+				.Any(c => c.compClass?.FullName == "VEF.Apparels.CompShieldBubble") ?? false;
+			return acBeltVefShield.Value;
+		}
+
+		// ---- WOWGAG's Performance Patch + Harmony 3.0.3: parallel never opens ----
+		// GppInlineGuard.Bind looks up MonoMod's PlatformTriple.TryDisableInlining(MethodBase) by exact signature. Harmony
+		// 3.0.3's MonoMod has TryDisableInlining(MethodBase, RuntimeMethodHandle handle = default), so the lookup fails,
+		// SafeToOpen reports "표지 기능 없음" and the parallel infrastructure stays on its serial fallback forever (its
+		// "Performance patch preparing" alert sticks at 97%). Bind the two-argument form with the default handle, which is
+		// what a C# caller of the new signature passes. Falls through to WOWGAG's own Bind when the new form is absent.
+		static bool WppBindTwoArgDisableInlining(ref bool ___bindTried, ref Func<MethodBase, bool> ___disable, ref string ___bindNote)
+		{
+			if (___bindTried) return false;
+			var triple = typeof(Harmony).Assembly.GetType("MonoMod.Core.Platforms.PlatformTriple");
+			var tryDisable = triple?.GetMethod("TryDisableInlining", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
+				[typeof(MethodBase), typeof(RuntimeMethodHandle)], null);
+			var current = triple?.GetProperty("Current", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(null);
+			if (tryDisable == null || current == null) return true;
+			var call = (Func<MethodBase, RuntimeMethodHandle, bool>)Delegate.CreateDelegate(typeof(Func<MethodBase, RuntimeMethodHandle, bool>), current, tryDisable);
+			___disable = method => call(method, default);
+			___bindTried = true;
+			___bindNote = "MonoMod PlatformTriple.TryDisableInlining(MethodBase, RuntimeMethodHandle) · Harmony3StrictCompat";
+			return false;
 		}
 
 		// ---- Useful Marks: second info card button on selected things ----
@@ -1362,18 +1395,17 @@ namespace Harmony3StrictCompat
 			if (tips != 1 || overs == 0)
 				Log.Error($"[Harmony3StrictCompat] UIR Colonist Card info row: expected one TipRegion and some Mouse.IsOver calls, replaced {tips} and {overs}");
 		}
-		// Styles are built on first draw (main thread, defs loaded): touching NotificationsWidgets' texture fields or
-		// NotificationColorDefOf from the mod constructor runs UIR's texture loading off the main thread (and sees null
-		// DefOfs).
-		static Type uirStyleType, uirWidgetsType;
-		static MethodInfo uirColorOfCall;
+		// Styles are built on first draw (main thread, defs loaded): UIR's NotificationStyles.Resolve touches its texture
+		// fields and NotificationColorDefOf, and from the mod constructor that runs UIR's texture loading off the main
+		// thread (and sees null DefOfs).
+		static MethodInfo uirResolveCall;
 		static object[] uirMessageStyles;
 		static readonly Color?[] uirMessageAccents = new Color?[4];
 		static Action<Rect, string, string, string, Color?> uirHoverRegion;
 		static MethodInfo uirPlacedDraw;
 		static Func<string, string, Vector2> uirPlacedSizeCall;
 		static Func<Rect, float, float, float> uirBesideCall;
-		static object uirAlertsPart;
+		const string UirAlertsPart = "Notifications alerts";   // UIR's own Failsafe part name for its alert hover cards
 		const int UirMessageCardWindow = 0x5A1722;
 		static Dictionary<MessageTypeDef, string> uirMessageHeaders;
 
@@ -1503,25 +1535,24 @@ namespace Harmony3StrictCompat
 		static bool UirMessagesSectionIcon(object section, ref Texture2D __result)
 		{
 			if (Convert.ToInt32(section) != UirMessagesSectionValue) return true;
-			__result = uirMessagesIcon ??= ContentFinder<Texture2D>.Get("UIRethemedNotifications/Phosphor/list");
+			__result = uirMessagesIcon ??= ContentFinder<Texture2D>.Get("UIRethemedCore/Phosphor/list");
 			return false;
 		}
 
 		static object[] UirStyles()
 		{
 			if (uirMessageStyles != null) return uirMessageStyles;
+			// Kinds 0-3 are UIR's NotificationKind (Neutral, Good, Warning, Bad); Resolve(kind) with no extensions is its
+			// plain style for that kind. Accent is the colour after the user's theme override.
 			var styles = new object[4];
-			var texNames = new[] { "NeutralTex", "GoodTex", "WarningTex", "BadTex" };
+			var kindType = uirResolveCall.GetParameters()[0].ParameterType;
 			for (int kind = 0; kind < 4; kind++)
 			{
-				var style = Activator.CreateInstance(uirStyleType);
-				AccessTools.Field(uirStyleType, "color").SetValue(style, uirColorOfCall.Invoke(null, new object[] { kind }));
-				AccessTools.Field(uirStyleType, "icon").SetValue(style, AccessTools.Field(uirWidgetsType, texNames[kind]).GetValue(null));
-				AccessTools.Field(uirStyleType, "tintIcon").SetValue(style, true);
+				var style = uirResolveCall.Invoke(null, new object[] { Enum.ToObject(kindType, kind), null, null, null });
 				styles[kind] = style;
-				var colorDef = AccessTools.Field(uirStyleType, "color").GetValue(style);
+				var colorDef = AccessTools.Field(style.GetType(), "color").GetValue(style);
 				uirMessageColorDefs[kind] = colorDef;
-				uirMessageAccents[kind] = colorDef == null ? null : (Color?)AccessTools.Field(colorDef.GetType(), "accent").GetValue(colorDef);
+				uirMessageAccents[kind] = colorDef == null ? null : (Color?)AccessTools.PropertyGetter(colorDef.GetType(), "Accent").Invoke(colorDef, null);
 			}
 			return uirMessageStyles = styles;
 		}
@@ -1569,7 +1600,7 @@ namespace Harmony3StrictCompat
 				}
 				uirHeadingDraw.Invoke(null, new object[] { new Rect(x, Mathf.Round(y), width, UirRowHeight),
 					uirMessagesSection, messages.Count, pressing < 0 ? null : uirMessageColorDefs[pressing], float.MaxValue,
-					(Func<string>)(() => string.Join("\n", messages.Select(m => m.text).Reverse())), (Func<IEnumerable<object>>)(() => messages) });
+					(Func<string>)(() => string.Join("\n", messages.Select(m => m.text).Reverse())), (Func<IEnumerable<object>>)(() => messages), 0, null });
 				y += UirRowStep;
 			}
 			if (folded) return false;
@@ -1601,7 +1632,7 @@ namespace Harmony3StrictCompat
 							float cardX = uirBesideCall(new Rect(x, 0f, width, 0f), size.x, 8f);
 							float cardY = Mathf.Round(Mathf.Clamp(Event.current.mousePosition.y, 0f, Mathf.Max(0f, UI.screenHeight - size.y)));
 							uirPlacedDraw.Invoke(null, new object[] { UirMessageCardWindow, new Vector2(cardX, cardY), header, msg.text,
-								uirMessageAccents[UirKindOf(msg.def)] ?? Color.white, uirAlertsPart });
+								uirMessageAccents[UirKindOf(msg.def)], UirAlertsPart });
 						}
 					}
 					else if (uirHoverRegion != null) uirHoverRegion(rect, UirHeaderOf(msg.def), msg.text, null, uirMessageAccents[UirKindOf(msg.def)]);
@@ -2917,9 +2948,9 @@ namespace Harmony3StrictCompat
 			["Flourish.Everyday.JobAnimationWorker_Anchored:Evaluate"] = 0x817B489F5395FF01,                // Flourish Everyday 1.7, 2026-10-25
 			["VFETribals.FactionUIUtility_DoWindowContents_Patch:Postfix"] = 0x8824F2B542A8AC6E,             // VFE Tribals 1.6 build, 2026-10-14
 			["UIRethemed.Factions.FactionsTab:Themed"] = 0x69BB80B87A3FDA4F,                               // UI Rethemed 1.7, 2026-11-16 13:03
-			["UIRethemed.Core.CoreWidgets:Button"] = 0xB29A7080DB95E1E2,                             // UI Rethemed - Core 1.7, 2026-11-16 15:23
-			["UIRethemed.Core.CoreWidgets:Icon"] = 0x8774648DE4592793,
-			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0xE16744FA8392E72D,
+			["UIRethemed.Core.CoreWidgets:Button"] = 0xD06714D9F0C94F0C,                             // UI Rethemed - Core 1.7, 2026-11-17 12:21
+			["UIRethemed.Core.CoreWidgets:Icon"] = 0x0D01E34EE1BBEFDB,
+			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0x8F3EA39BA00A2B44,
 			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0x825B03D63888BFBF,
 			["UIRethemed.InspectorTabs.HoverCard:LineHeight"] = 0xD907DD18913BBC6A,                        // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-14
 			["UIRethemed.InspectorTabs.HoverCard:DrawGroup"] = 0xC3B256B725066D07,
@@ -2956,30 +2987,30 @@ namespace Harmony3StrictCompat
 			["Flourish.AnimEventWorkers:HasMuzzle"] = 0x09D80ABDB9276A61,                               // Flourish - Combat Animations 2.1.5
 			["TacticalGroups.ColonistGroup:GetUniqueLoadID"] = 0x5F30AAACFB7C28AE,                      // Colony Groups 1.6 build
 			["SmartDeconstruct.SmartDeconstructMod:getDesignation"] = 0x53C1CCCAD3316AC2,               // Smart Deconstruct 1.7
-			["UIRethemed.Notifications.StatusRow:Draw"] = 0xD114A40AEA1C6E25,                               // UI Rethemed - Notifications 1.7, 2026-11-13 02:27
-			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0x1024852E6426BE13,
-			["UIRethemed.Notifications.NotificationStyles:ColorOf"] = 0x0B0A9C730B228F6E,
-			["UIRethemed.Notifications.Placement:ColumnX"] = 0x819B43E7869D4A22,
-			["UIRethemed.Notifications.Placement:get_Position"] = 0x88B8926AD9A4572B,
-			["UIRethemed.Notifications.Motion:Hover"] = 0xF1588758DF414375,
-			["UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler"] = 0x4F4563D2B2719116,
-			["UIRethemed.Notifications.HoverCard:Region"] = 0xC3227518BAB837B8,
-			["UIRethemed.Notifications.HoverCard:DrawPlaced"] = 0xF91FEED8B7604F77,
-			["UIRethemed.Notifications.HoverCard:PlacedSize"] = 0x373B2E92584C816A,
-			["UIRethemed.Notifications.Placement:BesideX"] = 0xFC32606E995AF086,
-			["UIRethemed.Notifications.SectionHeading:Shows"] = 0x5E9F5F423C6961F8,
-			["UIRethemed.Notifications.SectionHeading:Folded"] = 0x023A9154E069FF61,
-			["UIRethemed.Notifications.SectionHeading:Draw"] = 0x102FD0DFC62F77E1,
-			["UIRethemed.Notifications.SectionHeading:WidthFor"] = 0xD00608883E5284A5,
-			["UIRethemed.Notifications.SectionHeading:NameOf"] = 0xCA5A7DF1AAC7715A,
-			["UIRethemed.Notifications.SectionHeading:IconOf"] = 0x37A1C599B75A4FA9,
-			["UIRethemed.Notifications.HudColumn:get_Shared"] = 0x81AB8E16BA55C948,
-			["UIRethemed.Notifications.SectionHeading:Unseen"] = 0xDCEBBEF4B458D176,
-			["UIRethemed.Notifications.SectionHeading:See"] = 0x0B111B38C787D2A3,
-			["UIRethemed.Notifications.SectionHeading:get_WidestName"] = 0x825351BA582B24E9,
-			["UIRethemed.Notifications.Placement:TopStart"] = 0xB66BBFD57F93B4D8,
-			["UIRethemed.Notifications.FoodReadout:Read"] = 0x3A9FE28F59673276,                          // UIR Notifications 1.7, 2026-11-13
-			["UIRethemed.Notifications.FoodReadout:Draw"] = 0x6D18FED08A1E6587,
+			["UIRethemed.Notifications.StatusRow:Draw"] = 0x359EFD8A8A62F930,                               // UI Rethemed - Notifications 1.7, 2026-11-17 12:21 (hover card and motion now in Core)
+			["UIRethemed.Notifications.StatusRow:WidthFor"] = 0x1D202367370CFEFE,
+			["UIRethemed.Notifications.NotificationStyles:Resolve"] = 0x37E4D5B9BC27B3D0,
+			["UIRethemed.Notifications.Placement:ColumnX"] = 0xE160D086AD81C948,
+			["UIRethemed.Notifications.Placement:get_Position"] = 0x773B4416EAD9CD6E,
+			["UIRethemed.Core.ThemeMotion:Hover"] = 0xC06CF68BD547BEE3,
+			["UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler"] = 0x6975299B4CC464C6,
+			["UIRethemed.Core.HoverCard:Region"] = 0xCE8B6F6B8AC636BD,
+			["UIRethemed.Core.HoverCard:DrawPlaced"] = 0x47358A5D1532F59A,
+			["UIRethemed.Core.HoverCard:PlacedSize"] = 0x46AC5146500748F9,
+			["UIRethemed.Notifications.Placement:BesideX"] = 0x47679F286AED5F91,
+			["UIRethemed.Notifications.SectionHeading:Shows"] = 0xFD51782B2B3A5A4A,
+			["UIRethemed.Notifications.SectionHeading:Folded"] = 0xAD16F82687E32083,
+			["UIRethemed.Notifications.SectionHeading:Draw"] = 0x19A24F4943EB8021,
+			["UIRethemed.Notifications.SectionHeading:WidthFor"] = 0x6E6E862345D32A2B,
+			["UIRethemed.Notifications.SectionHeading:NameOf"] = 0xB218B69E22340CA3,
+			["UIRethemed.Notifications.SectionHeading:IconOf"] = 0xCB908098D911CD2F,
+			["UIRethemed.Notifications.HudColumn:get_Shared"] = 0xB58DF5E7BBA9245A,
+			["UIRethemed.Notifications.SectionHeading:Unseen"] = 0xCC48E9C9A0AC495F,
+			["UIRethemed.Notifications.SectionHeading:See"] = 0xCBD89DB3833FC309,
+			["UIRethemed.Notifications.SectionHeading:get_WidestName"] = 0x4BAA03BAA0E9A46E,
+			["UIRethemed.Notifications.Placement:TopStart"] = 0x57988FD227F60263,
+			["UIRethemed.Notifications.FoodReadout:Read"] = 0x4AF3C373D4873712,                          // UIR Notifications 1.7, 2026-11-17
+			["UIRethemed.Notifications.FoodReadout:Draw"] = 0xACA4A6451E388627,
 			["UIRethemed.ColonistCard.InfoList:Defer"] = 0xBF4F05F9D7D0903A,                            // UIR Colonist Card 1.7, 2026-11-16 10:44
 			["UIRethemed.ColonistCard.InfoList:DrawRow"] = 0x193B6FBC6CFC9531,                          // UIR Colonist Card 1.7, 2026-11-16 10:44
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
@@ -2988,6 +3019,8 @@ namespace Harmony3StrictCompat
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPostfix"] = 0xEAEA3D4FF6046A94,
 			["UsefulMarks.Dialog_NamePawn_DoWindowContents_Patch:Postfix"] = 0xF33AD5F31EB56B3B,        // Useful Marks 1.7, DLL of 2026-10-22
 			["UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix"] = 0xD2A3A440ED802D16,
+			["AlteredCarbon.JobGiver_Reload_TryGiveJob_Patch:Postfix"] = 0xAA1E07B7E7346A11,             // Altered Carbon 2 1.6 DLL, 2026-10-29
+			["GUIPerformancePatch.GppInlineGuard:Bind"] = 0xB73D1C967FC9F4F1,                            // WOWGAG's Performance Patch 1.7, DLL of 2026-11-15 11:06
 			["RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"] = 0xFC46FFEC8AE41506,               // vanilla 1.7.5011, guilty icon slot
 			["UIRethemed.ColonistCard.Card:get_ThemingHeader"] = 0x88F2EBA978A05C89,                     // UI Rethemed - Colonist Card 1.7, 2026-11-15 03:21
 			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0xE2FA8F5061B8B740,

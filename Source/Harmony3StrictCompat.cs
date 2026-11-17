@@ -105,6 +105,15 @@ namespace Harmony3StrictCompat
 			rpIsProtected = Target("RimPacts.WorldComponent_RimPacts:IsProtectedByTradePact");
 			if (rpFail != null && rpIsProtected != null)
 				harmony.Patch(rpFail, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpProtectionOnlyRoutes)));
+			if (Target("RimPacts.WorldComponent_RimPacts:TryRevertConquered") is { } rpRevert
+				&& Target("RimPacts.WorldComponent_RimPacts:OriginalOwnerOf") is { } rpOwner)
+			{
+				rpOriginalOwnerOf = rpOwner;
+				rpAbsorbPlans = AccessTools.Field(rpRevert.DeclaringType, "absorbPlans");
+				rpPlanLoser = AccessTools.Field(AccessTools.Inner(rpRevert.DeclaringType, "AbsorbPlan"), "loser");
+				if (rpAbsorbPlans != null && rpPlanLoser != null)
+					harmony.Patch(rpRevert, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpNoRevoltToAbsorbed)));
+			}
 			var rpTick = Target("RimPacts.WorldComponent_RimPacts:WorldComponentTick");
 			rpDefAutoTick = Target("RimPacts.WorldComponent_RimPacts:DefAutoTick");
 			Target("RimPacts.WorldComponent_RimPacts:DefAutoOne"); // fingerprint only: applies the pending wounds DefAutoTick reaches
@@ -513,9 +522,9 @@ namespace Harmony3StrictCompat
 				harmony.Patch(AccessTools.Method(typeof(PocketMapUtility), nameof(PocketMapUtility.GeneratePocketMap)),
 					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LeoSeamsRandomCavern)),
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LeoSeamsRoofLava)));
-			// Temporary probe, see BillProbeDelete.
-			harmony.Patch(AccessTools.Method(typeof(BillStack), nameof(BillStack.Delete)), prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(BillProbeDelete)));
-			harmony.Patch(AccessTools.Method(typeof(BillStack), nameof(BillStack.Clear)), prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(BillProbeClear)));
+			if (Target("ReplaceLib.Utils:RecipeUsersAreSame") is { } rlUsersSame)
+				harmony.Patch(rlUsersSame, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RlSameBenchesOnly)));
+			Target("ReplaceLib.Utils:ProcessRecipes"); // fingerprint only: removes whatever RecipeUsersAreSame calls a duplicate
 			if (Target("PipeSystem.CompResourceTrader:CompInspectStringExtra", optional: true) is { } pipeTraderInspect)
 				harmony.Patch(pipeTraderInspect, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PipeTraderInspectUnspawned)));
 			if (PipeTapsAndDrains.Init())
@@ -1219,22 +1228,18 @@ namespace Harmony3StrictCompat
 				__result = false;
 		}
 
-		// ---- Temporary probe: who deletes workbench bills -------------------------------------------------------
-		// The "make component until 100" bill on the Fortifications lathe vanished twice with no log line (last between
-		// two saves on 2026-11-13). Vanilla only removes a production bill through BillStack.Delete (the X button and
-		// mods) or BillStack.Clear (workbench changes faction), so both log the bench, the bills and, through the log's
-		// own stack trace, the caller. Workbenches only: surgery bills delete themselves all day. A mod that removes
-		// from BillStack.Bills directly would not show up here. Remove once the cause is known.
-		static void BillProbeDelete(BillStack __instance, Bill bill)
+		// ---- ReplaceLib: recipes on different benches treated as duplicates ----
+		// ReplaceLib removes "duplicate" recipes after every game load (Game.FinalizeInit postfix, Utils.ProcessRecipes):
+		// same label, one product of the same thing and count, and RecipeUsersAreSame. That compares only recipeUsers, which
+		// is null for any recipe its bench lists in its own <recipes>, so Fortifications' lathe "make component"
+		// (FT_Make_ComponentIndustrial, 20 steel) counted as a duplicate of vanilla's fabrication bench "make component" and
+		// was removed from the DefDatabase. Bills already loaded kept working, but saving and loading again in the same
+		// session hit "Could not load reference to Verse.RecipeDef named FT_Make_ComponentIndustrial" and dropped the bill
+		// (three lost lathe bills, 2026-11-13 to 11-17). Compare the benches that actually offer each recipe instead.
+		static void RlSameBenchesOnly(RecipeDef recipeA, RecipeDef recipeB, ref bool __result)
 		{
-			if (__instance.billGiver is Building_WorkTable bench)
-				Log.Message($"[Harmony3StrictCompat] bill probe: Delete \"{bill?.Label}\" ({bill?.recipe?.defName}) on {bench}");
-		}
-
-		static void BillProbeClear(BillStack __instance)
-		{
-			if (__instance.billGiver is Building_WorkTable bench && __instance.Count > 0)
-				Log.Message($"[Harmony3StrictCompat] bill probe: Clear on {bench}: {string.Join(", ", __instance.Bills.Select(b => b.recipe?.defName))}");
+			if (__result && (recipeA.recipeUsers == null || recipeB.recipeUsers == null))
+				__result = new HashSet<ThingDef>(recipeA.AllRecipeUsers).SetEquals(recipeB.AllRecipeUsers);
 		}
 
 		// VE PipeSystem (1.7 build): CompResourceTrader.CompInspectStringExtra formats its rate with PipeNet.def, and
@@ -2925,6 +2930,8 @@ namespace Harmony3StrictCompat
 		{
 			["SensibleBedOwnership.Patch_ReservationManager:Prefix"] = 0xC02F4F892C656903,                       // 2026-10-28
 			["Rachek128.RitualAttenuation.RitualExtendedDataRef:get_Comp"] = 0x357FBBDFAE580E43,               // Ritual Size Attenuation 1.6 DLL, 2026-11-16
+			["RimPacts.WorldComponent_RimPacts:TryRevertConquered"] = 0x20D53DF606F689C2,                  // RimPacts 1.7, 2026-11-17 16:55 (no revolt to an absorbed faction)
+			["RimPacts.WorldComponent_RimPacts:OriginalOwnerOf"] = 0x7A2ADEAC3FD7BA63,
 			["RimPacts.WorldComponent_RimPacts:WorldComponentTick"] = 0xF6CF51711840F579,                  // RimPacts 1.7, 2026-11-17 (auto-defense wounds)
 			["RimPacts.WorldComponent_RimPacts:DefAutoTick"] = 0xE551C9A77C4672D8,
 			["RimPacts.WorldComponent_RimPacts:DefAutoOne"] = 0xC4DB7EBE746E875E,
@@ -3004,6 +3011,9 @@ namespace Harmony3StrictCompat
 			["RimPacts.WorldComponent_RimPacts:ForceExpoParty"] = 0xF258884A1E73FC6E,                          // RimPacts 1.7, 2026-11-17
 			["SensibleBedOwnership.Patch_Pawn_Ownership_get_OwnedBed:Prefix"] = 0x696E7432D36527D8,       // SBO 1.6 build, 2026-11-05
 			["SensibleBedOwnership.Utility:GetMainBed"] = 0xAE5863A6DF81EAD6,                                // (Pawn) overload
+			["SensibleBedOwnership.Utility+<>c:<GetMainBed>b__16_0"] = 0xAF4D8C424B841E39,                   // its lambdas: b.Map.IsPlayerHome, b.Map.uniqueID x2
+			["SensibleBedOwnership.Utility+<>c:<GetMainBed>b__16_1"] = 0x1D302CAA9DBAE5A2,
+			["SensibleBedOwnership.Utility+<>c:<GetMainBed>b__16_2"] = 0x1D302CAA9DBAE5A2,
 			["SensibleBedOwnership.Utility:AllAssignedBedsAndDeathrestCaskets"] = 0x8560CE17C9797D18,
 			["VEF.Buildings.CompRandomBuildingGraphic:ChangeGraphic"] = 0x083F54FF7DB1EDDF,                  // VEF 1.7, 2026-11-16
 			["AdaptiveStorage.StorageGraphicWorker:GetGraphicFor"] = 0x2899906440FC5118,                     // ASF 1.6 build, 2025-11-12
@@ -3088,6 +3098,8 @@ namespace Harmony3StrictCompat
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPostfix"] = 0xEAEA3D4FF6046A94,
+			["ReplaceLib.Utils:RecipeUsersAreSame"] = 0xF3B4168D7D0AA822,                               // ReplaceLib 1.6 DLL (loaded on 1.7), 2025-11-23
+			["ReplaceLib.Utils:ProcessRecipes"] = 0x40D2BD58300965B3,
 			["UsefulMarks.Dialog_NamePawn_DoWindowContents_Patch:Postfix"] = 0xF33AD5F31EB56B3B,        // Useful Marks 1.7, DLL of 2026-10-22
 			["UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix"] = 0xD2A3A440ED802D16,
 			["AlteredCarbon.JobGiver_Reload_TryGiveJob_Patch:Postfix"] = 0xAA1E07B7E7346A11,             // Altered Carbon 2 1.6 DLL, 2026-10-29
@@ -3284,6 +3296,27 @@ namespace Harmony3StrictCompat
 			foreach (var rec in recs)
 				if (rec == null || !(bool)rpDefAutoSettled.GetValue(rec)) return;
 			rpDefAutoTick.Invoke(__instance, [ticks]);
+		}
+
+		// ---- RimPacts: no revolt back to a faction that is being absorbed -----------------------------------
+		// AbsorbFaction sends "Faction absorbed" at once but moves every settlement after the first over the following
+		// days (absorbPlans), and the loser is only marked defeated once the last one has moved. TryRevertConquered
+		// (conquered settlements returning to their original owner) skips only defeated owners, so in that window a
+		// settlement already handed over could revolt back: on 2026-11-17 "Invaders" returned to the absorbed Slayers,
+		// who then outlive their own absorption. Skip the revolt while the original owner still has absorb plans.
+		static MethodInfo rpOriginalOwnerOf;
+		static FieldInfo rpAbsorbPlans, rpPlanLoser;
+
+		static bool RpNoRevoltToAbsorbed(object __instance, Settlement s, ref string __result)
+		{
+			if (rpOriginalOwnerOf.Invoke(__instance, [s]) is not Faction owner || rpAbsorbPlans.GetValue(__instance) is not IList plans) return true;
+			foreach (var plan in plans)
+				if (rpPlanLoser.GetValue(plan) == owner)
+				{
+					__result = "original owner is being absorbed (Harmony3StrictCompat)";
+					return false;
+				}
+			return true;
 		}
 
 		// ---- RimPacts trade protection pact: only route settlements count --------------------------------
@@ -4049,6 +4082,29 @@ namespace Harmony3StrictCompat
 			harmony.Patch(getMain, prefix: new HarmonyMethod(typeof(SboOwnedBedCache), nameof(Lookup)),
 				postfix: new HarmonyMethod(typeof(SboOwnedBedCache), nameof(Store)));
 			Log.Message($"[Harmony3StrictCompat] Sensible Bed Ownership: OwnedBed cache on ({hooked} ownership methods watched)");
+			// GetMainBed's fallback (no bed on the pawn's map) picks among all assigned beds with b.Map.IsPlayerHome and
+			// b.Map.uniqueID, but an assigned bed can be on no map at all (gravship in flight, stored or minified), and
+			// then it throws: "Exception while recalculating WantToSleepWithSpouseOrLover thought state", 10 a session.
+			// The lambdas treat a bed with no map as not at home and as the last choice.
+			if (Harmony3StrictCompatMod.Target("SensibleBedOwnership.Utility+<>c:<GetMainBed>b__16_0") is { } atHome)
+				harmony.Patch(atHome, prefix: new HarmonyMethod(typeof(SboOwnedBedCache), nameof(NoMapNotHome)));
+			foreach (var name in new[] { "<GetMainBed>b__16_1", "<GetMainBed>b__16_2" })
+				if (Harmony3StrictCompatMod.Target("SensibleBedOwnership.Utility+<>c:" + name) is { } mapOrder)
+					harmony.Patch(mapOrder, prefix: new HarmonyMethod(typeof(SboOwnedBedCache), nameof(NoMapLast)));
+		}
+
+		static bool NoMapNotHome(Building_Bed b, ref bool __result)
+		{
+			if (b?.Map != null) return true;
+			__result = false;
+			return false;
+		}
+
+		static bool NoMapLast(Building_Bed b, ref int __result)
+		{
+			if (b?.Map != null) return true;
+			__result = int.MaxValue;
+			return false;
 		}
 
 		static void Bump() => System.Threading.Interlocked.Increment(ref epoch);

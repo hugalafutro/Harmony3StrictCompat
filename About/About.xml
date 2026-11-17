@@ -78,6 +78,7 @@
 - Smart Medicine - Continued (personal tweak): the Stock Up picker also lists the VRE Sanguophage animal, corpse and sanguophage hemogen packs, packaged survival meals and nutrient packaged meals.
 - Smart Medicine - Continued: stocked food-type items such as hemogen packs are no longer dropped by the idle inventory cleanup.
 - Smart Medicine - Continued: the "use nearby medicine" distance setting is measured in tiles, as its label says (it compared walking cost to tiles, so nearby medicine was never used).
+- Vanilla Psycasts Expanded (personal tweak): enemy psycasters no longer spam Cold zone (NPC autocast off), and the zone's glow is fainter and drawn under pawns instead of whiting out the area.
 - Vanilla Races Expanded - Sanguophage: animalfeeders (strigoi) drink animal hemogen packs on their own, like regular packs, when no prisoner or regular pack is available.
 - Hospitality: Vending machines (personal tweak): the powered vending machine draws 100 W and keeps stored items frozen while powered.
 - Mod Settings Framework (VEF): slider settings reach every def their xpath matches, not just the first (ReBuild's grate speed slider now covers the sterile grate tile).
@@ -95,7 +96,9 @@
 - Vanilla Social Interactions Expanded + Goji's Misc Genes: a Parroting pupil can answer a teaching interaction without a "key was not present in the dictionary" tick exception.
 - Vanilla/unknown: a caravan guard holding a trader kind counts as the Trader (dismiss works, caravan exits).
 - Vanilla: visitors and trade caravans no longer leave on arrival "because of dangerous temperature" from hypothermia or heatstroke frozen on them while they were stored as world pawns (it now recovers there at the vanilla off-map rate).
+- ReplaceLib + Fortifications - Industrial: the lathe's "make component" recipe is no longer removed as a duplicate of the fabrication bench one, so its bills survive reloading.
 - RimPacts: factions whose exiled leader left or was dismissed get a new leader (also repaired after load), no more "Faction leader for X is null".
+- RimPacts: conquered settlements no longer revolt back to a faction whose absorption is still in progress (it outlived its "Faction absorbed" letter).
 - RimPacts + vanilla gatherings: the expo party host is picked by vanilla's organizer rules (no more party called off moments after it starts because the host is scheduled for work), the host of any party stays through its own work or sleep schedule until the party ends, and every gathering's called-off message names the reason.
 - RimPacts (personal tweak): RimPacts letter titles are shown in title case ("World Economy: Recession", "Treaty Expiring: Trade Agreement"); English only.
 - Ritual Size Attenuation + VFE Empire: art exhibit, grand ball and parade no longer crash in the outcome (an art exhibit stuck forever, guests starving).
@@ -103,6 +106,7 @@
 - VEF: verb range factor applied to the result instead of the shared verb def (no stuck ranges).
 - Unburned + VEF: drafted pawns with reach melee weapons auto-attack at full reach again (Unburned replaced the method VEF patches).
 - Sensible Bed Ownership: reservation prefix skipped for beds with no map.
+- Sensible Bed Ownership: no more NullReferenceException from the spouse-sleep thought when a pawn owns a bed that is on no map.
 - Skilled Refueling: Harmony 3 unchecked binding for its mistyped __instance patch.
 - Smarter Visitors + Hospitality: its leave-delay prefix only touches Hospitality's stay timer, not the 1200-tick recovery after a fight (hurt visitor groups no longer stand at their defend point forever instead of leaving).
 - Basic Traits: "TraitHediffApplier: Processing pawn" debug spam removed.

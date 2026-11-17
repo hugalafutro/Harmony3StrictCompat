@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch>
+  <!-- Vanilla Psycasts Expanded (workshop 2842502659), Frostshaper "Cold zone" (VPE_ColdZone). Personal tweak.
+       1. Enemy psycasters cast nothing but Cold zone. VEF's Pawn.TryGetAttackVerb postfix hands NPCs the longest-range
+          autocastable ability whenever the AI asks for an attack verb without a target, and Cold zone (range 62.9) is
+          the longest of all combat psycasts, so every Frostshaper recasts it and several stack it on one spot.
+          chance 0 takes it out of NPC autocasting (CanAutoCast needs chance > 0); colonists can still cast it by hand,
+          only its autocast toggle goes.
+       2. Each zone throws about 0.28 glow flecks per tick, each 9-14 tiles wide, additive (MoteGlow) and drawn above
+          pawns (MoteOverhead): one zone is a bright haze, stacked zones a white-out hiding the colonists. The glow
+          gets half alpha and is drawn on the ground (MoteLow), under buildings, items and pawns.
+       The PatchOperationTest steps fail with a red patch error when VPE renames the def or fleck. -->
+  <Operation Class="PatchOperationSequence" MayRequire="VanillaExpanded.VPsycastsE">
+    <operations>
+      <li Class="PatchOperationTest">
+        <xpath>Defs/*[defName="VPE_ColdZone"]/modExtensions/li[fleckToSpawnInArea="VPE_ColdGlow"]</xpath>
+      </li>
+      <li Class="PatchOperationTest">
+        <xpath>Defs/FleckDef[defName="VPE_ColdGlow"]/altitudeLayer</xpath>
+      </li>
+      <li Class="PatchOperationConditional">
+        <xpath>Defs/*[defName="VPE_ColdZone"]/chance</xpath>
+        <match Class="PatchOperationReplace">
+          <xpath>Defs/*[defName="VPE_ColdZone"]/chance</xpath>
+          <value><chance>0</chance></value>
+        </match>
+        <nomatch Class="PatchOperationAdd">
+          <xpath>Defs/*[defName="VPE_ColdZone"]</xpath>
+          <value><chance>0</chance></value>
+        </nomatch>
+      </li>
+      <li Class="PatchOperationReplace">
+        <xpath>Defs/FleckDef[defName="VPE_ColdGlow"]/altitudeLayer</xpath>
+        <value><altitudeLayer>MoteLow</altitudeLayer></value>
+      </li>
+      <li Class="PatchOperationAdd">
+        <xpath>Defs/FleckDef[defName="VPE_ColdGlow"]/graphicData</xpath>
+        <value><color>(1, 1, 1, 0.5)</color></value>
+      </li>
+    </operations>
+  </Operation>
+</Patch>

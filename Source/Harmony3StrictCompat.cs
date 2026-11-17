@@ -24,6 +24,7 @@ namespace Harmony3StrictCompat
 	{
 		public Harmony3StrictCompatMod(ModContentPack content) : base(content)
 		{
+			ArchivePreviousLogs();
 			var harmony = new Harmony(content.PackageId);
 			var ctor = AccessTools.Constructor(typeof(Patch), [typeof(HarmonyMethod), typeof(int), typeof(string)]);
 			harmony.Patch(ctor, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(PatchCtorPrefix)));
@@ -628,6 +629,9 @@ namespace Harmony3StrictCompat
 				harmony.Patch(acReload, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AcBeltReloadOnlyWithVefShield)));
 			if (Target("GUIPerformancePatch.GppInlineGuard:Bind") is { } wppBind)
 				harmony.Patch(wppBind, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(WppBindTwoArgDisableInlining)));
+			if (ModsConfig.IsActive("wowgag.RimPacts"))
+				harmony.Patch(AccessTools.Method(typeof(LetterStack), nameof(LetterStack.ReceiveLetter), [typeof(Letter), typeof(string), typeof(int), typeof(bool)]),
+					prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RptTitleCaseLetter)));
 			var uirccTheming = Target("UIRethemed.ColonistCard.Card:get_ThemingHeader");
 			var uirccSlot = Target("UIRethemed.ColonistCard.Card:NextHeaderSlot");
 			if (uirccTheming != null && uirccSlot != null)
@@ -637,6 +641,15 @@ namespace Harmony3StrictCompat
 				foreach (var drawer in new[] { Target("RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"), umInspect })
 					if (drawer != null)
 						harmony.Patch(drawer, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirccGuiltyIconInSlot)));
+			}
+			if (Target("UIRethemed.ColonistCard.StatusBar:Take") is { } uirccTake)
+			{
+				uirccEffects = AccessTools.Field(uirccTake.DeclaringType, "effects")?.GetValue(null) as IList;
+				var effectType = AccessTools.Inner(uirccTake.DeclaringType, "Effect");
+				uirccEffectDef = effectType == null ? null : AccessTools.Field(effectType, "def");
+				uirccEffectLabel = effectType == null ? null : AccessTools.Field(effectType, "label");
+				if (uirccEffects != null && uirccEffectDef != null && uirccEffectLabel != null)
+					harmony.Patch(uirccTake, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirccNameInspiration)));
 			}
 			Target("UIRethemed.Animals.Motion:Key"); // fingerprint only: the key the patched Hover hands its rect to
 			if (Target("UIRethemed.Animals.Motion:Hover") is { } uiraHover)
@@ -686,6 +699,87 @@ namespace Harmony3StrictCompat
 			acBeltVefShield ??= DefDatabase<ThingDef>.GetNamedSilentFail("AC_CuirassierBelt")?.comps?
 				.Any(c => c.compClass?.FullName == "VEF.Apparels.CompShieldBubble") ?? false;
 			return acBeltVefShield.Value;
+		}
+
+		// ---- UI Rethemed - Colonist Card: name the inspiration (visual tweak) ----
+		// The status pill shows the status def's label, so every inspiration reads just "Inspired". Its Effect struct has
+		// a label override (UIR fills it for bleeding); fill it with the pawn's inspiration ("Inspired creativity",
+		// "Frenzy: shoot") right after Take adds the effect. The hover card still lists the full line with time left.
+		static IList uirccEffects;
+		static FieldInfo uirccEffectDef, uirccEffectLabel;
+
+		static void UirccNameInspiration(Pawn pawn, bool __result)
+		{
+			if (!__result || pawn?.Inspiration?.def == null) return;
+			for (int i = uirccEffects.Count - 1; i >= 0; i--)
+			{
+				object effect = uirccEffects[i];
+				if ((uirccEffectDef.GetValue(effect) as Def)?.defName != "UIRethemedColonistCard_Inspired" || uirccEffectLabel.GetValue(effect) != null) continue;
+				uirccEffectLabel.SetValue(effect, pawn.Inspiration.def.LabelCap.Resolve());
+				uirccEffects[i] = effect;
+			}
+		}
+
+		// ---- Log archive (personal tooling) ----
+		// The game keeps only Player.log and Player-prev.log, so a problem from two runs ago (a bill dropped on load)
+		// could not be traced. At startup, copy the previous run's logs into Logs/Archive, named by the time that run
+		// ended, and keep the newest 30 of each. ponytail: plain copies (3-7 MB each); compress them if the folder grows.
+		const int LogArchiveKeep = 30;
+
+		static void ArchivePreviousLogs()
+		{
+			try
+			{
+				string dir = Path.GetDirectoryName(Application.consoleLogPath);
+				if (dir.NullOrEmpty()) return;
+				string archive = Path.Combine(dir, "Archive");
+				Directory.CreateDirectory(archive);
+				// Hauler's Dream rotates its own log in its constructor, which may run before or after this one, so take
+				// both of its files when they were last written before this process started (same run = same file name).
+				var started = System.Diagnostics.Process.GetCurrentProcess().StartTime;
+				foreach (var (prev, stem) in new[] { ("Player-prev.log", "Player"), ("HaulersDream-debug.log", "HaulersDream"), ("HaulersDream-debug.prev.log", "HaulersDream") })
+				{
+					var src = new FileInfo(Path.Combine(dir, prev));
+					if (!src.Exists || src.LastWriteTime >= started) continue;
+					string dest = Path.Combine(archive, $"{stem}-{src.LastWriteTime:yyyy-MM-dd_HHmmss}.log");
+					if (!File.Exists(dest)) src.CopyTo(dest);
+					foreach (var old in new DirectoryInfo(archive).GetFiles(stem + "-*.log").OrderByDescending(f => f.Name).Skip(LogArchiveKeep))
+						old.Delete();
+				}
+			}
+			catch (Exception e)
+			{
+				Log.Warning("[Harmony3StrictCompat] log archive: " + e.Message);
+			}
+		}
+
+		// ---- RimPacts: letter titles in title case (personal tweak) ----
+		// RimPacts writes its letter titles in sentence case and fills them with lowercase def labels ("Treaty expiring:
+		// trade agreement", "World economy: recession"). Any letter whose title matches one of RimPacts' own
+		// Rpt_Letter*Label templates (English only) gets title case: every word capitalised except short joining words,
+		// and the first word after ':' or a dash always. Def labels keep their lowercase for use inside sentences, and
+		// words that do not start with a lowercase letter (tagged names, numbers) are left alone.
+		static List<Regex> rptLetterTitles;
+		static readonly HashSet<string> titleSmallWords = ["a", "an", "the", "and", "or", "of", "to", "in", "on", "at", "by", "for", "vs", "with", "from", "as"];
+
+		static void RptTitleCaseLetter(Letter let)
+		{
+			if (let == null || LanguageDatabase.activeLanguage?.folderName != "English") return;
+			rptLetterTitles ??= LanguageDatabase.activeLanguage.keyedReplacements
+				.Where(kv => kv.Key.StartsWith("Rpt_Letter") && kv.Key.EndsWith("Label") && !kv.Value.value.NullOrEmpty())
+				.Select(kv => new Regex("^" + Regex.Replace(Regex.Escape(kv.Value.value), @"\\\{\d+}", ".+") + "$", RegexOptions.Singleline))
+				.ToList();
+			string label = let.Label.RawText;
+			if (label.NullOrEmpty() || !rptLetterTitles.Any(r => r.IsMatch(label))) return;
+			var words = label.Split(' ');
+			for (int i = 0; i < words.Length; i++)
+			{
+				string w = words[i];
+				bool lead = i == 0 || words[i - 1].EndsWith(":") || words[i - 1] is "—" or "–" or "-";
+				if (w.Length == 0 || !char.IsLower(w[0]) || (!lead && titleSmallWords.Contains(w))) continue;
+				words[i] = char.ToUpper(w[0]) + w.Substring(1);
+			}
+			let.Label = string.Join(" ", words);
 		}
 
 		// ---- WOWGAG's Performance Patch + Harmony 3.0.3: parallel never opens ----
@@ -3024,6 +3118,7 @@ namespace Harmony3StrictCompat
 			["RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"] = 0xFC46FFEC8AE41506,               // vanilla 1.7.5011, guilty icon slot
 			["UIRethemed.ColonistCard.Card:get_ThemingHeader"] = 0x88F2EBA978A05C89,                     // UI Rethemed - Colonist Card 1.7, 2026-11-15 03:21
 			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0xE2FA8F5061B8B740,
+			["UIRethemed.ColonistCard.StatusBar:Take"] = 0x83B1F89F448239E6,                            // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-16 10:44
 			["UIRethemed.Animals.Motion:Key"] = 0xD8B1E64161CEBA55,                                     // UI Rethemed - Animals 1.7, DLL of 2026-11-09
 			["UIRethemed.Animals.Motion:Hover"] = 0xCF658FE8AAEAECFD,
 			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0x5B60F2AB7CA092D5,                  // UI Rethemed - Architect 1.7, 2026-11-16 10:44

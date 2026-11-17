@@ -69,6 +69,7 @@
 - UI Rethemed - Colonist Card: info rows show tooltips (the whole line) and highlight on hover; the meal ingredients row leaves out the "only stacks with similar meals" note.
 - UI Rethemed - Architect + Vanilla Plants Expanded (personal tweak): Tilled soil sits in one Orders group with Cancel, Mine and the other orders instead of a group of its own.
 - UI Rethemed - Colonist Card: the guilty icon in the inspect pane header gets its own slot instead of covering another button.
+- UI Rethemed - Colonist Card (visual tweak): the status pill names the inspiration ("Inspired creativity") instead of "Inspired".
 - UI Rethemed - Quests + Quality Colors (Continued) (visual tweak): quest reward tiles and their hover card titles are drawn in the item's quality colour, and the market value sits on the line under the name instead of beside it.
 - Altered Carbon 2 + Too Many Mods: no NullReferenceException from the Cuirassier belt reload check when Too Many Mods has swapped its VEF shield for the vanilla one (Altered Carbon's belt-charging job is skipped then).
 - Auto-Cast Specialist Commands + Det's Xenotypes - Stoneborn (personal tweak): Stonecall is auto-cast when mining or finishing construction, following the Auto-Cast Mining Command setting, which right-click on the Stonecall gizmo toggles (check icon shown).
@@ -96,6 +97,7 @@
 - Vanilla: visitors and trade caravans no longer leave on arrival "because of dangerous temperature" from hypothermia or heatstroke frozen on them while they were stored as world pawns (it now recovers there at the vanilla off-map rate).
 - RimPacts: factions whose exiled leader left or was dismissed get a new leader (also repaired after load), no more "Faction leader for X is null".
 - RimPacts + vanilla gatherings: the expo party host is picked by vanilla's organizer rules (no more party called off moments after it starts because the host is scheduled for work), the host of any party stays through its own work or sleep schedule until the party ends, and every gathering's called-off message names the reason.
+- RimPacts (personal tweak): RimPacts letter titles are shown in title case ("World Economy: Recession", "Treaty Expiring: Trade Agreement"); English only.
 - Ritual Size Attenuation + VFE Empire: art exhibit, grand ball and parade no longer crash in the outcome (an art exhibit stuck forever, guests starving).
 - VEF (MVCF): multi-verb weapons use the weapon's own accuracy/cooldown when the verb sets none; duplicate stat rows hidden; Range row fixed.
 - VEF: verb range factor applied to the result instead of the shared verb def (no stuck ranges).
@@ -117,5 +119,6 @@
 - Vanilla: a failing sibling relation no longer aborts a whole raid group (a RimPacts defend wave froze the game retrying it).
 - Vanilla (personal tweak): install and implant-removal operations get the implant item as their menu icon instead of a grey square.
 - Vanilla (personal tweak): clicking a plant pot or hydroponics basin selects the grower first, the plant on a second click.
-- WOWGAG's Performance Patch + Harmony 3.0.3: the parallel infrastructure opens again (it looked up MonoMod's TryDisableInlining by its old one-argument signature; the two-argument form is bound instead), so the "Performance patch preparing" alert no longer sticks at 97%.</description>
+- WOWGAG's Performance Patch + Harmony 3.0.3: the parallel infrastructure opens again (it looked up MonoMod's TryDisableInlining by its old one-argument signature; the two-argument form is bound instead), so the "Performance patch preparing" alert no longer sticks at 97%.
+- (tooling): the previous run's Player.log and Hauler's Dream debug log are copied to Logs/Archive at startup (newest 30 kept).</description>
 </ModMetaData>

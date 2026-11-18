@@ -156,6 +156,17 @@ namespace Harmony3StrictCompat
 				harmony.Patch(rpWard, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpWardOnlyWhenEnabled)));
 				harmony.Patch(rpWardTick, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpWardDropWhenDisabled)));
 			}
+			if (Target("RimPacts.WorldComponent_RimPacts:CaravanGuardStep") is { } rpGuardStep
+				&& Target("DressForTheWeather.PawnsArriveUtilities:DressPawnAppropriately") is { } dftwDress
+				&& Target("DressForTheWeather.PawnsArriveUtilities:InitializeApparelPairs") is { } dftwPairs)
+			{
+				Target("DressForTheWeather.IncidentWorker_NeutralGroup_SpawnPawns:Postfix"); // fingerprint only: the hook these guards miss
+				dftwDressCall = (Action<Pawn, Map>)dftwDress.CreateDelegate(typeof(Action<Pawn, Map>));
+				dftwPairsCall = (Action)dftwPairs.CreateDelegate(typeof(Action));
+				harmony.Patch(rpGuardStep, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpGuardStepBegin)),
+					finalizer: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpGuardStepEnd)));
+				harmony.Patch(AccessTools.Method(typeof(Lord), nameof(Lord.AddPawn)), postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpGuardDressForWeather)));
+			}
 			// Too Many Mods' Merchant Guild x Vehicle Framework patches fail on VF 1.7; Source/Vehicles replaces them.
 			if (AccessTools.TypeByName("TooManyMods.Compat_MerchantGuild_TradeArrivalOption")?.TypeInitializer is { } tmmGuild)
 			{
@@ -3081,6 +3092,10 @@ namespace Harmony3StrictCompat
 			["RimPacts.WorldComponent_RimPacts:DefAutoOne"] = 0xC4DB7EBE746E875E,
 			["RimPacts.WorldComponent_RimPacts:WardLordPawns"] = 0x7724DA3409C9A731,                    // RimPacts 1.7, DLL of 2026-11-17 16:55
 			["RimPacts.HediffComp_RptDropOnPlayerOwned:CompPostTick"] = 0x15979899F58581E4,
+			["RimPacts.WorldComponent_RimPacts:CaravanGuardStep"] = 0x9AF75C085C4C990A,
+			["DressForTheWeather.PawnsArriveUtilities:DressPawnAppropriately"] = 0xF6A3084C72CDCFB6,   // Dress for the Weather 1.7, DLL of 2026-10-27
+			["DressForTheWeather.PawnsArriveUtilities:InitializeApparelPairs"] = 0x642A784DF0292B51,
+			["DressForTheWeather.IncidentWorker_NeutralGroup_SpawnPawns:Postfix"] = 0xB1048B0DC4E3B6FC,
 			["Impact.ArmorDeflection:Prefix"] = 0x31A4B4B031D77B6E,                                         // IMPACT - Combat Overhaul 1.7, DLL of 2026-10-29
 			["RimWorld.CompShuttle:CompTick"] = 0x807AD3141AD4D8A6,
 			["RimWorld.Selector:SelectUnderMouse"] = 0xC012455FB5D378F5,                                    // game 1.7.5011, 2026-11-16
@@ -3119,7 +3134,7 @@ namespace Harmony3StrictCompat
 			["TD_Enhancement_Pack.Alert_Deterioration:get_DeterioratingThings"] = 0x8774F1B773D667FE,       // TD Enhancement Pack 1.7, 2026-11-12
 			["TD_Enhancement_Pack.Alert_Deterioration+<get_DeterioratingThings>d__1:MoveNext"] = 0x54FBB3FD87CA2948,
 			["TD_Enhancement_Pack.SkillLearningIndicator:LabelLearning"] = 0xA1C6010BAEEDD973,             // TD Enhancement Pack 1.7, DLL of 2026-10-22
-			["UIRethemed.ColonistCard.Glance:DrawSkill"] = 0x1CAD60B089485C01,                             // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-16 10:44
+			["UIRethemed.ColonistCard.Glance:DrawSkill"] = 0x6A7A6D50E2498D14,                             // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-16 10:44
 			["VanillaQuestsExpandedAncients.Building_PneumaticTubeLaunchPort:Deliver"] = 0x824DD22872D97BE7, // VQE Ancients 1.6 build, DLL of 2026-10-06
 			["SkilledRefueling.HarmonyPatches:GetRefuelDuration"] = 0xFE59863C2B492B65,                    // Skilled Refueling 1.7, DLL of 2026-11-09
 			["SkilledRefueling.RefuelingUtility:RefuelingSpeedForPawn"] = 0x302D7899D7E9DF65,
@@ -3242,8 +3257,8 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Notifications.Placement:TopStart"] = 0x57988FD227F60263,
 			["UIRethemed.Notifications.FoodReadout:Read"] = 0x4AF3C373D4873712,                          // UIR Notifications 1.7, 2026-11-17
 			["UIRethemed.Notifications.FoodReadout:Draw"] = 0xACA4A6451E388627,
-			["UIRethemed.ColonistCard.InfoList:Defer"] = 0xED83595ED2B9EB0A,                            // UIR Colonist Card 1.7, 2026-11-16 10:44
-			["UIRethemed.ColonistCard.InfoList:DrawRow"] = 0xAE81E337FE93C493,                          // UIR Colonist Card 1.7, 2026-11-16 10:44
+			["UIRethemed.ColonistCard.InfoList:Defer"] = 0xA6EAC722229BAA02,                            // UIR Colonist Card 1.7, 2026-11-16 10:44
+			["UIRethemed.ColonistCard.InfoList:DrawRow"] = 0x6A801E5A725953CE,                          // UIR Colonist Card 1.7, 2026-11-16 10:44
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,
@@ -3256,7 +3271,7 @@ namespace Harmony3StrictCompat
 			["RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"] = 0x8FB8ACF2A959571A,               // vanilla 1.7.5011, guilty icon slot
 			["UIRethemed.ColonistCard.Card:get_ThemingHeader"] = 0xE0BB7E0F75774563,                     // UI Rethemed - Colonist Card 1.7, 2026-11-15 03:21
 			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0x140F60EC9F696E2F,
-			["UIRethemed.ColonistCard.StatusBar:Take"] = 0x2B5ECC6A0A8CA09A,                            // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-16 10:44
+			["UIRethemed.ColonistCard.StatusBar:Take"] = 0x5FA9479BBF856995,                            // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-16 10:44
 			["UIRethemed.Animals.Motion:Key"] = 0xD8B1E64161CEBA55,                                     // UI Rethemed - Animals 1.7, DLL of 2026-11-09
 			["UIRethemed.Animals.Motion:Hover"] = 0xCF658FE8AAEAECFD,
 			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0x5B60F2AB7CA092D5,                  // UI Rethemed - Architect 1.7, 2026-11-16 10:44
@@ -3428,24 +3443,74 @@ namespace Harmony3StrictCompat
 					Log.Message($"[Harmony3StrictCompat] RimPacts discarded exiled leader {p.LabelShort}; {f.Name}'s new leader is {f.leader.LabelShort}");
 		}
 
-		// ---- RimPacts: trader weather tolerance ignores its own setting ------------------------------------------
-		// "Protect ordinary traders from temperature" (wardTraderTemp) only gates the vanilla trader-arrival hook and the
-		// new-lord hook. RimPacts' own caravans (treaty trade, called and grand caravans, their escorts) call
-		// WardLordPawns directly, so they got Rpt_TradeTempWard (comfy temperature -1000/+1000 for 5 days) with the
-		// setting off. WardLordPawns now does nothing while the setting is off, and an existing ward drops on the
-		// hediff's next 250-tick check, so Dress for the Weather's clothing decides again.
+		// ---- RimPacts: trader weather tolerance for the pack animals only ---------------------------------------
+		// "Protect ordinary traders from temperature" (wardTraderTemp) gives every caravan member Rpt_TradeTempWard
+		// (comfy temperature -1000/+1000 for 5 days). It only gated the vanilla trader-arrival and new-lord hooks;
+		// RimPacts' own caravans (treaty trade, called and grand caravans, their escorts) call WardLordPawns directly.
+		// Personal rule: people dress for the weather (Dress for the Weather), so the ward is for animals only, and only
+		// while the setting is on. WardLordPawns is replaced by that rule, and a ward on anyone else drops on the
+		// hediff's next 250-tick check.
 		static MethodInfo rpSettingsGetter;
 		static FieldInfo rpWardTraderTemp;
 
 		static bool RpWardEnabled() => rpSettingsGetter.Invoke(null, null) is not { } settings || (bool)rpWardTraderTemp.GetValue(settings);
 
-		static bool RpWardOnlyWhenEnabled() => RpWardEnabled();
+		static bool RpWardAllowed(Pawn pawn) => pawn.RaceProps.Animal && RpWardEnabled();
+
+		static bool RpWardOnlyWhenEnabled(Lord l)
+		{
+			if (l?.ownedPawns == null || !RpWardEnabled()) return false;
+			var ward = DefDatabase<HediffDef>.GetNamed("Rpt_TradeTempWard");
+			foreach (var pawn in l.ownedPawns)
+				if (pawn != null && !pawn.Dead && pawn.health?.hediffSet != null && pawn.RaceProps.Animal && !pawn.health.hediffSet.HasHediff(ward))
+					pawn.health.AddHediff(ward);
+			return false;
+		}
 
 		static void RpWardDropWhenDisabled(HediffComp __instance)
 		{
 			var pawn = __instance.Pawn;
-			if (pawn == null || !pawn.IsHashIntervalTick(250) || RpWardEnabled() || !pawn.health.hediffSet.hediffs.Contains(__instance.parent)) return;
+			if (pawn == null || !pawn.IsHashIntervalTick(250) || RpWardAllowed(pawn) || !pawn.health.hediffSet.hediffs.Contains(__instance.parent)) return;
 			pawn.health.RemoveHediff(__instance.parent);
+		}
+
+		// ---- RimPacts + Dress for the Weather: caravan guards spawned in batches ---------------------------------
+		// RimPacts' own trade caravans (TrySpawnTradeCaravanRobust) skip the vanilla guard generation and spawn the
+		// guards one per step later (CaravanGuardStep: GeneratePawn, GenSpawn.Spawn, lord.AddPawn). Dress for the
+		// Weather only dresses pawns from IncidentWorker_NeutralGroup.SpawnPawns, so these guards arrived in whatever
+		// their kind generated. Under Alpha Memes' "naked truth" (AM_Armour_Forbidden destroys all generated apparel)
+		// that was nothing at -75 C, while the trader, who goes through SpawnPawns, got dressed. Each guard a step adds
+		// to its lord now gets Dress for the Weather's treatment too.
+		static Action<Pawn, Map> dftwDressCall;
+		static Action dftwPairsCall;
+		static bool rpGuardStepping;
+		static Lord rpGuardPairsLord;
+
+		static void RpGuardStepBegin() => rpGuardStepping = true;
+
+		static Exception RpGuardStepEnd(Exception __exception)
+		{
+			rpGuardStepping = false;
+			return __exception;
+		}
+
+		static void RpGuardDressForWeather(Lord __instance, Pawn p)
+		{
+			if (!rpGuardStepping || p?.apparel == null || !p.Spawned) return;
+			try
+			{
+				// ponytail: apparel pairs rebuilt once per caravan lord, not per guard (same list DftW builds per incident)
+				if (rpGuardPairsLord != __instance)
+				{
+					dftwPairsCall();
+					rpGuardPairsLord = __instance;
+				}
+				dftwDressCall(p, p.Map);
+			}
+			catch (Exception e)
+			{
+				Log.ErrorOnce($"[Harmony3StrictCompat] Dress for the Weather on RimPacts caravan guard {p}: {e}", 0x5D7A61);
+			}
 		}
 
 		// ---- RimPacts auto-resolved defense: wounds land weeks late ---------------------------------------

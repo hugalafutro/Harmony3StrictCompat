@@ -55,6 +55,18 @@ namespace Harmony3StrictCompat
 				uirSkillLevelLeft = AccessTools.Field(AccessTools.TypeByName("UIRethemed.ColonistCard.UIRethemedColonistCardSettings"), "skillLevelLeft");
 				harmony.Patch(uirCardSkill, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCardSkillArrow)));
 			}
+			foreach (var levelUpHook in new[] { Target("LevelUp.Patcher:DirtyAptitudesPostfix"), Target("LevelUp.Patcher:LearnPostfix") })
+				if (levelUpHook != null)
+					harmony.Patch(levelUpHook, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LevelUpOnlyPresentPawns)));
+			if (Target("Verse.HediffComp_MessageBase:Message") is { } hediffMessage)
+				harmony.Patch(hediffMessage, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HediffMessageNeedsText)));
+			if (AccessTools.TypeByName("PipeSystem.Building_Pipe") is { } pipeClass)
+			{
+				vefPipeClass = pipeClass;
+				foreach (var monumentCheck in new[] { Target("RimWorld.PlaceWorker_MonumentMarker:AllowsPlacing"), Target("RimWorld.MonumentMarker:get_FirstDisallowedBuilding") })
+					if (monumentCheck != null)
+						harmony.Patch(monumentCheck, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(MonumentPipesLikeConduitsTranspiler)));
+			}
 			var vqeaDeliver = Target("VanillaQuestsExpandedAncients.Building_PneumaticTubeLaunchPort:Deliver");
 			if (vqeaDeliver != null)
 				harmony.Patch(vqeaDeliver, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(VqeaCapsuleContentsTranspiler)));
@@ -2372,6 +2384,58 @@ namespace Harmony3StrictCompat
 			Widgets.EndGroup();
 		}
 
+		// ---- Level Up!: no skill announcements for pawns that are not in play ------------------------------------
+		// Level Up announces any IsFreeColonist pawn whose skill level moves. At conception Better Gene Inheritance
+		// generates a throwaway player-faction Colonist, AddGene()s the rolled hybrid genes onto it and destroys it, so its
+		// gene aptitudes popped "Baby reached level 9 in Animals!" with the pregnancy letter. Skips both Level Up hooks (the third
+		// argument of each is the pawn) unless the pawn is on a map (held or carried counts) or in a caravan.
+		static bool LevelUpOnlyPresentPawns(Pawn __2) => __2 == null || __2.SpawnedOrAnyParentSpawned || __2.IsCaravanMember();
+
+		// ---- Hediff message comps without message text ----------------------------------------------------------
+		// HediffComp_MessageBase.Message posts Props.message unconditionally. [FSF] Advanced Bionics Expansion adds a
+		// HediffCompProperties_RemoveIfOtherHediff without <message> to vanilla BrainShock (EMP shield implant), so an
+		// EMP hit posts a null message; Block Unwanted Minutiae's ContainsMessage then throws on the null dictionary
+		// key, every tick until the hediff is gone. Skips posting when the comp has no message text.
+		static bool HediffMessageNeedsText(HediffComp __instance) =>
+			__instance.props is not HediffCompProperties_MessageBase props || !props.message.NullOrEmpty();
+
+		// ---- Monument quests: VE pipes count as conduits ---------------------------------------------------------
+		// Personal tweak: the monument marker lets only power conduits share its footprint or sit next to it (placement:
+		// "Cannot place monument over ...", "Monument adjacent to ...") and stay on its floor once built (otherwise the
+		// monument is destroyed after a day). VE Framework pipes (helixien, astrofuel, uranium, ...) are the same kind of
+		// non-edifice conduit-layer building, visible and hidden alike, so every isPowerConduit read in those two methods
+		// also accepts a non-edifice PipeSystem.Building_Pipe.
+		static Type vefPipeClass;
+		static HashSet<BuildingProperties> vefPipeProps;
+
+		static IEnumerable<CodeInstruction> MonumentPipesLikeConduitsTranspiler(IEnumerable<CodeInstruction> instructions, MethodBase __originalMethod)
+		{
+			var conduitField = AccessTools.Field(typeof(BuildingProperties), nameof(BuildingProperties.isPowerConduit));
+			int replaced = 0;
+			foreach (var code in instructions)
+			{
+				if (code.LoadsField(conduitField))
+				{
+					code.opcode = OpCodes.Call;
+					code.operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(ConduitOrVefPipe));
+					replaced++;
+				}
+				yield return code;
+			}
+			if (replaced == 0)
+				Log.Error($"[Harmony3StrictCompat] {__originalMethod.DeclaringType.Name}.{__originalMethod.Name} no longer reads isPowerConduit: the game updated, redo the monument pipe tweak");
+		}
+
+		static bool ConduitOrVefPipe(BuildingProperties building)
+		{
+			if (building == null) return false;
+			if (building.isPowerConduit) return true;
+			vefPipeProps ??= DefDatabase<ThingDef>.AllDefs
+				.Where(d => d.building != null && !d.building.isEdifice && d.thingClass != null && vefPipeClass.IsAssignableFrom(d.thingClass))
+				.Select(d => d.building).ToHashSet();
+			return vefPipeProps.Contains(building);
+		}
+
 		// ---- VQE Ancients: name the pneumatic capsule's contents in its arrival message ---------------------------
 		// Personal tweak: Deliver sends the message before it builds the local list of things to place, and pawns haul
 		// them away quickly. Drops that message and sends it after the list is built, just before the placing loop.
@@ -2929,6 +2993,11 @@ namespace Harmony3StrictCompat
 		static readonly Dictionary<string, ulong> Fingerprints = new()
 		{
 			["SensibleBedOwnership.Patch_ReservationManager:Prefix"] = 0xC02F4F892C656903,                       // 2026-10-28
+			["LevelUp.Patcher:DirtyAptitudesPostfix"] = 0xE6A4CB86C9A72804,                                   // Level Up! 1.6 DLL, 2026-11-17 (no announcements for unspawned pawns)
+			["LevelUp.Patcher:LearnPostfix"] = 0x425B4856BEAB93EA,
+			["Verse.HediffComp_MessageBase:Message"] = 0x4DC3B7073B69E6C6,                                     // game 1.7.5011, 2026-11-18 (no post without message text)
+			["RimWorld.PlaceWorker_MonumentMarker:AllowsPlacing"] = 0xE1E8F2D93F452C06,                        // game 1.7.5011, 2026-11-18 (VE pipes count as conduits)
+			["RimWorld.MonumentMarker:get_FirstDisallowedBuilding"] = 0xF0427CEC33FDDEDE,
 			["Rachek128.RitualAttenuation.RitualExtendedDataRef:get_Comp"] = 0x357FBBDFAE580E43,               // Ritual Size Attenuation 1.6 DLL, 2026-11-16
 			["RimPacts.WorldComponent_RimPacts:TryRevertConquered"] = 0x20D53DF606F689C2,                  // RimPacts 1.7, 2026-11-17 16:55 (no revolt to an absorbed faction)
 			["RimPacts.WorldComponent_RimPacts:OriginalOwnerOf"] = 0x7A2ADEAC3FD7BA63,

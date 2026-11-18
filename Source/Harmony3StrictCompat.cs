@@ -607,7 +607,7 @@ namespace Harmony3StrictCompat
 				uirHoverCall = (Func<Rect, int, bool, float>)uirHover.CreateDelegate(typeof(Func<Rect, int, bool, float>));
 				uirBottomRight = (int)Enum.Parse(uirPosition.ReturnType, "BottomRight");
 				uirMiddleRight = (int)Enum.Parse(uirPosition.ReturnType, "MiddleRight");
-				if (Target("UIRethemed.Core.HoverCard:Region") is { } uirHoverCard)
+				if (Target("UIRethemed.Core.HoverCard:Region", args: [typeof(Rect), typeof(string), typeof(string), typeof(string), typeof(Color?)]) is { } uirHoverCard)
 					uirHoverRegion = (Action<Rect, string, string, string, Color?>)uirHoverCard.CreateDelegate(typeof(Action<Rect, string, string, string, Color?>));
 				uirPlacedDraw = Target("UIRethemed.Core.HoverCard:DrawPlaced");
 				var uirPlacedSize = Target("UIRethemed.Core.HoverCard:PlacedSize");
@@ -1434,10 +1434,10 @@ namespace Harmony3StrictCompat
 
 		// UIR Colonist Card info rows: the meal "Ingredients" line ends with " (* only stacks with similar meals)", which
 		// takes a third of the row. The row shows the line without that note; its tooltip shows the whole line.
-		// The rows are drawn outside the inspect window's own pass, so Mouse.IsOver (and with it TooltipHandler.TipRegion)
+		// The rows are drawn outside the inspect window's own pass, so Mouse.IsOver (and with it UIR's CoreWidgets.Tip)
 		// says "blocked" for them: no row hover, no tooltip. In DrawRow the mouse test is the plain rect test, and the
 		// tooltip is entered straight into TooltipHandler's active tips (what TipRegion does once IsOver passes); UIR Core
-		// draws it as its hover card.
+		// draws it as its hover card. Since UIR's 2026-11-18 build DrawRow only tips rows it had to truncate.
 		static readonly Dictionary<string, string> uirInfoFullLines = [];
 		static readonly AccessTools.FieldRef<Dictionary<int, ActiveTip>> tipActive = AccessTools.StaticFieldRefAccess<Dictionary<int, ActiveTip>>(AccessTools.Field(typeof(TooltipHandler), "activeTips"));
 		static readonly AccessTools.FieldRef<int> tipFrame = AccessTools.StaticFieldRefAccess<int>(AccessTools.Field(typeof(TooltipHandler), "frame"));
@@ -1456,6 +1456,13 @@ namespace Harmony3StrictCompat
 
 		static bool UirInfoRowMouseIn(Rect rect) => rect.Contains(Event.current.mousePosition);
 
+		// UIR's row tip: title is the row key (text before ": "), body the value; only called for truncated rows
+		static void UirInfoRowCardTip(Rect rect, string title, string body, string key, Color? accent)
+		{
+			string line = title == null ? body : title + ": " + body;
+			if (line != null) UirInfoRowTip(rect, new TipSignal(line));
+		}
+
 		static void UirInfoRowTip(Rect rect, TipSignal tip)
 		{
 			if (Event.current.type != EventType.Repaint || tip.text == null || !rect.Contains(Event.current.mousePosition)) return;
@@ -1472,14 +1479,14 @@ namespace Harmony3StrictCompat
 
 		static IEnumerable<CodeInstruction> UirInfoRowHoverCard(IEnumerable<CodeInstruction> instructions)
 		{
-			var tipRegion = AccessTools.Method(typeof(TooltipHandler), nameof(TooltipHandler.TipRegion), [typeof(Rect), typeof(TipSignal)]);
+			var tipRegion = AccessTools.Method("UIRethemed.Core.CoreWidgets:Tip", [typeof(Rect), typeof(string), typeof(string), typeof(string), typeof(Color?)]);
 			var isOver = AccessTools.Method(typeof(Mouse), nameof(Mouse.IsOver), [typeof(Rect)]);
 			int tips = 0, overs = 0;
 			foreach (var code in instructions)
 			{
 				if (code.Calls(tipRegion))
 				{
-					code.operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(UirInfoRowTip));
+					code.operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(UirInfoRowCardTip));
 					tips++;
 				}
 				else if (code.Calls(isOver))
@@ -1490,7 +1497,7 @@ namespace Harmony3StrictCompat
 				yield return code;
 			}
 			if (tips != 1 || overs == 0)
-				Log.Error($"[Harmony3StrictCompat] UIR Colonist Card info row: expected one TipRegion and some Mouse.IsOver calls, replaced {tips} and {overs}");
+				Log.Error($"[Harmony3StrictCompat] UIR Colonist Card info row: expected one CoreWidgets.Tip and some Mouse.IsOver calls, replaced {tips} and {overs}");
 		}
 		// Styles are built on first draw (main thread, defs loaded): UIR's NotificationStyles.Resolve touches its texture
 		// fields and NotificationColorDefOf, and from the mod constructor that runs UIR's texture loading off the main
@@ -3102,7 +3109,7 @@ namespace Harmony3StrictCompat
 			["TD_Enhancement_Pack.Alert_Deterioration:get_DeterioratingThings"] = 0x8774F1B773D667FE,       // TD Enhancement Pack 1.7, 2026-11-12
 			["TD_Enhancement_Pack.Alert_Deterioration+<get_DeterioratingThings>d__1:MoveNext"] = 0x54FBB3FD87CA2948,
 			["TD_Enhancement_Pack.SkillLearningIndicator:LabelLearning"] = 0xA1C6010BAEEDD973,             // TD Enhancement Pack 1.7, DLL of 2026-10-22
-			["UIRethemed.ColonistCard.Glance:DrawSkill"] = 0x85EC22A2204BC67A,                             // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-16 10:44
+			["UIRethemed.ColonistCard.Glance:DrawSkill"] = 0x1CAD60B089485C01,                             // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-16 10:44
 			["VanillaQuestsExpandedAncients.Building_PneumaticTubeLaunchPort:Deliver"] = 0x824DD22872D97BE7, // VQE Ancients 1.6 build, DLL of 2026-10-06
 			["SkilledRefueling.HarmonyPatches:GetRefuelDuration"] = 0xFE59863C2B492B65,                    // Skilled Refueling 1.7, DLL of 2026-11-09
 			["SkilledRefueling.RefuelingUtility:RefuelingSpeedForPawn"] = 0x302D7899D7E9DF65,
@@ -3162,9 +3169,9 @@ namespace Harmony3StrictCompat
 			["Flourish.Everyday.JobAnimationWorker_Anchored:Evaluate"] = 0x817B489F5395FF01,                // Flourish Everyday 1.7, 2026-10-25
 			["VFETribals.FactionUIUtility_DoWindowContents_Patch:Postfix"] = 0x8824F2B542A8AC6E,             // VFE Tribals 1.6 build, 2026-10-14
 			["UIRethemed.Factions.FactionsTab:Themed"] = 0x69BB80B87A3FDA4F,                               // UI Rethemed 1.7, 2026-11-16 13:03
-			["UIRethemed.Core.CoreWidgets:Button"] = 0xD06714D9F0C94F0C,                             // UI Rethemed - Core 1.7, 2026-11-17 12:21
-			["UIRethemed.Core.CoreWidgets:Icon"] = 0x0D01E34EE1BBEFDB,
-			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0x8F3EA39BA00A2B44,
+			["UIRethemed.Core.CoreWidgets:Button"] = 0x52FA3BF23041B53E,                             // UI Rethemed - Core 1.7, 2026-11-17 12:21
+			["UIRethemed.Core.CoreWidgets:Icon"] = 0xB4F9A8E48E9F3365,
+			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0xCE0D1B933F5A75E3,
 			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0x825B03D63888BFBF,
 			["UIRethemed.InspectorTabs.HoverCard:LineHeight"] = 0xD907DD18913BBC6A,                        // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-14
 			["UIRethemed.InspectorTabs.HoverCard:DrawGroup"] = 0xC3B256B725066D07,
@@ -3189,8 +3196,8 @@ namespace Harmony3StrictCompat
 			["Unburned.Pretty_Patch:Prefix"] = 0xE153E3D01BE0AC50,                                                // Unburned 1.7, 2026-11-09
 			["VEF.Weapons.MeleeReachCombatUtility:IsVanillaMeleeAttack"] = 0x0709A590AF7BF8A3,                    // VEF 1.7, 2026-11-16
 			["SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix"] = 0xEA4FA1B085907595,     // Smarter Visitors 1.7.0, 2026-11-08
-			["UIRethemed.MainBar.MenuWindow:Face"] = 0x43673CF173501798,                               // UI Rethemed - Main Bar 1.7, 2026-11-16 13:03
-			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0x54E7F7BDB97916EC,
+			["UIRethemed.MainBar.MenuWindow:Face"] = 0x17898FBC8047FF4A,                               // UI Rethemed - Main Bar 1.7, 2026-11-16 13:03
+			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0xE3A635E1DFB8B3BE,
 			["UIRethemed.MainBar.BarControls:Toggle"] = 0x8B359CF8796161A3,
 			["UIRethemed.MainBar.BarControls:SetSpeed"] = 0x71E7452A5F9EBDD4,
 			["AdaptiveMealBill.AdaptiveRecipeSelection:RecoverRecipe"] = 0x62FA21FEB38C0B91,             // AdaptiveMealBill 1.7, DLL of 2026-11-08
@@ -3206,11 +3213,11 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Notifications.NotificationStyles:Resolve"] = 0x37E4D5B9BC27B3D0,
 			["UIRethemed.Notifications.Placement:ColumnX"] = 0xE160D086AD81C948,
 			["UIRethemed.Notifications.Placement:get_Position"] = 0x773B4416EAD9CD6E,
-			["UIRethemed.Core.ThemeMotion:Hover"] = 0xC06CF68BD547BEE3,
+			["UIRethemed.Core.ThemeMotion:Hover"] = 0x67216916AF564DB9,
 			["UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler"] = 0x6975299B4CC464C6,
-			["UIRethemed.Core.HoverCard:Region"] = 0xCE8B6F6B8AC636BD,
-			["UIRethemed.Core.HoverCard:DrawPlaced"] = 0x47358A5D1532F59A,
-			["UIRethemed.Core.HoverCard:PlacedSize"] = 0x46AC5146500748F9,
+			["UIRethemed.Core.HoverCard:Region"] = 0x1795D4D016919CA4,
+			["UIRethemed.Core.HoverCard:DrawPlaced"] = 0x3138E187B6515924,
+			["UIRethemed.Core.HoverCard:PlacedSize"] = 0x1621EE58074F4D1B,
 			["UIRethemed.Notifications.Placement:BesideX"] = 0x47679F286AED5F91,
 			["UIRethemed.Notifications.SectionHeading:Shows"] = 0xFD51782B2B3A5A4A,
 			["UIRethemed.Notifications.SectionHeading:Folded"] = 0xAD16F82687E32083,
@@ -3225,8 +3232,8 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Notifications.Placement:TopStart"] = 0x57988FD227F60263,
 			["UIRethemed.Notifications.FoodReadout:Read"] = 0x4AF3C373D4873712,                          // UIR Notifications 1.7, 2026-11-17
 			["UIRethemed.Notifications.FoodReadout:Draw"] = 0xACA4A6451E388627,
-			["UIRethemed.ColonistCard.InfoList:Defer"] = 0xBF4F05F9D7D0903A,                            // UIR Colonist Card 1.7, 2026-11-16 10:44
-			["UIRethemed.ColonistCard.InfoList:DrawRow"] = 0x193B6FBC6CFC9531,                          // UIR Colonist Card 1.7, 2026-11-16 10:44
+			["UIRethemed.ColonistCard.InfoList:Defer"] = 0xED83595ED2B9EB0A,                            // UIR Colonist Card 1.7, 2026-11-16 10:44
+			["UIRethemed.ColonistCard.InfoList:DrawRow"] = 0xAE81E337FE93C493,                          // UIR Colonist Card 1.7, 2026-11-16 10:44
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,
@@ -3237,9 +3244,9 @@ namespace Harmony3StrictCompat
 			["UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix"] = 0xD2A3A440ED802D16,
 			["AlteredCarbon.JobGiver_Reload_TryGiveJob_Patch:Postfix"] = 0xAA1E07B7E7346A11,             // Altered Carbon 2 1.6 DLL, 2026-10-29
 			["RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"] = 0x8FB8ACF2A959571A,               // vanilla 1.7.5011, guilty icon slot
-			["UIRethemed.ColonistCard.Card:get_ThemingHeader"] = 0x88F2EBA978A05C89,                     // UI Rethemed - Colonist Card 1.7, 2026-11-15 03:21
-			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0xE2FA8F5061B8B740,
-			["UIRethemed.ColonistCard.StatusBar:Take"] = 0x83B1F89F448239E6,                            // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-16 10:44
+			["UIRethemed.ColonistCard.Card:get_ThemingHeader"] = 0xE0BB7E0F75774563,                     // UI Rethemed - Colonist Card 1.7, 2026-11-15 03:21
+			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0x140F60EC9F696E2F,
+			["UIRethemed.ColonistCard.StatusBar:Take"] = 0x2B5ECC6A0A8CA09A,                            // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-16 10:44
 			["UIRethemed.Animals.Motion:Key"] = 0xD8B1E64161CEBA55,                                     // UI Rethemed - Animals 1.7, DLL of 2026-11-09
 			["UIRethemed.Animals.Motion:Hover"] = 0xCF658FE8AAEAECFD,
 			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0x5B60F2AB7CA092D5,                  // UI Rethemed - Architect 1.7, 2026-11-16 10:44

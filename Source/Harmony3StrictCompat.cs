@@ -358,6 +358,11 @@ namespace Harmony3StrictCompat
 			if (hdDelivering != null)
 				harmony.Patch(hdDelivering, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdInventoryIsDelivering)));
 			Target("HaulersDream.BillRouteGate:ChosenIngredientsUnstackable"); // fingerprint only: the reason unstackable shares cannot be delivered
+			// TEMPORARY probe (2026-11-18): what a job that restarts ten times a tick points at. Remove once the loops are solved.
+			harmony.Patch(AccessTools.Method(typeof(Pawn_JobTracker), nameof(Pawn_JobTracker.StartJob)),
+				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(JobLoopProbeRemember)));
+			harmony.Patch(AccessTools.Method(typeof(JobUtility), nameof(JobUtility.TryStartErrorRecoverJob)),
+				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(JobLoopProbe)));
 			var hdShare = Target("HaulersDream.InventoryShare:AddSharableStacksForBill");
 			if (hdShare != null)
 				harmony.Patch(hdShare, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdNoUnstackableShare)));
@@ -2348,6 +2353,71 @@ namespace Harmony3StrictCompat
 			for (int i = outList.Count - 1; i >= 0; i--)
 				if (outList[i] is { Spawned: false } t && t.def.stackLimit == 1 && t.ParentHolder is Pawn_InventoryTracker)
 					outList.RemoveAt(i);
+		}
+
+		// ---- TEMPORARY probe: "<pawn> started 10 jobs in one tick" -------------------------------------------------
+		// The vanilla error names the job and target A only. Log every target of the job that was about to start: where
+		// it is, who holds it, whether it is forbidden for this pawn or outside its allowed area, whether it can be
+		// reserved, plus the bill and bench state. One warning line per error, read by Tools/rwwatch.py.
+		[ThreadStatic] static Job probeJob;
+		[ThreadStatic] static Pawn probePawn;
+
+		static void JobLoopProbeRemember(Job newJob, Pawn ___pawn)
+		{
+			probeJob = newJob;
+			probePawn = ___pawn;
+		}
+
+		static void JobLoopProbe(Pawn pawn, string message)
+		{
+			if (message == null || !message.Contains("jobs in one tick") || probeJob == null || probePawn != pawn) return;
+			try
+			{
+				var job = probeJob;
+				var sb = new StringBuilder("[Harmony3StrictCompat] job-loop probe: ");
+				sb.Append(pawn.LabelShort).Append(' ').Append(job.def.defName).Append(" at ").Append(pawn.Position)
+					.Append(" area=").Append(pawn.playerSettings?.EffectiveAreaRestrictionInPawnCurrentMap?.Label ?? "none")
+					.Append(" playerForced=").Append(job.playerForced).Append(" count=").Append(job.count);
+				ProbeTarget(sb, pawn, "A", job.targetA);
+				ProbeTarget(sb, pawn, "B", job.targetB);
+				ProbeTarget(sb, pawn, "C", job.targetC);
+				if (job.targetQueueB != null)
+					for (int i = 0; i < job.targetQueueB.Count && i < 6; i++)
+					{
+						ProbeTarget(sb, pawn, "queueB" + i, job.targetQueueB[i]);
+						if (job.countQueue != null && i < job.countQueue.Count) sb.Append(" want=").Append(job.countQueue[i]);
+					}
+				if (job.bill != null)
+					sb.Append(" | bill=").Append(job.bill.recipe?.defName).Append(" shouldDoNow=").Append(job.bill.ShouldDoNow())
+						.Append(" deleted=").Append(job.bill.DeletedOrDereferenced);
+				if (job.targetA.Thing is IBillGiver giver)
+					sb.Append(" benchUsable=").Append(giver.CurrentlyUsableForBills());
+				Log.Warning(sb.ToString());
+			}
+			catch (Exception e)
+			{
+				Log.Warning("[Harmony3StrictCompat] job-loop probe failed: " + e.Message);
+			}
+		}
+
+		static void ProbeTarget(StringBuilder sb, Pawn pawn, string tag, LocalTargetInfo target)
+		{
+			if (!target.IsValid) return;
+			sb.Append(" | ").Append(tag).Append('=');
+			if (target.Thing is not { } thing)
+			{
+				sb.Append(target.Cell).Append(" inArea=").Append(target.Cell.InAllowedArea(pawn));
+				return;
+			}
+			sb.Append(thing.def.defName).Append(" x").Append(thing.stackCount).Append(' ').Append(thing.ThingID)
+				.Append(" spawned=").Append(thing.Spawned).Append(" destroyed=").Append(thing.Destroyed);
+			if (thing.ParentHolder is { } holder && holder is not Map)
+				sb.Append(" holder=").Append(holder.GetType().Name).Append('(').Append((holder as Pawn_InventoryTracker)?.pawn?.LabelShort
+					?? (holder as Pawn_CarryTracker)?.pawn?.LabelShort ?? holder.ToString()).Append(')');
+			if (thing.Spawned)
+				sb.Append(" pos=").Append(thing.Position).Append(" inArea=").Append(thing.Position.InAllowedArea(pawn))
+					.Append(" forbidden=").Append(thing.IsForbidden(pawn)).Append(" canReserve=").Append(pawn.CanReserve(thing))
+					.Append(" reach=").Append(pawn.CanReach(thing, PathEndMode.Touch, Danger.Deadly));
 		}
 
 		// ---- Giddy-Up 2: Mount job restarts ten times a tick for an animal the rider may not touch -----------------

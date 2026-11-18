@@ -24,7 +24,7 @@ WATCHED = [
      re.compile(r" (ERROR|FATAL) |Exception| WARN.*\[Harmony3StrictCompat\]|\[WOWGAG|멈춤 [0-9.]+초|\[OgreStack\]"
                 r"|Truncating|\[AdaptiveMealBill\]|Could not load reference"),
      # Stack lines, the HD keep-API pair, and [GUIPerf] summaries that do not report a freeze.
-     re.compile(r"^\s+at |per-pawn loadout keep API|keep API bridged|emptied duplicate-comp patch"
+     re.compile(r"^\s+at |per-pawn loadout keep API|keep API bridged|emptied duplicate-comp patch|Modify Stack Sizes Complete|[WOWGAG 공지]"
                 r"|\[GUIPerf\](?!.*멈춤 [0-9.]+초)")),
     ("HD", "HaulersDream-debug.log", re.compile(r"WARN|ERR"), re.compile(r"per-pawn loadout keep API")),
 ]

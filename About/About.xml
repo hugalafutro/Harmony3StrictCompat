@@ -34,6 +34,7 @@
 - Hauler's Dream + Compositable Loadouts: loadout items are kept during surplus unload again (CL's items now list several defs; HD only knew Item.Def).
 - Hauler's Dream + Smart Medicine - Continued: Stock Up amounts count as kept even on stacks Hauler's Dream tagged as its own haul (no more unload / re-fetch loop and "Cannot unload inventory" alert).
 - Hauler's Dream + Kanban Stockpile Continue: HD respects Kanban's max stack size, refill threshold and similar stack limit when it plans pick-ups and unloads into capped storage (no more overfill / remove-excess churn).
+- Hauler's Dream: smelter bills no longer restart ten times a tick while a hauler carries looted weapons or apparel (unstackable inventory items are not offered as bill ingredients).
 - AdaptiveMealBill + Hauler's Dream: batch-cooked adaptive meals come out veg-only, meat-only or mixed by their ingredients, no "Could not recover the meal recipe" error.
 - Kanban Stockpile Continue: the similar stack limit counts every stack of the same def when accepting, like its remove-excess job does (no more pawns shuttling unmergeable meals between a capped fridge and the next storage).
 - Kanban Stockpile Continue: remove-excess only offers a job when it can really build one (no "provided target but yielded no actual job" when the destination is already at its own max stack size).
@@ -95,6 +96,7 @@
 - Hospitality: guests helping out no longer null-ref in the hopper-filling work giver on food outside the guest area.
 - Giddy-Up 2: dismounted caravan animals keep their travel/follow target, so the caravan arrives and leaves.
 - Giddy-Up 2: animals rescuing a downed pawn are not picked as mounts.
+- Giddy-Up 2: an animal the rider may not touch (forbidden, outside the allowed area) is not picked as a mount, so the Mount job no longer restarts ten times a tick.
 - Goji's Misc Genes + Living Bonds: no Parroting null-ref when a carried baby is talked to.
 - Vanilla Social Interactions Expanded + Goji's Misc Genes: a Parroting pupil can answer a teaching interaction without a "key was not present in the dictionary" tick exception.
 - Vanilla/unknown: a caravan guard holding a trader kind counts as the Trader (dismiss works, caravan exits).
@@ -103,6 +105,8 @@
 - RimPacts: factions whose exiled leader left or was dismissed get a new leader (also repaired after load), no more "Faction leader for X is null".
 - RimPacts: conquered settlements no longer revolt back to a faction whose absorption is still in progress (it outlived its "Faction absorbed" letter).
 - RimPacts + vanilla gatherings: the expo party host is picked by vanilla's organizer rules (no more party called off moments after it starts because the host is scheduled for work), the host of any party stays through its own work or sleep schedule until the party ends, and every gathering's called-off message names the reason.
+- Smarter Visitors + Event Image Popup: the "visitors are about to leave" question shows the visitor-group picture.
+- RimPacts + vanilla friendly raids: reinforcements arrive dressed for extreme cold (warmest non-armor apparel their faction can make).
 - RimPacts (personal tweak): RimPacts letter titles are shown in title case ("World Economy: Recession", "Treaty Expiring: Trade Agreement"); English only.
 - Ritual Size Attenuation + VFE Empire: art exhibit, grand ball and parade no longer crash in the outcome (an art exhibit stuck forever, guests starving).
 - VEF (MVCF): multi-verb weapons use the weapon's own accuracy/cooldown when the verb sets none; duplicate stat rows hidden; Range row fixed.

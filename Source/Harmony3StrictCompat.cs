@@ -218,6 +218,9 @@ namespace Harmony3StrictCompat
 			if (guDismount != null)
 				harmony.Patch(guDismount, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GuKeepTravelFocus)),
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GuRestoreTravelFocus)));
+			var guMountable = Target("GiddyUp.IsMountableUtility:IsMountable");
+			if (guMountable != null)
+				harmony.Patch(guMountable, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GuNoForbiddenMount)));
 			var vsieTeach = Target("VanillaSocialInteractionsExpanded.InteractionWorker_Teaching:Interacted");
 			if (vsieTeach != null)
 			{
@@ -354,6 +357,28 @@ namespace Harmony3StrictCompat
 			var hdDelivering = Target("HaulersDream.StorageCommitments:IsDelivering");
 			if (hdDelivering != null)
 				harmony.Patch(hdDelivering, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdInventoryIsDelivering)));
+			Target("HaulersDream.BillRouteGate:ChosenIngredientsUnstackable"); // fingerprint only: the reason unstackable shares cannot be delivered
+			var hdShare = Target("HaulersDream.InventoryShare:AddSharableStacksForBill");
+			if (hdShare != null)
+				harmony.Patch(hdShare, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdNoUnstackableShare)));
+			if (Target("RimWorld.IncidentWorker_Raid:TryGenerateRaidInfo") is { } raidInfo)
+				harmony.Patch(raidInfo, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FriendlyRaidDressedForCold)));
+			// Smarter Visitors' leave dialog gets Event Image Popup's visitor picture; both mods fingerprinted.
+			var eipAdd = Target("EventImagePopup.Patch_WindowStackAdd:Prefix");
+			var svLeave = Target("SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix");
+			if (eipAdd != null && svLeave != null)
+			{
+				Target("EventImagePopup.ImageResolver:ResolveForIncident");
+				var eipScope = AccessTools.TypeByName("EventImagePopup.Patch_IncidentScope");
+				eipFrames = AccessTools.Field(eipScope, "Frames")?.GetValue(null);
+				eipFrameType = eipScope?.GetNestedType("Frame");
+				if (eipFrames != null && eipFrameType != null && AccessTools.Field(eipFrameType, "def") != null)
+					harmony.Patch(AccessTools.Method(typeof(WindowStack), nameof(WindowStack.Add)),
+						prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SvLeaveDialogWithImage)) { priority = Priority.First },
+						finalizer: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SvLeaveDialogDone)));
+				else
+					Log.Error("[Harmony3StrictCompat] EventImagePopup.Patch_IncidentScope changed: Smarter Visitors' leave dialog shows no picture");
+			}
 			var hdInit = Target("HaulersDream.CompositableLoadoutsCompat:InitKeepApi");
 			var hdWanted = Target("HaulersDream.CompositableLoadoutsCompat:LoadoutWantedUnits");
 			hdItemDefs = AccessTools.PropertyGetter(AccessTools.TypeByName("Inventory.Item"), "Defs");
@@ -2308,6 +2333,140 @@ namespace Harmony3StrictCompat
 				__result = true;
 		}
 
+		// ---- Hauler's Dream: smelt bill restarts ten times a tick while a hauler carries loot --------------------
+		// "Share for crafting" adds tagged stacks from player pawns' inventories (mechs included) to a bill's ingredient
+		// candidates. For stackable ingredients HD then swaps the job for its own batch driver, which takes from an
+		// inventory. Both of its JobOnThing routes return early when a chosen ingredient is unstackable
+		// (BillRouteGate.ChosenIngredientsUnstackable), so a weapon or apparel inside a hauler stays in a vanilla DoBill
+		// job, whose go-to-ingredient toil fails at once on a despawned target; JobGiver_Work hands out the same job
+		// again: "<pawn> started 10 jobs in one tick. newJob=DoBill ... Smelter" until the hauler unloads (2026-11-18:
+		// 19 times, each one second after a mech "[adopt]"ed a stripped gun). Take unstackable inventory items back out
+		// of the candidates; the bill picks them up once they are on the map or in storage.
+		static void HdNoUnstackableShare(List<Thing> outList)
+		{
+			if (outList == null) return;
+			for (int i = outList.Count - 1; i >= 0; i--)
+				if (outList[i] is { Spawned: false } t && t.def.stackLimit == 1 && t.ParentHolder is Pawn_InventoryTracker)
+					outList.RemoveAt(i);
+		}
+
+		// ---- Giddy-Up 2: Mount job restarts ten times a tick for an animal the rider may not touch -----------------
+		// JobDriver_Mount fails on a forbidden target (for a pawn that includes standing outside the rider's allowed
+		// area), but IsMountable never tests that, so auto-mount picks the same animal again the moment the Mount job
+		// dies: "<pawn> started 10 jobs in one tick. newJob=Mount" (2026-11-18, a meadow ave). Refuse such an animal
+		// with the test the job driver itself uses.
+		static void GuNoForbiddenMount(Pawn animal, Pawn rider, bool checkState, ref bool __result)
+		{
+			if (__result && checkState && rider is { Spawned: true } && animal is { Spawned: true } && animal.IsForbidden(rider))
+				__result = false;
+		}
+
+		// ---- Friendly raids arrive dressed for the cold ------------------------------------------------------------
+		// Vanilla gives a generated pawn a parka and a hat when the tile is cold; at extreme cold (-76 C on 2026-11-18)
+		// that is far from enough, and RimPacts' defense-pact reinforcements (IncidentWorker_RaidFriendly, 151 pawns
+		// that day) stand around after the fight and freeze. Dress for the Weather only covers neutral groups unless
+		// "raiders come prepared" is on, and its 100 random tries per pawn would stall a group this size. For friendly
+		// raids only: per pawn, put on the warmest non-armor apparel its faction can make (tech level, allowed stuff)
+		// wherever that replaces something colder, until the pawn is comfortable or six pieces went on. Armor and
+		// locked apparel stay. Candidates come from vanilla's own apparel pair list, once per faction def.
+		static readonly Dictionary<FactionDef, List<ThingStuffPair>> warmPairs = new();
+
+		static void FriendlyRaidDressedForCold(IncidentParms parms, List<Pawn> pawns, bool debugTest, bool __result)
+		{
+			if (!__result || debugTest || pawns == null || parms?.target is not Map map || parms.faction == null
+				|| parms.faction.HostileTo(Faction.OfPlayer)) return;
+			float outdoor = map.mapTemperature.OutdoorTemp;
+			if (outdoor > 5f) return;
+			if (!warmPairs.TryGetValue(parms.faction.def, out var pairs))
+			{
+				pairs = new List<ThingStuffPair>();
+				if (AccessTools.Field(typeof(PawnApparelGenerator), "allApparelPairs")?.GetValue(null) is List<ThingStuffPair> all)
+					foreach (var pair in all)
+					{
+						var ap = pair.thing.apparel;
+						if (ap == null || !ap.canBeGeneratedToSatisfyWarmth || ap.mechanitorApparel || ap.layers.Contains(ApparelLayerDefOf.Belt)
+							|| pair.thing.techLevel > parms.faction.def.techLevel || pair.Commonality <= 0f || pair.InsulationCold <= 0f
+							|| IsArmorApparel(pair.thing) || (pair.stuff != null && !parms.faction.def.CanUseStuffForApparel(pair.stuff))) continue;
+						pairs.Add(pair);
+					}
+				pairs.SortByDescending(pair => pair.InsulationCold);
+				if (pairs.Count > 300) pairs.RemoveRange(300, pairs.Count - 300);
+				warmPairs[parms.faction.def] = pairs;
+			}
+			int dressed = 0;
+			foreach (var pawn in pawns)
+				if (DressForCold(pawn, pairs, outdoor)) dressed++;
+			if (dressed > 0)
+				Log.Message($"[Harmony3StrictCompat] Friendly raid ({parms.faction.Name}): {dressed} of {pawns.Count} pawns got warmer apparel for {outdoor:0} C");
+		}
+
+		static bool IsArmorApparel(ThingDef def) =>
+			def.IsWithinCategory(ThingCategoryDefOf.ApparelArmor) || def.IsWithinCategory(ThingCategoryDefOf.ArmorHeadgear);
+
+		static bool DressForCold(Pawn pawn, List<ThingStuffPair> pairs, float outdoor)
+		{
+			if (pawn?.apparel == null || pawn.Dead || !pawn.RaceProps.Humanlike) return false;
+			int worn = 0;
+			bool check = true;
+			for (int i = 0; i < pairs.Count && worn < 6; i++)
+			{
+				if (check && pawn.GetStatValue(StatDefOf.ComfyTemperatureMin, true, -1) <= outdoor) break;
+				check = false;
+				var pair = pairs[i];
+				if (!pair.thing.apparel.PawnCanWear(pawn) || !ApparelUtility.HasPartsToWear(pawn, pair.thing)) continue;
+				float replaced = 0f;
+				bool blocked = false;
+				foreach (var have in pawn.apparel.WornApparel)
+				{
+					if (ApparelUtility.CanWearTogether(pair.thing, have.def, pawn.RaceProps.body)) continue;
+					if (pawn.apparel.IsLocked(have) || IsArmorApparel(have.def)) { blocked = true; break; }
+					replaced += have.GetStatValue(StatDefOf.Insulation_Cold);
+				}
+				if (blocked || replaced >= pair.InsulationCold) continue;
+				var apparel = (Apparel)ThingMaker.MakeThing(pair.thing, pair.stuff);
+				PawnGenerator.PostProcessGeneratedGear(apparel, pawn);
+				pawn.apparel.Wear(apparel, false);
+				worn++;
+				check = true;
+			}
+			return worn > 0;
+		}
+
+		// ---- Smarter Visitors x Event Image Popup: "visitors are about to leave" has no picture --------------------
+		// Event Image Popup only decorates a Dialog_NodeTree opened while a letter or an incident is in scope. Smarter
+		// Visitors asks "they are afraid to leave (temperature ...), may they stay?" with a Dialog_MessageBox from a
+		// lord trigger, so neither holds, while Hospitality's matching arrival question gets the visitor picture.
+		// Rebuild that one message box (known by its third button, SV.WaitALittle) as a node tree with the same text
+		// and buttons in the same order, and put a VisitorGroup incident frame in scope while the window is added, so
+		// Event Image Popup's own prefix (it runs after this one) attaches the picture it uses for visitor groups.
+		static object eipFrames;
+		static Type eipFrameType;
+
+		static void SvLeaveDialogWithImage(ref Window window, out bool __state)
+		{
+			__state = false;
+			if (window is not Dialog_MessageBox box || box.buttonCText.NullOrEmpty() || !"SV.WaitALittle".CanTranslate()
+				|| box.buttonCText != "SV.WaitALittle".Translate().ToString()) return;
+			var incident = DefDatabase<IncidentDef>.GetNamedSilentFail("VisitorGroup");
+			if (incident == null) return;
+			var node = new DiaNode(box.text);
+			foreach (var (label, action) in new[] { (box.buttonBText, box.buttonBAction), (box.buttonCText, box.buttonCAction), (box.buttonAText, box.buttonAAction) })
+				if (!label.NullOrEmpty())
+					node.options.Add(new DiaOption(label) { action = action, resolveTree = true });
+			if (node.options.Count == 0) return;
+			window = new Dialog_NodeTree(node, true, false, box.title);
+			var frame = Activator.CreateInstance(eipFrameType);
+			AccessTools.Field(eipFrameType, "def").SetValue(frame, incident);
+			AccessTools.Field(eipFrameType, "parms")?.SetValue(frame, new IncidentParms());
+			eipFrames.GetType().GetMethod("Push").Invoke(eipFrames, new[] { frame });
+			__state = true;
+		}
+
+		static void SvLeaveDialogDone(bool __state)
+		{
+			if (__state) eipFrames.GetType().GetMethod("Pop").Invoke(eipFrames, null);
+		}
+
 		// ---- Hauler's Dream x Compositable Loadouts: loadout items not kept during surplus unload ---------------
 		// HD keeps a pawn's loadout items out of "adopt all surplus" by reading CL's Item.Def and Item.Quantity. CL's
 		// 1.7 Item holds several alternative defs (members: Defs, RepresentativeDef) and has no Def any more, so HD's
@@ -3106,6 +3265,10 @@ namespace Harmony3StrictCompat
 			["DressForTheWeather.PawnsArriveUtilities:InitializeApparelPairs"] = 0x642A784DF0292B51,
 			["DressForTheWeather.IncidentWorker_NeutralGroup_SpawnPawns:Postfix"] = 0xB1048B0DC4E3B6FC,
 			["Impact.ArmorDeflection:Prefix"] = 0x31A4B4B031D77B6E,                                         // IMPACT - Combat Overhaul 1.7, DLL of 2026-10-29
+			["RimWorld.IncidentWorker_Raid:TryGenerateRaidInfo"] = 0x09B77A52A9B691B2,                          // game 1.7.5013, 2026-11-18 (pawns are spawned by the time it returns)
+			["EventImagePopup.Patch_WindowStackAdd:Prefix"] = 0x841F5AE3B7F05107,                              // Event Image Popup, 2026-11-18 (only Dialog_NodeTree inside a letter or incident scope)
+			["EventImagePopup.ImageResolver:ResolveForIncident"] = 0x3CA76DBAC6CD2A1C,
+			["SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix"] = 0xEA4FA1B085907595,                    // Smarter Visitors 1.7, 2026-11-18 (leave dialog is a Dialog_MessageBox)
 			["RimWorld.CompShuttle:CompTick"] = 0x807AD3141AD4D8A6,
 			["RimWorld.Selector:SelectUnderMouse"] = 0x59EF35E3AE5B2B41,                                    // game 1.7.5013, 2026-11-18
 			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,
@@ -3120,6 +3283,7 @@ namespace Harmony3StrictCompat
 			["VEF.Weapons.VerbUtility+VerbProperties_AdjustedRange_Patch:Prefix"] = 0x58E07AFE77FEF707,       // VEF 1.7, 2026-11-16 (NaN __state sentinel; still mutates shared range)
 			["VEF.Weapons.VerbUtility+VerbProperties_AdjustedRange_Patch:Finalizer"] = 0x08F6D47B2118E6CF,
 			["TriumphantResearch.Window_ResearchComplete:.ctor"] = 0x55438039A644309A,                            // 1.6 build, 2026-11-01
+			["GiddyUp.IsMountableUtility:IsMountable"] = 0x9158721D61502B63,                                   // Giddy-Up 2 Continued 1.7, 2026-11-18 (no forbidden / allowed-area test on the animal)
 			["GiddyUp.MountUtility:Dismount"] = 0x4D071C5677D8DCC2,                                                // Giddy-Up 2 Continued 1.7, 2026-11-09 (Dismount still parks lord animals)
 			["PositiveConnectionsNmSpc.RoomRoleWorker_Den:CountDoors"] = 0x3CD5612235092B15,                                    // Positive Connections 1.7, 2026-11-15
 			["GojisMiscGenes.InteractionWorker_Interacted_Patch:Postfix"] = 0x0DC1938A4ABAED83,                       // Goji's Misc Genes 1.7, 2026-11-15
@@ -3155,6 +3319,8 @@ namespace Harmony3StrictCompat
 			["CommonSense.OpportunisticTasks:Cleaning_Opportunity"] = 0xC83F6DDEA821201F,
 			["HaulersDream.CompositableLoadoutsCompat:InitKeepApi"] = 0x3F15140E9ED2D991,                    // Hauler's Dream 1.6 build, 2026-11-05
 			["HaulersDream.CompositableLoadoutsCompat:LoadoutWantedUnits"] = 0x89C4B3F40C058F43,
+			["HaulersDream.InventoryShare:AddSharableStacksForBill"] = 0x787053FD33B7A5CC,                  // Hauler's Dream 1.6 build, 2026-11-18 (shares unstackable inventory items no route delivers)
+			["HaulersDream.BillRouteGate:ChosenIngredientsUnstackable"] = 0x1F888250D33BAB80,
 			["HaulersDream.StorageCommitments:IsDelivering"] = 0xB2A8CC7128220022,                           // Hauler's Dream 1.24.0 (1.6 build), 2026-08-10
 			["UIRethemed.Quests.Theme:LabelTruncated"] = 0x100BC02BEE333A35,                               // UI Rethemed - Quests 1.7, 2026-11-15 11:06
 			["UIRethemed.Quests.HoverCard:Region"] = 0xC63A1FE873265DBA,

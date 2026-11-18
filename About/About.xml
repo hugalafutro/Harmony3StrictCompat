@@ -36,6 +36,7 @@
 - Hauler's Dream + Kanban Stockpile Continue: HD respects Kanban's max stack size, refill threshold and similar stack limit when it plans pick-ups and unloads into capped storage (no more overfill / remove-excess churn).
 - AdaptiveMealBill + Hauler's Dream: batch-cooked adaptive meals come out veg-only, meat-only or mixed by their ingredients, no "Could not recover the meal recipe" error.
 - Kanban Stockpile Continue: the similar stack limit counts every stack of the same def when accepting, like its remove-excess job does (no more pawns shuttling unmergeable meals between a capped fridge and the next storage).
+- Kanban Stockpile Continue: remove-excess only offers a job when it can really build one (no "provided target but yielded no actual job" when the destination is already at its own max stack size).
 - Useful Marks: selected items and buildings show one info card button, not two.
 - Vanilla Ideology + Alpha Memes (heart extraction): sacrificing an innocent prisoner in a ritual no longer counts as executing an innocent or as a prisoner death through neglect (no opinion / mood penalties for the ideoligion's own ritual).
 - Common Sense: no "random element from empty collection" warnings for food no recipe makes (meal ingredients lookup skipped).
@@ -43,6 +44,8 @@
 - Common Sense: pawns on medical bed rest no longer get up to sweep before lying down (tends no longer fail).
 - Prisoner Realism + Cleaning Area Relaunched: prisoners only clean filth inside the Clean area, no more standing-still Clean job loop.
 - Hunt For Me: only player animals take hunting jobs (a released animal marked for hunting no longer hunts itself).
+- Level Up! (personal tweak): no skill messages for pawns that are neither on a map nor in a caravan (Better Gene Inheritance's throwaway baby pawn announced its skills with the pregnancy letter).
+- [FSF] Advanced Bionics Expansion + Block Unwanted Minutiae: hediff message comps without message text post nothing (EMP shield implants no longer throw every tick after an EMP hit).
 - Designator Shapes + Better Architect Menu: flood fill stops at doors again.
 - Vanilla + VFE Pirates: quest raid previews ("raid of roughly this size:") no longer come out blank; pawn groups whose every pawn costs more than the faction allows at those points are skipped (e.g. the melee-only Junker group).
 - Vanilla Quests Expanded - Ancients (personal tweak): the pneumatic capsule arrival message lists what arrived.
@@ -105,6 +108,7 @@
 - VEF (MVCF): multi-verb weapons use the weapon's own accuracy/cooldown when the verb sets none; duplicate stat rows hidden; Range row fixed.
 - VEF: verb range factor applied to the result instead of the shared verb def (no stuck ranges).
 - Unburned + VEF: drafted pawns with reach melee weapons auto-attack at full reach again (Unburned replaced the method VEF patches).
+- Alpha Armoury (tesla coil trait) + VEF: tesla chain fire follows vanilla ignition rules (mechanoids no longer burn, one fire per target).
 - Sensible Bed Ownership: reservation prefix skipped for beds with no map.
 - Sensible Bed Ownership: no more NullReferenceException from the spouse-sleep thought when a pawn owns a bed that is on no map.
 - Skilled Refueling: Harmony 3 unchecked binding for its mistyped __instance patch.
@@ -114,6 +118,7 @@
 - Too Many Mods: 22 lowercase "Defs/thingDef[" xpaths fixed (Rimsenal items).
 - Rimsenal Faction Pack - Spacer: no second style comp on the mech commander helmet, Dresser, EndTable and FloodLight.
 - Rimsenal - Security Pack (with LocalTweaks): incinerator and graser turrets show their range ring while placing (vanilla ring code null-refs on beam verbs).
+- Royalty monument quests + VE Framework pipes (personal tweak): VE pipes, visible or hidden, count as power conduits for monument placement and the finished monument.
 - Pulse Weaponry (and any weapon with the same mistake): weapons with an ability comp no longer also keep the plain equipment comp, so their verbs stop clashing on load.
 - ReGrowth plant patches: duplicate wild plant records removed from biomes (world-gen Landmarks/Mutators steps).
 - Vanilla: no needs while no world exists (quest pawns built before the world loads).

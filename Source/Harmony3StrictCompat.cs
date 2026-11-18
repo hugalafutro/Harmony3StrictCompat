@@ -60,6 +60,15 @@ namespace Harmony3StrictCompat
 					harmony.Patch(levelUpHook, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LevelUpOnlyPresentPawns)));
 			if (Target("Verse.HediffComp_MessageBase:Message") is { } hediffMessage)
 				harmony.Patch(hediffMessage, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HediffMessageNeedsText)));
+			if (Target("KanbanStockpileContinue.WorkGiver_RemoveExcessFromKanban:HasJobOnThing") is { } ksHasJob
+				&& Target("KanbanStockpileContinue.WorkGiver_RemoveExcessFromKanban:JobOnThing") != null
+				&& Target("KanbanStockpileContinue.KanbanStockpileAPI:InvokeExcessRemoved") is { } ksExcessEvent)
+			{
+				harmony.Patch(ksHasJob, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(KsRemoveExcessHasRealJob)));
+				harmony.Patch(ksExcessEvent, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(KsNoEventWhileProbing)));
+			}
+			if (Target("VEF.Weapons.TeslaProjectile:Impact") is { } teslaImpact)
+				harmony.Patch(teslaImpact, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(TeslaFireVanillaRulesTranspiler)));
 			if (AccessTools.TypeByName("PipeSystem.Building_Pipe") is { } pipeClass)
 			{
 				vefPipeClass = pipeClass;
@@ -2399,6 +2408,57 @@ namespace Harmony3StrictCompat
 		static bool HediffMessageNeedsText(HediffComp __instance) =>
 			__instance.props is not HediffCompProperties_MessageBase props || !props.message.NullOrEmpty();
 
+		// ---- Kanban Stockpile Continue: remove-excess HasJobOnThing and JobOnThing out of sync -------------------
+		// HasJobOnThing only asks "is there excess, and does any storage accept it"; JobOnThing also clamps the count to
+		// the room left under the destination's own Kanban max stack size and gives up on an SSL excess that cannot move
+		// whole. A capped vending machine or fridge already at its cap then yields a null job and vanilla logs "provided
+		// target but yielded no actual job" (cheese, 2026-11-18). HasJobOnThing now also requires JobOnThing to build a
+		// job. The probe has no lasting effect: Hauler's Dream's HaulToCellStorageJob postfix only clamps the count (it
+		// commits at reservation time), and Kanban's OnExcessRemoved event is held back while probing.
+		[ThreadStatic] static bool ksProbing;
+
+		static void KsRemoveExcessHasRealJob(WorkGiver_Scanner __instance, Pawn pawn, Thing t, bool forced, ref bool __result)
+		{
+			if (!__result || ksProbing) return;
+			ksProbing = true;
+			try { __result = __instance.JobOnThing(pawn, t, forced) != null; }
+			finally { ksProbing = false; }
+		}
+
+		static bool KsNoEventWhileProbing() => !ksProbing;
+
+		// ---- VEF tesla chain fire (Alpha Armoury "tesla coil" trait) -------------------------------------------
+		// TeslaChainingProps.addFire makes TeslaProjectile.Impact spawn a Fire and AttachTo every hit thing with a
+		// CompAttachBase, skipping vanilla's ignition rules: mechanoids (Flammability 0) burn, and every chain hit adds
+		// another fire to an already burning target (3 on one Siegebreaker). The trait itself promises to stun mechs and
+		// burn organics. The AttachTo call now goes through vanilla's CanEverAttachFire / HasAttachment(Fire) checks; a
+		// fire that may not attach is removed again right after VEF spawned it.
+		static IEnumerable<CodeInstruction> TeslaFireVanillaRulesTranspiler(IEnumerable<CodeInstruction> instructions)
+		{
+			var attachTo = AccessTools.Method(typeof(AttachableThing), nameof(AttachableThing.AttachTo));
+			int replaced = 0;
+			foreach (var code in instructions)
+			{
+				if (code.Calls(attachTo))
+				{
+					code.opcode = OpCodes.Call;
+					code.operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(TeslaAttachFireIfAllowed));
+					replaced++;
+				}
+				yield return code;
+			}
+			if (replaced != 1)
+				Log.Error($"[Harmony3StrictCompat] VEF TeslaProjectile.Impact has {replaced} AttachTo calls (expected 1): its mod updated, redo the tesla fire fix");
+		}
+
+		static void TeslaAttachFireIfAllowed(AttachableThing fire, Thing target)
+		{
+			if (target.CanEverAttachFire() && !target.HasAttachment(ThingDefOf.Fire))
+				fire.AttachTo(target);
+			else if (!fire.Destroyed)
+				fire.Destroy();
+		}
+
 		// ---- Monument quests: VE pipes count as conduits ---------------------------------------------------------
 		// Personal tweak: the monument marker lets only power conduits share its footprint or sit next to it (placement:
 		// "Cannot place monument over ...", "Monument adjacent to ...") and stay on its floor once built (otherwise the
@@ -2996,8 +3056,8 @@ namespace Harmony3StrictCompat
 			["LevelUp.Patcher:DirtyAptitudesPostfix"] = 0xE6A4CB86C9A72804,                                   // Level Up! 1.6 DLL, 2026-11-17 (no announcements for unspawned pawns)
 			["LevelUp.Patcher:LearnPostfix"] = 0x425B4856BEAB93EA,
 			["Verse.HediffComp_MessageBase:Message"] = 0x4DC3B7073B69E6C6,                                     // game 1.7.5011, 2026-11-18 (no post without message text)
-			["RimWorld.PlaceWorker_MonumentMarker:AllowsPlacing"] = 0xE1E8F2D93F452C06,                        // game 1.7.5011, 2026-11-18 (VE pipes count as conduits)
-			["RimWorld.MonumentMarker:get_FirstDisallowedBuilding"] = 0xF0427CEC33FDDEDE,
+			["RimWorld.PlaceWorker_MonumentMarker:AllowsPlacing"] = 0x615326571B614842,                        // game 1.7.5011, 2026-11-18 (VE pipes count as conduits)
+			["RimWorld.MonumentMarker:get_FirstDisallowedBuilding"] = 0x56B58DC4E8C9010E,
 			["Rachek128.RitualAttenuation.RitualExtendedDataRef:get_Comp"] = 0x357FBBDFAE580E43,               // Ritual Size Attenuation 1.6 DLL, 2026-11-16
 			["RimPacts.WorldComponent_RimPacts:TryRevertConquered"] = 0x20D53DF606F689C2,                  // RimPacts 1.7, 2026-11-17 16:55 (no revolt to an absorbed faction)
 			["RimPacts.WorldComponent_RimPacts:OriginalOwnerOf"] = 0x7A2ADEAC3FD7BA63,
@@ -3005,11 +3065,11 @@ namespace Harmony3StrictCompat
 			["RimPacts.WorldComponent_RimPacts:DefAutoTick"] = 0xE551C9A77C4672D8,
 			["RimPacts.WorldComponent_RimPacts:DefAutoOne"] = 0xC4DB7EBE746E875E,
 			["Impact.ArmorDeflection:Prefix"] = 0x31A4B4B031D77B6E,                                         // IMPACT - Combat Overhaul 1.7, DLL of 2026-10-29
-			["RimWorld.CompShuttle:CompTick"] = 0x0FE3170CD124F570,
-			["RimWorld.Selector:SelectUnderMouse"] = 0x1A3AD61C82A0379C,                                    // game 1.7.5011, 2026-11-16
+			["RimWorld.CompShuttle:CompTick"] = 0x807AD3141AD4D8A6,
+			["RimWorld.Selector:SelectUnderMouse"] = 0xC012455FB5D378F5,                                    // game 1.7.5011, 2026-11-16
 			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,
-			["Verse.GizmoGridDrawer:DrawGizmoGrid"] = 0xA95952BCCCDC4A65,
-			["RimWorld.PawnRelationWorker_Sibling:CreateRelation"] = 0x5C0292D679E029F6,                                              // game 1.7.5011, 2026-11-16
+			["Verse.GizmoGridDrawer:DrawGizmoGrid"] = 0x5792F573E1A41EBF,
+			["RimWorld.PawnRelationWorker_Sibling:CreateRelation"] = 0xCC2ADCE90DEE9FA6,                                              // game 1.7.5011, 2026-11-16
 			["TraitTracker.TraitHediffApplier:ApplyHediffsToPawnsWithTraits"] = 0x67BDC9BB976E9B72,                // 2026-10-22
 			// VEF 1.7 MVCF.dll, 2026-10-31
 			["MVCF.Utilities.VerbStatsUtility:GetStatValue"] = 0x691C1FF55EB56CE6,
@@ -3069,6 +3129,9 @@ namespace Harmony3StrictCompat
 			["KanbanStockpileContinue.KSUtil:CountStoredSimilarStacks"] = 0x0D6509A3EE0A8A5F,
 			["KanbanStockpileContinue.KSUtil:IsSimilarStack"] = 0xA9EA56B4765CDEAF,
 			["KanbanStockpileContinue.KSUtil:BuildSslExcessSet"] = 0x3D125057D3A69CBC,
+			["KanbanStockpileContinue.WorkGiver_RemoveExcessFromKanban:HasJobOnThing"] = 0x2F571A215357C57E,   // 2026-11-18 (remove-excess checks in sync)
+			["KanbanStockpileContinue.WorkGiver_RemoveExcessFromKanban:JobOnThing"] = 0x6513C113A9741404,
+			["KanbanStockpileContinue.KanbanStockpileAPI:InvokeExcessRemoved"] = 0xDEEB48913A6ABFF4,
 			["UIRethemed.Ideology.StyleTip+Content:get_Width"] = 0x5F8988FF18236D28,                          // UI Rethemed - Ideology 1.7, 2026-11-11 11:53
 			["UIRethemed.Ideology.StyleTip+Content:Height"] = 0x011A611C99D36B61,
 			["UIRethemed.Ideology.StyleTip+Content:CellWidth"] = 0x72A4DC3661404FC9,
@@ -3085,6 +3148,7 @@ namespace Harmony3StrictCompat
 			["SensibleBedOwnership.Utility+<>c:<GetMainBed>b__16_2"] = 0x1D302CAA9DBAE5A2,
 			["SensibleBedOwnership.Utility:AllAssignedBedsAndDeathrestCaskets"] = 0x8560CE17C9797D18,
 			["VEF.Buildings.CompRandomBuildingGraphic:ChangeGraphic"] = 0x083F54FF7DB1EDDF,                  // VEF 1.7, 2026-11-16
+			["VEF.Weapons.TeslaProjectile:Impact"] = 0xE20428982BF9EC9F,                                       // VEF 1.7, 2026-11-18 (tesla fire follows vanilla ignition rules)
 			["AdaptiveStorage.StorageGraphicWorker:GetGraphicFor"] = 0x2899906440FC5118,                     // ASF 1.6 build, 2025-11-12
 			["RimPacts.WorldComponent_RimPacts:DismissExilePawn"] = 0xDA6EB5C1167E2B11,                        // RimPacts 1.7, 2026-11-17 (ForcefullyKept/Spawned guards; still no successor)
 			["PrisonerRealism.JobGiver_CleanCell:ShouldClean"] = 0x7B21CD085E9E96A1,                          // Prisoner Realism 1.7, 2026-11-12 23:37
@@ -3111,14 +3175,14 @@ namespace Harmony3StrictCompat
 			["UIRethemed.InspectorTabs.GearTab:VanillaSlotFor"] = 0xD4BB7BECCCD46A9E,
 			["UIRethemed.InspectorTabs.GearTab:DrawStatsPanel"] = 0x783CF2114581C793,
 			["SmartMedicine.Dialog_StockUp:<DoWindowContents>b__10_0"] = 0x287F2659618CDD5B,        // Smart Medicine - Continued 1.7, 2026-11-08 (DLL of 2026-11-02)
-			["Verse.AI.HaulAIUtility:PawnCanAutomaticallyHaul"] = 0xA915AA993362169F,                            // game 1.7.5011, 2026-11-16
+			["Verse.AI.HaulAIUtility:PawnCanAutomaticallyHaul"] = 0x75A234FF82E00239,                            // game 1.7.5011, 2026-11-16
 			["RimWorld.JobGiver_DropUnusedInventory:Drop"] = 0x80ADDA655AAFAE64,                                  // game 1.7.5000, 2026-11-09
-			["RimWorld.PawnGroupKindWorker_Normal:CanGenerateFrom"] = 0x53C95666E47F23F6,                       // game 1.7.5011, 2026-11-16
-			["RimWorld.PlaceWorker_ShowTurretRadius:AllowsPlacing"] = 0x524C60B8C1B219ED,                       // game 1.7.5011, 2026-11-16
-			["RimWorld.JobDriver_Reading:ReadBook"] = 0x5DD71548B9925859,                                         // game 1.7.5011, 2026-11-16
+			["RimWorld.PawnGroupKindWorker_Normal:CanGenerateFrom"] = 0xDD823B1286E54BB2,                       // game 1.7.5011, 2026-11-16
+			["RimWorld.PlaceWorker_ShowTurretRadius:AllowsPlacing"] = 0x435F554B8F17A8A3,                       // game 1.7.5011, 2026-11-16
+			["RimWorld.JobDriver_Reading:ReadBook"] = 0x51FC04EE1528676B,                                         // game 1.7.5011, 2026-11-16
 			["LivingBonds.JobDriver_FamilyReading:MakeNewToils"] = 0xE5AB03BF7DC271E0,                           // Living Bonds 1.7
 			["LivingBonds.JobDriver_FamilyReading:MakeNewToils/MoveNext"] = 0xEDCA9D7D5DC3432B,                 // Living Bonds 1.7
-			["RimWorld.JobDriver_Reading:Notify_Starting"] = 0x1429D82AA682B150,                                  // game 1.7.5011, 2026-11-16
+			["RimWorld.JobDriver_Reading:Notify_Starting"] = 0x22429B5AB43DB060,                                  // game 1.7.5011, 2026-11-16
 			["AlphaBooks.JobDriver_ReadAlphaBook:Notify_Starting"] = 0x8C0A0B7B7171326B,                          // Alpha Books 1.6 DLL of 2026-07-22
 			["SmartMedicine.FindBestMedicine:Find"] = 0x5C207A8C7B0E5F6A,                                        // Smart Medicine - Continued 1.7, 2026-11-12
 			["SmartMedicine.StockUpUtility:StockingUpOn"] = 0xE47440ED851F08C2,                                   // (Pawn, Thing) overload, Smart Medicine 1.7, 2026-11-09
@@ -3172,7 +3236,7 @@ namespace Harmony3StrictCompat
 			["UsefulMarks.Dialog_NamePawn_DoWindowContents_Patch:Postfix"] = 0xF33AD5F31EB56B3B,        // Useful Marks 1.7, DLL of 2026-10-22
 			["UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix"] = 0xD2A3A440ED802D16,
 			["AlteredCarbon.JobGiver_Reload_TryGiveJob_Patch:Postfix"] = 0xAA1E07B7E7346A11,             // Altered Carbon 2 1.6 DLL, 2026-10-29
-			["RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"] = 0xFC46FFEC8AE41506,               // vanilla 1.7.5011, guilty icon slot
+			["RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"] = 0x8FB8ACF2A959571A,               // vanilla 1.7.5011, guilty icon slot
 			["UIRethemed.ColonistCard.Card:get_ThemingHeader"] = 0x88F2EBA978A05C89,                     // UI Rethemed - Colonist Card 1.7, 2026-11-15 03:21
 			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0xE2FA8F5061B8B740,
 			["UIRethemed.ColonistCard.StatusBar:Take"] = 0x83B1F89F448239E6,                            // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-16 10:44

@@ -34,7 +34,7 @@
 - Hauler's Dream + Compositable Loadouts: loadout items are kept during surplus unload again (CL's items now list several defs; HD only knew Item.Def).
 - Hauler's Dream + Smart Medicine - Continued: Stock Up amounts count as kept even on stacks Hauler's Dream tagged as its own haul (no more unload / re-fetch loop and "Cannot unload inventory" alert).
 - Hauler's Dream + Kanban Stockpile Continue: HD respects Kanban's max stack size, refill threshold and similar stack limit when it plans pick-ups and unloads into capped storage (no more overfill / remove-excess churn).
-- Hauler's Dream: smelter bills no longer restart ten times a tick while a hauler carries looted weapons or apparel (unstackable inventory items are not offered as bill ingredients).
+- Hauler's Dream: bill jobs no longer restart ten times a tick while another pawn carries the ingredient (other pawns' inventory stacks are offered only to batch bills, which can take them).
 - AdaptiveMealBill + Hauler's Dream: batch-cooked adaptive meals come out veg-only, meat-only or mixed by their ingredients, no "Could not recover the meal recipe" error.
 - Kanban Stockpile Continue: the similar stack limit counts every stack of the same def when accepting, like its remove-excess job does (no more pawns shuttling unmergeable meals between a capped fridge and the next storage).
 - Kanban Stockpile Continue: remove-excess only offers a job when it can really build one (no "provided target but yielded no actual job" when the destination is already at its own max stack size).

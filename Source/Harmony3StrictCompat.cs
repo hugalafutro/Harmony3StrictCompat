@@ -357,15 +357,22 @@ namespace Harmony3StrictCompat
 			var hdDelivering = Target("HaulersDream.StorageCommitments:IsDelivering");
 			if (hdDelivering != null)
 				harmony.Patch(hdDelivering, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdInventoryIsDelivering)));
-			Target("HaulersDream.BillRouteGate:ChosenIngredientsUnstackable"); // fingerprint only: the reason unstackable shares cannot be delivered
 			// TEMPORARY probe (2026-11-18): what a job that restarts ten times a tick points at. Remove once the loops are solved.
 			harmony.Patch(AccessTools.Method(typeof(Pawn_JobTracker), nameof(Pawn_JobTracker.StartJob)),
 				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(JobLoopProbeRemember)));
 			harmony.Patch(AccessTools.Method(typeof(JobUtility), nameof(JobUtility.TryStartErrorRecoverJob)),
 				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(JobLoopProbe)));
+			Target("HaulersDream.Patch_WorkGiver_DoBill_BatchRoute:Postfix"); // fingerprint only: the one route that can use another pawn's inventory stack
 			var hdShare = Target("HaulersDream.InventoryShare:AddSharableStacksForBill");
-			if (hdShare != null)
-				harmony.Patch(hdShare, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdNoUnstackableShare)));
+			hdIsBatchBill = Target("HaulersDream.HaulersDreamGameComponent:IsBatchBill");
+			hdCanPawnBatch = Target("HaulersDream.CraftBatchPlanner:CanPawnBatch");
+			hdInstance = AccessTools.PropertyGetter(AccessTools.TypeByName("HaulersDream.HaulersDreamGameComponent"), "Instance");
+			if (hdShare != null && hdIsBatchBill != null && hdCanPawnBatch != null && hdInstance != null)
+			{
+				harmony.Patch(hdShare, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdShareOnlyForBatchJobs)));
+				harmony.Patch(AccessTools.Method(typeof(WorkGiver_DoBill), nameof(WorkGiver_DoBill.JobOnThing)),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdNoBillOnForeignInventory)) { priority = Priority.Last });
+			}
 			if (Target("RimWorld.IncidentWorker_Raid:TryGenerateRaidInfo") is { } raidInfo)
 				harmony.Patch(raidInfo, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FriendlyRaidDressedForCold)));
 			// Smarter Visitors' leave dialog gets Event Image Popup's visitor picture; both mods fingerprinted.
@@ -2338,21 +2345,46 @@ namespace Harmony3StrictCompat
 				__result = true;
 		}
 
-		// ---- Hauler's Dream: smelt bill restarts ten times a tick while a hauler carries loot --------------------
-		// "Share for crafting" adds tagged stacks from player pawns' inventories (mechs included) to a bill's ingredient
-		// candidates. For stackable ingredients HD then swaps the job for its own batch driver, which takes from an
-		// inventory. Both of its JobOnThing routes return early when a chosen ingredient is unstackable
-		// (BillRouteGate.ChosenIngredientsUnstackable), so a weapon or apparel inside a hauler stays in a vanilla DoBill
-		// job, whose go-to-ingredient toil fails at once on a despawned target; JobGiver_Work hands out the same job
-		// again: "<pawn> started 10 jobs in one tick. newJob=DoBill ... Smelter" until the hauler unloads (2026-11-18:
-		// 19 times, each one second after a mech "[adopt]"ed a stripped gun). Take unstackable inventory items back out
-		// of the candidates; the bill picks them up once they are on the map or in storage.
-		static void HdNoUnstackableShare(List<Thing> outList)
+		// ---- Hauler's Dream: a bill job restarts ten times a tick while another pawn carries its ingredient ---------
+		// "Share for crafting" adds tagged stacks from other player pawns' inventories (mechs included) to a bill's
+		// ingredient candidates. Only HD's batch job can take such a stack, and its JobOnThing route makes one only for
+		// a bill the player marked as batch and a pawn that may batch it. Otherwise the job stays a vanilla DoBill
+		// pointing at an item that is not on the map; its go-to-ingredient toil fails at once and JobGiver_Work hands
+		// out the same job again: "<pawn> started 10 jobs in one tick. newJob=DoBill". Seen at smelters and a brewery
+		// on 2026-11-18; the probe below caught it: queueB0=RawHops x35 spawned=False holder=Pawn_InventoryTracker
+		// (Agrihand 1), bill=Make_Wort, worker Dragon. (My first reading, "unstackable items only", was wrong.)
+		// So: unless this bill and worker can get the batch job, take other pawns' inventory stacks back out of the
+		// candidates, and vanilla picks ingredients that are on the map. Second line of defense for a batch plan that
+		// turns out infeasible: a vanilla DoBill that still targets another pawn's inventory is not handed out.
+		static MethodInfo hdIsBatchBill, hdCanPawnBatch, hdInstance;
+
+		static bool HeldByOtherPawn(Thing thing, Pawn worker) =>
+			thing is { Spawned: false } && thing.ParentHolder is Pawn_InventoryTracker inv && inv.pawn != worker;
+
+		static void HdShareOnlyForBatchJobs(Pawn worker, Bill bill, List<Thing> outList)
 		{
-			if (outList == null) return;
+			if (outList == null || worker == null || bill == null) return;
+			bool decided = false, batch = false;
 			for (int i = outList.Count - 1; i >= 0; i--)
-				if (outList[i] is { Spawned: false } t && t.def.stackLimit == 1 && t.ParentHolder is Pawn_InventoryTracker)
-					outList.RemoveAt(i);
+			{
+				if (!HeldByOtherPawn(outList[i], worker)) continue;
+				if (!decided)
+				{
+					decided = true;
+					var hd = hdInstance.Invoke(null, null);
+					batch = hd != null && (bool)hdIsBatchBill.Invoke(hd, new object[] { bill })
+						&& (bool)hdCanPawnBatch.Invoke(null, new object[] { worker, bill });
+					if (batch) return;
+				}
+				outList.RemoveAt(i);
+			}
+		}
+
+		static void HdNoBillOnForeignInventory(ref Job __result, Pawn pawn)
+		{
+			if (__result?.def != JobDefOf.DoBill || __result.targetQueueB == null) return;
+			foreach (var target in __result.targetQueueB)
+				if (HeldByOtherPawn(target.Thing, pawn)) { __result = null; return; }
 		}
 
 		// ---- TEMPORARY probe: "<pawn> started 10 jobs in one tick" -------------------------------------------------
@@ -2414,6 +2446,8 @@ namespace Harmony3StrictCompat
 			if (thing.ParentHolder is { } holder && holder is not Map)
 				sb.Append(" holder=").Append(holder.GetType().Name).Append('(').Append((holder as Pawn_InventoryTracker)?.pawn?.LabelShort
 					?? (holder as Pawn_CarryTracker)?.pawn?.LabelShort ?? holder.ToString()).Append(')');
+			if (thing.ParentHolder is Pawn_InventoryTracker { pawn: { Spawned: true } carrier })
+				sb.Append(" holderPos=").Append(carrier.Position).Append(" holderInArea=").Append(carrier.Position.InAllowedArea(pawn));
 			if (thing.Spawned)
 				sb.Append(" pos=").Append(thing.Position).Append(" inArea=").Append(thing.Position.InAllowedArea(pawn))
 					.Append(" forbidden=").Append(thing.IsForbidden(pawn)).Append(" canReserve=").Append(pawn.CanReserve(thing))
@@ -3388,8 +3422,10 @@ namespace Harmony3StrictCompat
 			["CommonSense.OpportunisticTasks:Cleaning_Opportunity"] = 0xC83F6DDEA821201F,
 			["HaulersDream.CompositableLoadoutsCompat:InitKeepApi"] = 0x3F15140E9ED2D991,                    // Hauler's Dream 1.6 build, 2026-11-05
 			["HaulersDream.CompositableLoadoutsCompat:LoadoutWantedUnits"] = 0x89C4B3F40C058F43,
-			["HaulersDream.InventoryShare:AddSharableStacksForBill"] = 0x787053FD33B7A5CC,                  // Hauler's Dream 1.6 build, 2026-11-18 (shares unstackable inventory items no route delivers)
-			["HaulersDream.BillRouteGate:ChosenIngredientsUnstackable"] = 0x1F888250D33BAB80,
+			["HaulersDream.InventoryShare:AddSharableStacksForBill"] = 0x787053FD33B7A5CC,                  // Hauler's Dream 1.6 build, 2026-11-18 (shares other pawns' inventory stacks that only its batch job can take)
+			["HaulersDream.Patch_WorkGiver_DoBill_BatchRoute:Postfix"] = 0x68D751AC01408D90,
+			["HaulersDream.HaulersDreamGameComponent:IsBatchBill"] = 0xE9C4F6DDB9AA9D92,
+			["HaulersDream.CraftBatchPlanner:CanPawnBatch"] = 0xDAC66B7918CEFF27,
 			["HaulersDream.StorageCommitments:IsDelivering"] = 0xB2A8CC7128220022,                           // Hauler's Dream 1.24.0 (1.6 build), 2026-08-10
 			["UIRethemed.Quests.Theme:LabelTruncated"] = 0x100BC02BEE333A35,                               // UI Rethemed - Quests 1.7, 2026-11-15 11:06
 			["UIRethemed.Quests.HoverCard:Region"] = 0xC63A1FE873265DBA,

@@ -106,7 +106,7 @@ def main():
     want = recorded()
     wanted_types = {k.split(":", 1)[0] for k in want}
     iter_outer = {k.split(":", 1)[0] for k in want if "/" in k}
-    mod_of = {GAME_DLL: "RimWorld (game update)"}
+    mod_of = {GAME_DLL: "RimWorld (game update)", os.path.join(os.path.dirname(GAME_DLL), "RimWorld.dll"): "RimWorld (game update)"}
     for name, folder in active_mods().items():
         for d in dll_dirs(folder):
             mod_of[d] = name

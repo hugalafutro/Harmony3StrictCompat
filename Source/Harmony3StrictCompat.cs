@@ -167,6 +167,14 @@ namespace Harmony3StrictCompat
 					finalizer: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpGuardStepEnd)));
 				harmony.Patch(AccessTools.Method(typeof(Lord), nameof(Lord.AddPawn)), postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpGuardDressForWeather)));
 			}
+			guiWrapRn = AccessTools.TypeByName("RimworldReadableNumbers.RnGuiBackend");
+			guiWrapBsb = AccessTools.TypeByName("BetterScrollBar.ScrollBarBackend");
+			if ((guiWrapRn != null || guiWrapBsb != null) && AccessTools.TypeByName("RimWorldWaylith.Imgui.ImGuiHost") is { } imguiHost
+				&& AccessTools.Inner(imguiHost, "Activation") is { } activation && AccessTools.DeclaredConstructor(activation, [imguiHost]) is { } activationCtor)
+			{
+				Fingerprint("RimWorldWaylith.Imgui.ImGuiHost+Activation:.ctor", activationCtor);
+				harmony.Patch(activationCtor, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GuiHostKeepModBackends)));
+			}
 			// Too Many Mods' Merchant Guild x Vehicle Framework patches fail on VF 1.7; Source/Vehicles replaces them.
 			if (AccessTools.TypeByName("TooManyMods.Compat_MerchantGuild_TradeArrivalOption")?.TypeInitializer is { } tmmGuild)
 			{
@@ -3093,6 +3101,7 @@ namespace Harmony3StrictCompat
 			["RimPacts.WorldComponent_RimPacts:WardLordPawns"] = 0x7724DA3409C9A731,                    // RimPacts 1.7, DLL of 2026-11-17 16:55
 			["RimPacts.HediffComp_RptDropOnPlayerOwned:CompPostTick"] = 0x15979899F58581E4,
 			["RimPacts.WorldComponent_RimPacts:CaravanGuardStep"] = 0x9AF75C085C4C990A,
+			["RimWorldWaylith.Imgui.ImGuiHost+Activation:.ctor"] = 0xDF84BAED961F98A9,                   // game 1.7.5013 RimWorld.dll
 			["DressForTheWeather.PawnsArriveUtilities:DressPawnAppropriately"] = 0xF6A3084C72CDCFB6,   // Dress for the Weather 1.7, DLL of 2026-10-27
 			["DressForTheWeather.PawnsArriveUtilities:InitializeApparelPairs"] = 0x642A784DF0292B51,
 			["DressForTheWeather.IncidentWorker_NeutralGroup_SpawnPawns:Postfix"] = 0xB1048B0DC4E3B6FC,
@@ -3472,6 +3481,32 @@ namespace Harmony3StrictCompat
 			var pawn = __instance.Pawn;
 			if (pawn == null || !pawn.IsHashIntervalTick(250) || RpWardAllowed(pawn) || !pawn.health.hediffSet.hediffs.Contains(__instance.parent)) return;
 			pawn.health.RemoveHediff(__instance.parent);
+		}
+
+		// ---- Readable Numbers + Better Scroll Bars: GUI backend wrappers bypassed by the ImGui host ---------------
+		// Both mods wrap GuiBackend.Current (Readable Numbers once in its Mod constructor, Better Scroll Bars from an
+		// OnGUI on the Camera object). The 1.7 ImGui host swaps its own backend in for every GUI pass
+		// (ImGuiHost.Activation: Current = host.guiBackend) and restores the previous one afterwards, so neither wrapper
+		// ever saw the frame: stock grey scroll bars, unformatted numbers. After the host's swap the same wrappers go
+		// around the host backend, in the mods' own order (game, Readable Numbers, Better Scroll Bars), built once per
+		// host backend.
+		static Type guiWrapRn, guiWrapBsb;
+		static UnityStubs.Gui.IGuiBackend guiWrapBase, guiWrapped;
+
+		static void GuiHostKeepModBackends()
+		{
+			var current = UnityStubs.Gui.GuiBackend.Current;
+			if (current == null || current == guiWrapped || guiWrapBsb?.IsInstanceOfType(current) == true || guiWrapRn?.IsInstanceOfType(current) == true) return;
+			if (current != guiWrapBase)
+			{
+				// ponytail: one cached chain; rebuilt whenever a different host backend is activated
+				var wrapped = current;
+				if (guiWrapRn != null) wrapped = (UnityStubs.Gui.IGuiBackend)Activator.CreateInstance(guiWrapRn, wrapped);
+				if (guiWrapBsb != null) wrapped = (UnityStubs.Gui.IGuiBackend)Activator.CreateInstance(guiWrapBsb, wrapped);
+				guiWrapBase = current;
+				guiWrapped = wrapped;
+			}
+			UnityStubs.Gui.GuiBackend.Current = guiWrapped;
 		}
 
 		// ---- RimPacts + Dress for the Weather: caravan guards spawned in batches ---------------------------------

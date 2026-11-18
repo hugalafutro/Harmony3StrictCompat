@@ -148,6 +148,14 @@ namespace Harmony3StrictCompat
 				else
 					Log.Error("[Harmony3StrictCompat] RimPacts DefendMission/defAutoRecs changed: its mod updated, redo the auto-defense wounds fix");
 			}
+			if (Target("RimPacts.WorldComponent_RimPacts:WardLordPawns") is { } rpWard && Target("RimPacts.HediffComp_RptDropOnPlayerOwned:CompPostTick") is { } rpWardTick
+				&& AccessTools.PropertyGetter("RimPacts.RimPactsMod:Settings") is { } rpSettingsGet && AccessTools.Field("RimPacts.RimPactsSettings:wardTraderTemp") is { } rpWardOn)
+			{
+				rpSettingsGetter = rpSettingsGet;
+				rpWardTraderTemp = rpWardOn;
+				harmony.Patch(rpWard, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpWardOnlyWhenEnabled)));
+				harmony.Patch(rpWardTick, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpWardDropWhenDisabled)));
+			}
 			// Too Many Mods' Merchant Guild x Vehicle Framework patches fail on VF 1.7; Source/Vehicles replaces them.
 			if (AccessTools.TypeByName("TooManyMods.Compat_MerchantGuild_TradeArrivalOption")?.TypeInitializer is { } tmmGuild)
 			{
@@ -3071,6 +3079,8 @@ namespace Harmony3StrictCompat
 			["RimPacts.WorldComponent_RimPacts:WorldComponentTick"] = 0xF6CF51711840F579,                  // RimPacts 1.7, 2026-11-17 (auto-defense wounds)
 			["RimPacts.WorldComponent_RimPacts:DefAutoTick"] = 0xE551C9A77C4672D8,
 			["RimPacts.WorldComponent_RimPacts:DefAutoOne"] = 0xC4DB7EBE746E875E,
+			["RimPacts.WorldComponent_RimPacts:WardLordPawns"] = 0x7724DA3409C9A731,                    // RimPacts 1.7, DLL of 2026-11-17 16:55
+			["RimPacts.HediffComp_RptDropOnPlayerOwned:CompPostTick"] = 0x15979899F58581E4,
 			["Impact.ArmorDeflection:Prefix"] = 0x31A4B4B031D77B6E,                                         // IMPACT - Combat Overhaul 1.7, DLL of 2026-10-29
 			["RimWorld.CompShuttle:CompTick"] = 0x807AD3141AD4D8A6,
 			["RimWorld.Selector:SelectUnderMouse"] = 0xC012455FB5D378F5,                                    // game 1.7.5011, 2026-11-16
@@ -3416,6 +3426,26 @@ namespace Harmony3StrictCompat
 			foreach (var f in Find.FactionManager.AllFactionsListForReading)
 				if (f.leader == p && f.TryGenerateNewLeader())
 					Log.Message($"[Harmony3StrictCompat] RimPacts discarded exiled leader {p.LabelShort}; {f.Name}'s new leader is {f.leader.LabelShort}");
+		}
+
+		// ---- RimPacts: trader weather tolerance ignores its own setting ------------------------------------------
+		// "Protect ordinary traders from temperature" (wardTraderTemp) only gates the vanilla trader-arrival hook and the
+		// new-lord hook. RimPacts' own caravans (treaty trade, called and grand caravans, their escorts) call
+		// WardLordPawns directly, so they got Rpt_TradeTempWard (comfy temperature -1000/+1000 for 5 days) with the
+		// setting off. WardLordPawns now does nothing while the setting is off, and an existing ward drops on the
+		// hediff's next 250-tick check, so Dress for the Weather's clothing decides again.
+		static MethodInfo rpSettingsGetter;
+		static FieldInfo rpWardTraderTemp;
+
+		static bool RpWardEnabled() => rpSettingsGetter.Invoke(null, null) is not { } settings || (bool)rpWardTraderTemp.GetValue(settings);
+
+		static bool RpWardOnlyWhenEnabled() => RpWardEnabled();
+
+		static void RpWardDropWhenDisabled(HediffComp __instance)
+		{
+			var pawn = __instance.Pawn;
+			if (pawn == null || !pawn.IsHashIntervalTick(250) || RpWardEnabled() || !pawn.health.hediffSet.hediffs.Contains(__instance.parent)) return;
+			pawn.health.RemoveHediff(__instance.parent);
 		}
 
 		// ---- RimPacts auto-resolved defense: wounds land weeks late ---------------------------------------

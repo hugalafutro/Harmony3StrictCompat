@@ -357,6 +357,8 @@ namespace Harmony3StrictCompat
 			var hdDelivering = Target("HaulersDream.StorageCommitments:IsDelivering");
 			if (hdDelivering != null)
 				harmony.Patch(hdDelivering, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdInventoryIsDelivering)));
+			if (Target("HaulersDream.Alert_CannotUnloadInventory:Evaluate") is { } hdUnloadAlert)
+				harmony.Patch(hdUnloadAlert, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdNoUnloadAlertWhileImmobile)));
 			// TEMPORARY probe (2026-11-18): what a job that restarts ten times a tick points at. Remove once the loops are solved.
 			harmony.Patch(AccessTools.Method(typeof(Pawn_JobTracker), nameof(Pawn_JobTracker.StartJob)),
 				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(JobLoopProbeRemember)));
@@ -2345,6 +2347,13 @@ namespace Harmony3StrictCompat
 				__result = true;
 		}
 
+		// ---- Hauler's Dream: "Cannot unload inventory" for pawns that cannot get up ------------------------------
+		// HD's alert (Alert_CannotUnloadInventory.Evaluate) skips only drafted pawns. A pawn under anesthetic or
+		// otherwise downed, or one in deathrest (days), keeps its hauled items in bed and shows as stuck once the
+		// tags pass the alert's hours. Skipping Evaluate leaves its result at the enum default, UnloadFault.None,
+		// which also clears the pawn's grace clock, so once it is up the alert waits the usual grace hour again.
+		static bool HdNoUnloadAlertWhileImmobile(Pawn p) => p == null || !(p.Downed || p.Deathresting);
+
 		// ---- Hauler's Dream: a bill job restarts ten times a tick while another pawn carries its ingredient ---------
 		// "Share for crafting" adds tagged stacks from other player pawns' inventories (mechs included) to a bill's
 		// ingredient candidates. Only HD's batch job can take such a stack, and its JobOnThing route makes one only for
@@ -3427,6 +3436,7 @@ namespace Harmony3StrictCompat
 			["HaulersDream.HaulersDreamGameComponent:IsBatchBill"] = 0xE9C4F6DDB9AA9D92,
 			["HaulersDream.CraftBatchPlanner:CanPawnBatch"] = 0xDAC66B7918CEFF27,
 			["HaulersDream.StorageCommitments:IsDelivering"] = 0xB2A8CC7128220022,                           // Hauler's Dream 1.24.0 (1.6 build), 2026-08-10
+			["HaulersDream.Alert_CannotUnloadInventory:Evaluate"] = 0x976491A9A63822D1,                       // Hauler's Dream 1.6 build, 2026-11-18
 			["UIRethemed.Quests.Theme:LabelTruncated"] = 0x100BC02BEE333A35,                               // UI Rethemed - Quests 1.7, 2026-11-15 11:06
 			["UIRethemed.Quests.HoverCard:Region"] = 0xC63A1FE873265DBA,
 			["UIRethemed.Quests.RewardTiles:Of"] = 0x3656DF7054B80C0C,

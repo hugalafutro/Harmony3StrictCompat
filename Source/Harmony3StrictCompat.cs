@@ -365,7 +365,7 @@ namespace Harmony3StrictCompat
 				harmony.Patch(raidInfo, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FriendlyRaidDressedForCold)));
 			// Smarter Visitors' leave dialog gets Event Image Popup's visitor picture; both mods fingerprinted.
 			var eipAdd = Target("EventImagePopup.Patch_WindowStackAdd:Prefix");
-			var svLeave = Target("SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix");
+			var svLeave = svPrefix; // fingerprinted above, before its own patch (a second look after patching hashes differently)
 			if (eipAdd != null && svLeave != null)
 			{
 				Target("EventImagePopup.ImageResolver:ResolveForIncident");
@@ -3268,7 +3268,6 @@ namespace Harmony3StrictCompat
 			["RimWorld.IncidentWorker_Raid:TryGenerateRaidInfo"] = 0x09B77A52A9B691B2,                          // game 1.7.5013, 2026-11-18 (pawns are spawned by the time it returns)
 			["EventImagePopup.Patch_WindowStackAdd:Prefix"] = 0x841F5AE3B7F05107,                              // Event Image Popup, 2026-11-18 (only Dialog_NodeTree inside a letter or incident scope)
 			["EventImagePopup.ImageResolver:ResolveForIncident"] = 0x3CA76DBAC6CD2A1C,
-			["SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix"] = 0xEA4FA1B085907595,                    // Smarter Visitors 1.7, 2026-11-18 (leave dialog is a Dialog_MessageBox)
 			["RimWorld.CompShuttle:CompTick"] = 0x807AD3141AD4D8A6,
 			["RimWorld.Selector:SelectUnderMouse"] = 0x59EF35E3AE5B2B41,                                    // game 1.7.5013, 2026-11-18
 			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,

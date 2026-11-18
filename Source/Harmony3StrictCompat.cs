@@ -3107,9 +3107,9 @@ namespace Harmony3StrictCompat
 			["DressForTheWeather.IncidentWorker_NeutralGroup_SpawnPawns:Postfix"] = 0xB1048B0DC4E3B6FC,
 			["Impact.ArmorDeflection:Prefix"] = 0x31A4B4B031D77B6E,                                         // IMPACT - Combat Overhaul 1.7, DLL of 2026-10-29
 			["RimWorld.CompShuttle:CompTick"] = 0x807AD3141AD4D8A6,
-			["RimWorld.Selector:SelectUnderMouse"] = 0xC012455FB5D378F5,                                    // game 1.7.5011, 2026-11-16
+			["RimWorld.Selector:SelectUnderMouse"] = 0x59EF35E3AE5B2B41,                                    // game 1.7.5013, 2026-11-18
 			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,
-			["Verse.GizmoGridDrawer:DrawGizmoGrid"] = 0x5792F573E1A41EBF,
+			["Verse.GizmoGridDrawer:DrawGizmoGrid"] = 0x01194CA4A1ED54CD,
 			["RimWorld.PawnRelationWorker_Sibling:CreateRelation"] = 0xCC2ADCE90DEE9FA6,                                              // game 1.7.5011, 2026-11-16
 			["TraitTracker.TraitHediffApplier:ApplyHediffsToPawnsWithTraits"] = 0x67BDC9BB976E9B72,                // 2026-10-22
 			// VEF 1.7 MVCF.dll, 2026-10-31
@@ -3219,7 +3219,7 @@ namespace Harmony3StrictCompat
 			["Verse.AI.HaulAIUtility:PawnCanAutomaticallyHaul"] = 0x75A234FF82E00239,                            // game 1.7.5011, 2026-11-16
 			["RimWorld.JobGiver_DropUnusedInventory:Drop"] = 0x80ADDA655AAFAE64,                                  // game 1.7.5000, 2026-11-09
 			["RimWorld.PawnGroupKindWorker_Normal:CanGenerateFrom"] = 0xDD823B1286E54BB2,                       // game 1.7.5011, 2026-11-16
-			["RimWorld.PlaceWorker_ShowTurretRadius:AllowsPlacing"] = 0x435F554B8F17A8A3,                       // game 1.7.5011, 2026-11-16
+			["RimWorld.PlaceWorker_ShowTurretRadius:AllowsPlacing"] = 0x9F7C0CE51CFDA9F8,                       // game 1.7.5013, 2026-11-18
 			["RimWorld.JobDriver_Reading:ReadBook"] = 0x51FC04EE1528676B,                                         // game 1.7.5011, 2026-11-16
 			["LivingBonds.JobDriver_FamilyReading:MakeNewToils"] = 0xE5AB03BF7DC271E0,                           // Living Bonds 1.7
 			["LivingBonds.JobDriver_FamilyReading:MakeNewToils/MoveNext"] = 0xEDCA9D7D5DC3432B,                 // Living Bonds 1.7
@@ -3277,7 +3277,7 @@ namespace Harmony3StrictCompat
 			["UsefulMarks.Dialog_NamePawn_DoWindowContents_Patch:Postfix"] = 0xF33AD5F31EB56B3B,        // Useful Marks 1.7, DLL of 2026-10-22
 			["UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix"] = 0xD2A3A440ED802D16,
 			["AlteredCarbon.JobGiver_Reload_TryGiveJob_Patch:Postfix"] = 0xAA1E07B7E7346A11,             // Altered Carbon 2 1.6 DLL, 2026-10-29
-			["RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"] = 0x8FB8ACF2A959571A,               // vanilla 1.7.5011, guilty icon slot
+			["RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"] = 0x9ADB9BA182DCDD68,               // vanilla 1.7.5013, guilty icon slot
 			["UIRethemed.ColonistCard.Card:get_ThemingHeader"] = 0xE0BB7E0F75774563,                     // UI Rethemed - Colonist Card 1.7, 2026-11-15 03:21
 			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0x140F60EC9F696E2F,
 			["UIRethemed.ColonistCard.StatusBar:Take"] = 0x5FA9479BBF856995,                            // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-16 10:44

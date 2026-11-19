@@ -359,6 +359,16 @@ namespace Harmony3StrictCompat
 				harmony.Patch(hdDelivering, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdInventoryIsDelivering)));
 			if (Target("HaulersDream.Alert_CannotUnloadInventory:Evaluate") is { } hdUnloadAlert)
 				harmony.Patch(hdUnloadAlert, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdNoUnloadAlertWhileImmobile)));
+			if (AccessTools.TypeByName("UniqueMeleeWeapons.QuestPart_SpawnWarband") is { } umwWarband
+				&& AccessTools.Field(umwWarband, "pawns") is { } umwPawns && umwPawns.FieldType == typeof(List<Pawn>))
+			{
+				umwWarbandPart = umwWarband;
+				umwWarbandPawns = umwPawns;
+				harmony.Patch(AccessTools.Method(typeof(Quest), nameof(Quest.CleanupQuestParts)),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UmwDiscardWarband)));
+				harmony.Patch(AccessTools.Method(typeof(Game), nameof(Game.FinalizeInit)),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UmwDiscardEndedWarbands)));
+			}
 			// TEMPORARY probe (2026-11-18): what a job that restarts ten times a tick points at. Remove once the loops are solved.
 			harmony.Patch(AccessTools.Method(typeof(Pawn_JobTracker), nameof(Pawn_JobTracker.StartJob)),
 				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(JobLoopProbeRemember)));
@@ -2353,6 +2363,45 @@ namespace Harmony3StrictCompat
 		// tags pass the alert's hours. Skipping Evaluate leaves its result at the enum default, UnloadFault.None,
 		// which also clears the pawn's grace clock, so once it is up the alert waits the usual grace hour again.
 		static bool HdNoUnloadAlertWhileImmobile(Pawn p) => p == null || !(p.Downed || p.Deathresting);
+
+		// ---- Unique Melee Weapons: an ended warband quest keeps its unspawned raiders in the save --------------------
+		// QuestPart_SpawnWarband holds the pre-generated warband (leader + raiders, deep-saved) until the site map
+		// generates. When the quest ends without a visit (30-day timeout) the part never drops them, while the game
+		// removes their temporary faction and its ideoligion. The next load warns "Could not resolve reference to
+		// object with loadID Ideo_N" (once: the next save writes null), and the save keeps ~580 KB of pawns that
+		// can never spawn.
+		// Discard them when the quest cleans up, and once after load for quests that ended before this fix.
+		static Type umwWarbandPart;
+		static FieldInfo umwWarbandPawns;
+
+		static void UmwDiscardWarband(Quest __instance)
+		{
+			foreach (var part in __instance.PartsListForReading)
+			{
+				if (part.GetType() != umwWarbandPart || umwWarbandPawns.GetValue(part) is not List<Pawn> { Count: > 0 } pawns)
+					continue;
+				foreach (var pawn in pawns)
+				{
+					try
+					{
+						if (pawn is { Spawned: false, Destroyed: false, Discarded: false } && !pawn.IsWorldPawn())
+							Find.WorldPawns.PassToWorld(pawn, PawnDiscardDecideMode.Discard);
+					}
+					catch (Exception e)
+					{
+						Log.Warning($"[Harmony3StrictCompat] Unique Melee Weapons warband: could not discard {pawn}: {e.Message}");
+					}
+				}
+				pawns.Clear();
+			}
+		}
+
+		static void UmwDiscardEndedWarbands() => LongEventHandler.ExecuteWhenFinished(() =>
+		{
+			foreach (var quest in Find.QuestManager.QuestsListForReading)
+				if (quest.Historical)
+					UmwDiscardWarband(quest);
+		});
 
 		// ---- Hauler's Dream: a bill job restarts ten times a tick while another pawn carries its ingredient ---------
 		// "Share for crafting" adds tagged stacks from other player pawns' inventories (mechs included) to a bill's

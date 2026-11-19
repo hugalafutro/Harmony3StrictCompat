@@ -36,6 +36,7 @@
 - Hauler's Dream + Kanban Stockpile Continue: HD respects Kanban's max stack size, refill threshold and similar stack limit when it plans pick-ups and unloads into capped storage (no more overfill / remove-excess churn).
 - Hauler's Dream: bill jobs no longer restart ten times a tick while another pawn carries the ingredient (other pawns' inventory stacks are offered only to batch bills, which can take them).
 - Hauler's Dream: "Cannot unload inventory" no longer lists downed (anesthetized) or deathresting pawns.
+- Unique Melee Weapons: an ended warband quest no longer keeps its unspawned raiders in the save (no more "Could not resolve reference ... Ideo_N" warnings on load).
 - AdaptiveMealBill + Hauler's Dream: batch-cooked adaptive meals come out veg-only, meat-only or mixed by their ingredients, no "Could not recover the meal recipe" error.
 - Kanban Stockpile Continue: the similar stack limit counts every stack of the same def when accepting, like its remove-excess job does (no more pawns shuttling unmergeable meals between a capped fridge and the next storage).
 - Kanban Stockpile Continue: remove-excess only offers a job when it can really build one (no "provided target but yielded no actual job" when the destination is already at its own max stack size).

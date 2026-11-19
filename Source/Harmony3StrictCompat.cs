@@ -612,6 +612,8 @@ namespace Harmony3StrictCompat
 			}
 			if (Target("VFEF.CompScaresAnimals:ScareAnimals") is { } vfefScare)
 				harmony.Patch(vfefScare, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ScarecrowSpawnedOnly)));
+			if (Target("VanillaFurnitureExpandedFactory.Building_Conveyor:DetermineGraphic") is { } vfeConveyorGraphic)
+				harmony.Patch(vfeConveyorGraphic, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SplitterGraphicByFacing)));
 			if (Target("Impact.ArmorDeflection:Prefix") is { } impactArmor)
 				harmony.Patch(impactArmor, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ImpactBreachNaturalArmor)));
 			if (Target("ColonyManagerRedux.Manager:FinalizeInit") is { } cmrInit)
@@ -1175,6 +1177,33 @@ namespace Harmony3StrictCompat
 		{
 			if (!proj.IsFinished)
 				manager.FinishProject(proj, doCompletionDialog, researcher, doCompletionLetter);
+		}
+
+		// VFE Factory two-output splitter shows a red X ("Could not load Texture2D at ...ConveyorSplitter_NorthSouth_south"):
+		// DetermineGraphic names its texture <outputs>_<side> with the side from ForwardCell, but a splitter's ForwardCell
+		// is the output it is feeding right now (round-robin cachedSelectedOutput). The textures are named by facing
+		// (NorthSouth only _east/_west, EastWest only _north/_south). The graphic is cached, so it is only wrong when it was
+		// built while the splitter held an item: an end-of-line splitter facing east or west with exactly north + south
+		// outputs on a backed-up line draws a red X, other pairs a wrong-facing picture. The splitter branch (the first
+		// FromIntVec3 in the method) uses the splitter's Rotation instead; the merger branch is left as shipped.
+		static IEnumerable<CodeInstruction> SplitterGraphicByFacing(IEnumerable<CodeInstruction> instructions)
+		{
+			var codes = instructions.ToList();
+			var fromVec = AccessTools.Method(typeof(Rot4), nameof(Rot4.FromIntVec3));
+			int k = codes.FindIndex(c => c.Calls(fromVec));
+			if (k < 5 || !(codes[k - 4].operand is MethodInfo fwd && fwd.Name == "get_ForwardCell")
+				|| !(codes[k - 2].operand is FieldInfo pos && pos.Name == "cachedPos") || codes[k - 5].opcode != OpCodes.Ldarg_0)
+			{
+				Log.Error("[Harmony3StrictCompat] VFE Factory Building_Conveyor.DetermineGraphic shape changed, splitter picture fix not applied");
+				return codes;
+			}
+			var labels = codes[k - 5].labels;
+			codes.RemoveRange(k - 5, 6);
+			codes.InsertRange(k - 5, [
+				new CodeInstruction(OpCodes.Ldarg_0) { labels = labels },
+				new CodeInstruction(OpCodes.Call, AccessTools.PropertyGetter(typeof(Thing), nameof(Thing.Rotation))),
+			]);
+			return codes;
 		}
 
 		// VFE Farming scarecrow: CompScaresAnimals.ScareAnimals walks map.mapPawns.AllPawns, which also lists pawns that
@@ -3568,6 +3597,7 @@ namespace Harmony3StrictCompat
 			["AutoExtractGenes.Utils:GetAutoExtractGenesComponent"] = 0x41DC32D5B21682AC,                // AutoExtractGenes 1.7, DLL of 2026-11-08
 			["ColonyManagerRedux.Manager:FinalizeInit"] = 0xF523FD8F4AA6A9E5,                           // Colony Manager Redux 1.7, DLL of 2026-11-16 10:44
 			["VFEF.CompScaresAnimals:ScareAnimals"] = 0xA4407F9189E92650,                               // VFE Farming (1.6 DLL), 2026-11-13
+			["VanillaFurnitureExpandedFactory.Building_Conveyor:DetermineGraphic"] = 0x2F791A57EA0AD116, // VFE Factory 1.7, DLL of 2026-11-18 17:23
 			["Flourish.AnimEventWorkers:HasMuzzle"] = 0x09D80ABDB9276A61,                               // Flourish - Combat Animations 2.1.5
 			["TacticalGroups.ColonistGroup:GetUniqueLoadID"] = 0x5F30AAACFB7C28AE,                      // Colony Groups 1.6 build
 			["SmartDeconstruct.SmartDeconstructMod:getDesignation"] = 0x53C1CCCAD3316AC2,               // Smart Deconstruct 1.7

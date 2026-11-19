@@ -3449,7 +3449,7 @@ namespace Harmony3StrictCompat
 			["RimPacts.WorldComponent_RimPacts:WardLordPawns"] = 0x7724DA3409C9A731,                    // RimPacts 1.7, DLL of 2026-11-17 16:55
 			["RimPacts.HediffComp_RptDropOnPlayerOwned:CompPostTick"] = 0x15979899F58581E4,
 			["RimPacts.WorldComponent_RimPacts:CaravanGuardStep"] = 0x9AF75C085C4C990A,
-			["RimWorldWaylith.Imgui.ImGuiHost+Activation:.ctor"] = 0xDF84BAED961F98A9,                   // game 1.7.5013 RimWorld.dll
+			["RimWorldWaylith.Imgui.ImGuiHost+Activation:.ctor"] = 0x84FE454465EF6075,                   // game 1.7.5014 RimWorld.dll
 			["DressForTheWeather.PawnsArriveUtilities:DressPawnAppropriately"] = 0xF6A3084C72CDCFB6,   // Dress for the Weather 1.7, DLL of 2026-10-27
 			["DressForTheWeather.PawnsArriveUtilities:InitializeApparelPairs"] = 0x642A784DF0292B51,
 			["DressForTheWeather.IncidentWorker_NeutralGroup_SpawnPawns:Postfix"] = 0xB1048B0DC4E3B6FC,

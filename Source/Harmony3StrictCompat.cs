@@ -411,14 +411,18 @@ namespace Harmony3StrictCompat
 				harmony.Patch(hdInit, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdBridgeKeepApi)));
 				harmony.Patch(hdWanted, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdWantedUnits)));
 			}
-			var hcLineHeight = Target("UIRethemed.InspectorTabs.HoverCard:LineHeight");
-			var hcDrawGroup = Target("UIRethemed.InspectorTabs.HoverCard:DrawGroup");
-			var hcStatLine = Target("UIRethemed.InspectorTabs.Theme:StatLine");
-			var hcBodyGetter = AccessTools.PropertyGetter(AccessTools.TypeByName("UIRethemed.InspectorTabs.HoverCard"), "GroupBodyWidth");
-			var hcLineType = AccessTools.TypeByName("UIRethemed.InspectorTabs.HoverCard+Line");
-			if (hcLineHeight != null && hcDrawGroup != null && hcStatLine != null && hcBodyGetter != null && hcLineType != null)
+			// UIR 2026-11-19 moved the hover card and Theme from Inspector Tabs into Core (every module's cards draw there)
+			var hcLineHeight = Target("UIRethemed.Core.HoverCard:LineHeight");
+			var hcDrawGroup = Target("UIRethemed.Core.HoverCard:DrawGroup");
+			var hcStatLine = Target("UIRethemed.Core.Theme:StatLine");
+			hcGroupBodyWidth = Target("UIRethemed.Core.HoverCard:GroupBodyWidth");
+			var hcLineType = AccessTools.TypeByName("UIRethemed.Core.HoverCard+Line");
+			var hcLabelMethod = AccessTools.Method("UIRethemed.Core.Theme:Label", [typeof(Rect), typeof(string), typeof(TextAnchor), typeof(Color), typeof(GameFont)]);
+			var hcBrightGetter = AccessTools.PropertyGetter(AccessTools.TypeByName("UIRethemed.Core.Theme"), "TextBright");
+			if (hcLineHeight != null && hcDrawGroup != null && hcStatLine != null && hcGroupBodyWidth != null && hcLineType != null && hcLabelMethod != null && hcBrightGetter != null)
 			{
-				hcBodyWidth = (Func<float>)hcBodyGetter.CreateDelegate(typeof(Func<float>));
+				hcThemeLabel = (Action<Rect, string, TextAnchor, Color, GameFont>)hcLabelMethod.CreateDelegate(typeof(Action<Rect, string, TextAnchor, Color, GameFont>));
+				hcTextBright = (Func<Color>)hcBrightGetter.CreateDelegate(typeof(Func<Color>));
 				hcLabel = AccessTools.Field(hcLineType, "label");
 				hcValue = AccessTools.Field(hcLineType, "value");
 				hcIcon = AccessTools.Field(hcLineType, "icon");
@@ -460,7 +464,7 @@ namespace Harmony3StrictCompat
 			if (uirSlotLabel != null)
 				harmony.Patch(uirSlotLabel, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirShortSlotLabel)));
 			var uirThingCard = Target("UIRethemed.InspectorTabs.GearTab:BuildThingCard");
-			var uirCardType = AccessTools.TypeByName("UIRethemed.InspectorTabs.HoverCard+Card");
+			var uirCardType = AccessTools.TypeByName("UIRethemed.Core.HoverCard+Card");
 			uirCardSubtitle = uirCardType == null ? null : AccessTools.Field(uirCardType, "subtitle");
 			uirCardSubtitleColor = uirCardType == null ? null : AccessTools.Field(uirCardType, "subtitleColor");
 			if (uirThingCard != null && uirCardSubtitle != null && uirCardSubtitleColor != null)
@@ -1973,7 +1977,9 @@ namespace Harmony3StrictCompat
 		// the row below and over its own value. Rows that fit keep UIR's own drawing. A row that does not fit gets its
 		// label wrapped beside the value and a taller row. StatLine has other callers with fixed layouts, so only
 		// calls made from DrawGroup change.
-		static Func<float> hcBodyWidth;
+		static MethodInfo hcGroupBodyWidth; // private static float GroupBodyWidth(Card)
+		static Action<Rect, string, TextAnchor, Color, GameFont> hcThemeLabel; // Theme.Label: theme fade (card appear) and colours
+		static Func<Color> hcTextBright;
 		static FieldInfo hcLabel, hcValue, hcIcon, hcBar, hcAccent;
 		static bool hcInGroup;
 
@@ -2294,11 +2300,14 @@ namespace Harmony3StrictCompat
 			return extra;
 		}
 
+		// LineHeight(Card c, Line line); Line is a struct, read boxed
 		static void HcLineHeight(object[] __args, ref float __result)
 		{
-			var line = __args[0];
+			var line = __args[1];
 			if (hcIcon.GetValue(line) != null || hcBar.GetValue(line) != null || hcAccent.GetValue(line) != null) return;
-			__result += HcExtraHeight((string)hcLabel.GetValue(line), (string)hcValue.GetValue(line), hcBodyWidth(), out _);
+			string label = (string)hcLabel.GetValue(line), value = (string)hcValue.GetValue(line);
+			if (label.NullOrEmpty() || value.NullOrEmpty()) return;
+			__result += HcExtraHeight(label, value, (float)hcGroupBodyWidth.Invoke(null, [__args[0]]), out _);
 		}
 
 		static bool HcWrapStatLine(ref float y, float x, float width, Texture icon, string label, string value, Color? valueColor, float? bar, Color? labelColor)
@@ -2306,24 +2315,13 @@ namespace Harmony3StrictCompat
 			if (!hcInGroup || icon != null || bar.HasValue) return true;
 			float extra = HcExtraHeight(label, value, width, out float labelWidth);
 			if (extra <= 0f) return true;
-			var font = Text.Font;
-			var anchor = Text.Anchor;
 			bool wrap = Text.WordWrap;
-			var color = GUI.color;
-			Text.Font = GameFont.Small;
-			Text.Anchor = TextAnchor.UpperLeft;
 			Text.WordWrap = true;
-			GUI.color = labelColor ?? new Color(0.9f, 0.9f, 0.9f); // UIR Theme.TextBright, StatLine's default
-			Widgets.Label(new Rect(x, y, labelWidth, 22f + extra), label);
-			Text.Anchor = TextAnchor.UpperRight;
+			hcThemeLabel(new Rect(x, y, labelWidth, 22f + extra), label, TextAnchor.UpperLeft, labelColor ?? hcTextBright(), GameFont.Small);
 			Text.WordWrap = false;
-			GUI.color = valueColor ?? Color.white;
-			Widgets.Label(new Rect(x, y, width, 22f), value);
-			GUI.color = color;
+			hcThemeLabel(new Rect(x, y, width, 22f), value, TextAnchor.UpperRight, valueColor ?? Color.white, GameFont.Small);
 			Text.WordWrap = wrap;
-			Text.Anchor = anchor;
-			Text.Font = font;
-			y += 24f + extra;
+			y += 24f + extra; // StatLineSpan(false)
 			return false;
 		}
 
@@ -3533,18 +3531,19 @@ namespace Harmony3StrictCompat
 			["Flourish.Everyday.JobAnimationWorker_Anchored:Evaluate"] = 0x817B489F5395FF01,                // Flourish Everyday 1.7, 2026-10-25
 			["VFETribals.FactionUIUtility_DoWindowContents_Patch:Postfix"] = 0x8824F2B542A8AC6E,             // VFE Tribals 1.6 build, 2026-10-14
 			["UIRethemed.Factions.FactionsTab:Themed"] = 0x69BB80B87A3FDA4F,                               // UI Rethemed 1.7, 2026-11-16 13:03
-			["UIRethemed.Core.CoreWidgets:Button"] = 0x52FA3BF23041B53E,                             // UI Rethemed - Core 1.7, 2026-11-17 12:21
-			["UIRethemed.Core.CoreWidgets:Icon"] = 0xB4F9A8E48E9F3365,
-			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0xCE0D1B933F5A75E3,
+			["UIRethemed.Core.CoreWidgets:Button"] = 0x7CC2554961083D7D,                             // UI Rethemed - Core 1.7, 2026-11-19 13:35
+			["UIRethemed.Core.CoreWidgets:Icon"] = 0x616408831ECA96D7,
+			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0x6FB38EFFE15C9961,
 			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0x825B03D63888BFBF,
-			["UIRethemed.InspectorTabs.HoverCard:LineHeight"] = 0xD907DD18913BBC6A,                        // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-14
-			["UIRethemed.InspectorTabs.HoverCard:DrawGroup"] = 0xC3B256B725066D07,
-			["UIRethemed.InspectorTabs.Theme:StatLine"] = 0xBE61FF6FC692F581,
-			["UIRethemed.InspectorTabs.GearTab:RefreshVacuumGauge"] = 0x5D57634325E01F85,                // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-14
-			["UIRethemed.InspectorTabs.GearTab:SlotLabel"] = 0x44DFC46DF298F370,
-			["UIRethemed.InspectorTabs.GearTab:BuildThingCard"] = 0x59AE1D23E8A87DB8,                 // gear hover card subtitle, 2026-11-16
-			["UIRethemed.InspectorTabs.GearTab:VanillaSlotFor"] = 0xD4BB7BECCCD46A9E,
-			["UIRethemed.InspectorTabs.GearTab:DrawStatsPanel"] = 0x783CF2114581C793,
+			["UIRethemed.Core.HoverCard:LineHeight"] = 0x28C05666382E4489,                        // UI Rethemed - Core 1.7, 2026-11-19 13:35 (moved from Inspector Tabs)
+			["UIRethemed.Core.HoverCard:DrawGroup"] = 0xDE063FC330B29647,
+			["UIRethemed.Core.HoverCard:GroupBodyWidth"] = 0x05CC998B6051888D,
+			["UIRethemed.Core.Theme:StatLine"] = 0x58BB681B045C632E,
+			["UIRethemed.InspectorTabs.GearTab:RefreshVacuumGauge"] = 0xF39A223BFD635508,                // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-19 13:35
+			["UIRethemed.InspectorTabs.GearTab:SlotLabel"] = 0xBEC46840E5BB83D3,
+			["UIRethemed.InspectorTabs.GearTab:BuildThingCard"] = 0x3D5B86F174AF4F40,                 // gear hover card subtitle, 2026-11-16
+			["UIRethemed.InspectorTabs.GearTab:VanillaSlotFor"] = 0x254C03440840C0A6,
+			["UIRethemed.InspectorTabs.GearTab:DrawStatsPanel"] = 0x46A9B054D948E144,
 			["SmartMedicine.Dialog_StockUp:<DoWindowContents>b__10_0"] = 0x287F2659618CDD5B,        // Smart Medicine - Continued 1.7, 2026-11-08 (DLL of 2026-11-02)
 			["Verse.AI.HaulAIUtility:PawnCanAutomaticallyHaul"] = 0x75A234FF82E00239,                            // game 1.7.5011, 2026-11-16
 			["RimWorld.JobGiver_DropUnusedInventory:Drop"] = 0x80ADDA655AAFAE64,                                  // game 1.7.5000, 2026-11-09
@@ -3560,12 +3559,12 @@ namespace Harmony3StrictCompat
 			["Unburned.Pretty_Patch:Prefix"] = 0xE153E3D01BE0AC50,                                                // Unburned 1.7, 2026-11-09
 			["VEF.Weapons.MeleeReachCombatUtility:IsVanillaMeleeAttack"] = 0x0709A590AF7BF8A3,                    // VEF 1.7, 2026-11-16
 			["SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix"] = 0xEA4FA1B085907595,     // Smarter Visitors 1.7.0, 2026-11-08
-			["UIRethemed.MainBar.MenuWindow:Face"] = 0x17898FBC8047FF4A,                               // UI Rethemed - Main Bar 1.7, 2026-11-16 13:03
+			["UIRethemed.MainBar.MenuWindow:Face"] = 0xC670EFCFF2486ED2,                               // UI Rethemed - Main Bar 1.7, 2026-11-19 13:35
 			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0xE3A635E1DFB8B3BE,
 			["UIRethemed.MainBar.BarControls:Toggle"] = 0x8B359CF8796161A3,
 			["UIRethemed.MainBar.BarControls:SetSpeed"] = 0x71E7452A5F9EBDD4,
 			["AdaptiveMealBill.AdaptiveRecipeSelection:RecoverRecipe"] = 0x62FA21FEB38C0B91,             // AdaptiveMealBill 1.7, DLL of 2026-11-08
-			["UIRethemed.InspectorTabs.CareSwitchDef:For"] = 0xB747ACCF267B5487,                         // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-14
+			["UIRethemed.InspectorTabs.CareSwitchDef:For"] = 0xF98B5C6B64F8AC81,                         // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-19 13:35
 			["AutoExtractGenes.Utils:GetAutoExtractGenesComponent"] = 0x41DC32D5B21682AC,                // AutoExtractGenes 1.7, DLL of 2026-11-08
 			["ColonyManagerRedux.Manager:FinalizeInit"] = 0xF523FD8F4AA6A9E5,                           // Colony Manager Redux 1.7, DLL of 2026-11-16 10:44
 			["VFEF.CompScaresAnimals:ScareAnimals"] = 0xA4407F9189E92650,                               // VFE Farming (1.6 DLL), 2026-11-13
@@ -3577,11 +3576,11 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Notifications.NotificationStyles:Resolve"] = 0x37E4D5B9BC27B3D0,
 			["UIRethemed.Notifications.Placement:ColumnX"] = 0xE160D086AD81C948,
 			["UIRethemed.Notifications.Placement:get_Position"] = 0x773B4416EAD9CD6E,
-			["UIRethemed.Core.ThemeMotion:Hover"] = 0x67216916AF564DB9,
+			["UIRethemed.Core.ThemeMotion:Hover"] = 0x58974EF12091BE19,
 			["UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler"] = 0x6975299B4CC464C6,
-			["UIRethemed.Core.HoverCard:Region"] = 0x1795D4D016919CA4,
-			["UIRethemed.Core.HoverCard:DrawPlaced"] = 0x3138E187B6515924,
-			["UIRethemed.Core.HoverCard:PlacedSize"] = 0x1621EE58074F4D1B,
+			["UIRethemed.Core.HoverCard:Region"] = 0x6AC34E3234283881,
+			["UIRethemed.Core.HoverCard:DrawPlaced"] = 0x6B8EA68A57F194C5,
+			["UIRethemed.Core.HoverCard:PlacedSize"] = 0x93CD347C090DB2A8,
 			["UIRethemed.Notifications.Placement:BesideX"] = 0x47679F286AED5F91,
 			["UIRethemed.Notifications.SectionHeading:Shows"] = 0xFD51782B2B3A5A4A,
 			["UIRethemed.Notifications.SectionHeading:Folded"] = 0xAD16F82687E32083,

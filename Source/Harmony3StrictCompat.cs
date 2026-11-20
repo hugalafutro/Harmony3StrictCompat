@@ -786,6 +786,9 @@ namespace Harmony3StrictCompat
 					harmony.Patch(uirShownApart, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirOrdersTogether)));
 			}
 			BillCountCache.Init(harmony);
+			TickHotPaths.Init(harmony);
+			TickTrace.Init(harmony, content.RootDir);
+			GravcoreSubquestTick.Init(harmony);
 		}
 
 		// ---- UI Rethemed - Architect + Vanilla Plants Expanded: Tilled soil among the orders ----
@@ -3779,6 +3782,13 @@ namespace Harmony3StrictCompat
 			["PipeSystem.CompResourceTrader:CompInspectStringExtra"] = 0x8799CC4254BA7002,           // VEF PipeSystem 1.7, DLL of 2026-11-20 12:28
 			["Hospitality.JoyGiver_BuyStuff:CanEat"] = 0x304D1E10604FFCD2,                           // Hospitality 1.7
 			["RimWorld.Bill_Production:ShouldDoNow"] = 0x91426C66CA668FA7,                           // game 1.7.5014, 2026-11-20 (bill count cache)
+			["Verse.GenTypes:IsSealedWithCache"] = 0x809310C4C09A3747,                               // game 1.7.5014, 2026-11-20 (tick hot paths)
+			["Verse.ReachabilityCache:ClearForHostile"] = 0x5BED8EFCC91F582A,
+			["Verse.TickManager:TickManagerUpdate"] = 0xBD63B2C8DA3F0F13,
+			["RimWorld.QuestPart_SubquestGenerator_Gravcores:QuestPartTick"] = 0x57A1138EAA085FF4,     // game 1.7.5014, 2026-11-20 (cheap tests first)
+			["RimWorld.QuestPart_SubquestGenerator_Gravcores:get_CanGenerateSubquest"] = 0xD22781A31626AD88,
+			["TD_Enhancement_Pack.WorkGiver_HaulUrgentlyRefill:PotentialWorkThingsGlobal"] = 0x666AFF20872A52D4, // TD Enhancement Pack - Continued 1.7, 2026-11-20
+			["TD_Enhancement_Pack.Alert_NoBill:GetReport"] = 0x749F608E209682C4,
 			["SatelliteMinimap.Feed:GatherCore"] = 0x8DE81F8EF7D9D5CA,                             // Satellite Minimap 1.1.2, DLL of 2026-10-09 (Mechanoids layer row, marker cap)
 			["SatelliteMinimap.Feed:Add"] = 0x7B585F47FD6B42DC,
 			["SatelliteMinimap.MinimapWindow:OpenLayersMenu"] = 0xE47E83E43EE95A27,
@@ -5036,6 +5046,325 @@ namespace Harmony3StrictCompat
 		}
 
 		static void Reset() => cache.Clear();
+	}
+
+	// ---- Vanilla: two hot paths in the tick, and tick pacing (personal tweak) ------------------------------------
+	// Found with a sampling profile (dotnet-trace, 20 s at speed 3, 30 colonists, about 80 mechs and 200 animals,
+	// 2026-11-20). Shares are of main-thread time; the tick as a whole was 76%.
+	// 1. GenTypes.IsSealedWithCache, 29%: ThingWithComps.GetComp<T> calls it whenever a thing with three or more
+	//    comps has no comp of exactly type T. It takes a lock around a dictionary on every call, and on this runtime
+	//    that lock always goes through Monitor.Enter_Slowpath. Type.IsSealed is a flag read on CoreCLR (the cache
+	//    dates from Mono), so the body becomes just that: same answer, no lock, no dictionary.
+	// 2. ReachabilityCache.ClearForHostile, 27%: every door that opens or closes walks the whole reachability cache
+	//    and asks pawn.HostileTo(door) once per cached entry, although many entries belong to the same pawn and
+	//    many doors move in the same tick. For a door with a faction the answer depends only on the pawn and that
+	//    faction, so it is asked once per pawn per faction per tick and remembered. A pawn that turns hostile in
+	//    the middle of a tick is seen from the next tick on. Other callers and doors without a faction go to the
+	//    real check. A one-time line reports lookups against real checks.
+	// 3. Tick pacing. TickManagerUpdate runs at most "speed multiplier x 2" ticks in one frame (6 at 3x) and throws
+	//    away whatever real time is left over, so ticks per second can never be more than 6 x frames per second:
+	//    180 TPS needs 30 FPS in every single frame, and a frame that draws for 12 ms leaves 3.5 ms per tick. The
+	//    limit becomes "x 4" (12 at 3x), so a slow frame is made up in the next one and frame rate is traded for
+	//    tick rate. The 45 ms per-frame tick budget (the game's 22 FPS floor) is untouched. The first six 20 s
+	//    windows at 3x in a session each log one line: TPS, FPS, mean tick time and how often each limit was hit.
+	static class TickHotPaths
+	{
+		static readonly Dictionary<Thing, bool> hostile = new();
+		static Faction hostileFaction;
+		static int hostileTick = -1, lookups, checks;
+		const float TicksPerFrameFactor = 4f;
+		static readonly AccessTools.FieldRef<TickManager, System.Diagnostics.Stopwatch> tickClock =
+			AccessTools.FieldRefAccess<TickManager, System.Diagnostics.Stopwatch>("clock");
+		static readonly System.Diagnostics.Stopwatch window = new();
+		static int frames, ticks, pastOldLimit, atNewLimit, pastBudget, linesLeft = 6;
+		static double tickMs;
+		static bool reported;
+
+		internal static void Init(Harmony harmony)
+		{
+			if (Harmony3StrictCompatMod.Target("Verse.GenTypes:IsSealedWithCache") is { } isSealed)
+				harmony.Patch(isSealed, transpiler: new HarmonyMethod(typeof(TickHotPaths), nameof(NoLock)));
+			if (Harmony3StrictCompatMod.Target("Verse.ReachabilityCache:ClearForHostile") is { } clear)
+				harmony.Patch(clear, transpiler: new HarmonyMethod(typeof(TickHotPaths), nameof(AskOncePerPawn)));
+			if (Harmony3StrictCompatMod.Target("Verse.TickManager:TickManagerUpdate") is { } update)
+				harmony.Patch(update, postfix: new HarmonyMethod(typeof(TickHotPaths), nameof(Pacing)),
+					transpiler: new HarmonyMethod(typeof(TickHotPaths), nameof(MoreTicksPerFrame)));
+		}
+
+		static IEnumerable<CodeInstruction> NoLock(IEnumerable<CodeInstruction> instructions) => new[]
+		{
+			new CodeInstruction(OpCodes.Ldarg_0),
+			new CodeInstruction(OpCodes.Callvirt, AccessTools.PropertyGetter(typeof(Type), nameof(Type.IsSealed))),
+			new CodeInstruction(OpCodes.Ret),
+		};
+
+		static IEnumerable<CodeInstruction> AskOncePerPawn(IEnumerable<CodeInstruction> instructions)
+		{
+			var codes = instructions.ToList();
+			var live = AccessTools.Method(typeof(GenHostility), nameof(GenHostility.HostileTo), new[] { typeof(Thing), typeof(Thing) });
+			var calls = codes.Where(c => c.Calls(live)).ToList();
+			if (calls.Count != 1)
+			{
+				Log.Error($"[Harmony3StrictCompat] ReachabilityCache.ClearForHostile checks hostility {calls.Count} times instead of once, door hostility memo not applied");
+				return codes;
+			}
+			calls[0].operand = AccessTools.Method(typeof(TickHotPaths), nameof(Hostile));
+			return codes;
+		}
+
+		static IEnumerable<CodeInstruction> MoreTicksPerFrame(IEnumerable<CodeInstruction> instructions)
+		{
+			var codes = instructions.ToList();
+			var twos = codes.Where(c => c.opcode == OpCodes.Ldc_R4 && c.operand is float f && f == 2f).ToList();
+			if (twos.Count != 1)
+			{
+				Log.Error($"[Harmony3StrictCompat] TickManager.TickManagerUpdate has {twos.Count} ticks-per-frame factors instead of one, tick pacing not changed");
+				return codes;
+			}
+			twos[0].operand = TicksPerFrameFactor;
+			return codes;
+		}
+
+		static void Pacing(TickManager __instance)
+		{
+			if (linesLeft <= 0) return;
+			if (__instance.Paused || __instance.TickRateMultiplier != 3f)
+			{
+				window.Reset();
+				return;
+			}
+			if (!window.IsRunning)
+			{
+				frames = ticks = pastOldLimit = atNewLimit = pastBudget = 0;
+				tickMs = 0;
+				window.Restart();
+				return;
+			}
+			int n = __instance.TicksThisFrame;
+			double ms = tickClock(__instance).Elapsed.TotalMilliseconds;
+			frames++;
+			ticks += n;
+			tickMs += ms;
+			if (n > 6) pastOldLimit++;
+			if (n >= 3 * TicksPerFrameFactor) atNewLimit++;
+			if (ms > 45.454544) pastBudget++;
+			double s = window.Elapsed.TotalSeconds;
+			if (s < 20) return;
+			Log.Message($"[Harmony3StrictCompat] Tick pacing at 3x over {s:F0} s: {ticks / s:F0} TPS of 180, {frames / s:F0} FPS, mean tick {tickMs / Math.Max(1, ticks):F1} ms; frames past the old 6-tick limit {100.0 * pastOldLimit / frames:F0}%, at the new limit {100.0 * atNewLimit / frames:F0}%, past the 45 ms tick budget {100.0 * pastBudget / frames:F0}%");
+			linesLeft--;
+			window.Reset();
+		}
+
+		// Same stack shape as the call it replaces: (pawn, thing) -> hostile.
+		static bool Hostile(Thing pawn, Thing to)
+		{
+			if (to is not Building_Door || to.Destroyed || to.Faction is not { } faction) return pawn.HostileTo(to);
+			int now = Find.TickManager.TicksGame;
+			if (now != hostileTick || faction != hostileFaction)
+			{
+				hostile.Clear();
+				hostileTick = now;
+				hostileFaction = faction;
+			}
+			lookups++;
+			if (!hostile.TryGetValue(pawn, out bool result))
+			{
+				checks++;
+				hostile[pawn] = result = pawn.HostileTo(to);
+			}
+			if (!reported && lookups >= 200000)
+			{
+				reported = true;
+				Log.Message($"[Harmony3StrictCompat] Door hostility memo: {lookups} lookups, {checks} real checks");
+			}
+			return result;
+		}
+	}
+
+	// ---- Diagnostic: exact time per phase of the pawn tick ----------------------------------------------------
+	// Off unless a file named "ticktrace.on" sits in the mod folder at startup. Then every game method that
+	// Pawn.Tick and Pawn.TickInterval call directly (property getters excluded), those two, DoSingleTick and
+	// TickList.Tick get a timestamp at entry and before each return. After every 3600 ticks, three times per
+	// session, one log entry lists microseconds and calls per game tick for each, largest first. A sampling
+	// profile cannot give this: its samples land on safe points and smear time onto the next lock or copy.
+	// The timestamps wrap the method body only, so prefixes and postfixes other mods put on a timed method count
+	// toward its caller. Each timed call costs about 50 ns itself; multiply by the call count to subtract it.
+	static class TickTrace
+	{
+		static readonly Dictionary<MethodBase, int> index = new();
+		static readonly List<string> names = new();
+		static long[] time, started;
+		static int[] calls;
+		static int ticksSeen, reportsLeft = 3;
+
+		internal static void Init(Harmony harmony, string modRoot)
+		{
+			var flag = Path.Combine(modRoot, "ticktrace.on");
+			if (!File.Exists(flag)) return;
+			var doSingleTick = AccessTools.Method(typeof(TickManager), nameof(TickManager.DoSingleTick));
+			// The file's text picks whose direct callees are timed: "stages" = the tick's stages (few calls a
+			// tick, next to no overhead), anything else = the two pawn tick methods.
+			MethodBase[] scan = File.ReadAllText(flag).Contains("stages")
+				? new MethodBase[] { doSingleTick, AccessTools.Method(typeof(Map), nameof(Map.MapPreTick)),
+					AccessTools.Method(typeof(Map), nameof(Map.MapPostTick)), AccessTools.Method(typeof(World), nameof(World.WorldTick)) }
+				: new MethodBase[] { AccessTools.Method(typeof(Pawn), "Tick"), AccessTools.Method(typeof(Pawn), "TickInterval") };
+			var targets = scan.Append(doSingleTick).Append(AccessTools.Method(typeof(TickList), nameof(TickList.Tick))).Distinct().ToList();
+			foreach (var root in scan)
+				foreach (var c in PatchProcessor.GetOriginalInstructions(root))
+					if (c.operand is MethodInfo m && m.DeclaringType?.Assembly == typeof(Pawn).Assembly && !m.IsSpecialName && !m.IsAbstract
+						&& !m.IsGenericMethod && !m.DeclaringType.IsGenericType && m.GetMethodBody() != null && !targets.Contains(m))
+						targets.Add(m);
+			foreach (var m in targets)
+			{
+				index[m] = names.Count;
+				names.Add($"{m.DeclaringType.Name}.{m.Name}");
+			}
+			time = new long[names.Count];
+			started = new long[names.Count];
+			calls = new int[names.Count];
+			var wrap = new HarmonyMethod(typeof(TickTrace), nameof(Wrap));
+			foreach (var m in targets)
+			{
+				try { harmony.Patch(m, transpiler: wrap); }
+				catch (Exception e) { Log.Warning($"[Harmony3StrictCompat] tick trace: cannot time {names[index[m]]}: {e.Message}"); }
+			}
+			harmony.Patch(doSingleTick, postfix: new HarmonyMethod(typeof(TickTrace), nameof(Report)));
+			Log.Message($"[Harmony3StrictCompat] tick trace on: {names.Count} methods timed (remove ticktrace.on from the mod folder to turn off)");
+		}
+
+		static IEnumerable<CodeInstruction> Wrap(IEnumerable<CodeInstruction> instructions, MethodBase original)
+		{
+			int i = index[original];
+			yield return new CodeInstruction(OpCodes.Ldc_I4, i);
+			yield return new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(TickTrace), nameof(Enter)));
+			foreach (var c in instructions)
+			{
+				if (c.opcode == OpCodes.Ret)
+				{
+					yield return new CodeInstruction(OpCodes.Ldc_I4, i) { labels = c.labels };
+					yield return new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(TickTrace), nameof(Exit)));
+					c.labels = new List<Label>();
+				}
+				yield return c;
+			}
+		}
+
+		static void Enter(int i) => started[i] = System.Diagnostics.Stopwatch.GetTimestamp();
+
+		static void Exit(int i)
+		{
+			time[i] += System.Diagnostics.Stopwatch.GetTimestamp() - started[i];
+			calls[i]++;
+		}
+
+		static void Report()
+		{
+			if (reportsLeft <= 0 || ++ticksSeen < 3600) return;
+			double us = 1e6 / System.Diagnostics.Stopwatch.Frequency / ticksSeen;
+			var sb = new StringBuilder($"[Harmony3StrictCompat] tick trace over {ticksSeen} ticks (microseconds per tick, calls per tick):");
+			foreach (int i in Enumerable.Range(0, names.Count).OrderByDescending(i => time[i]))
+				if (calls[i] > 0) sb.Append($"\n  {time[i] * us,8:F0}  {(double)calls[i] / ticksSeen,8:F1}  {names[i]}");
+			Log.Message(sb.ToString());
+			Array.Clear(time, 0, time.Length);
+			Array.Clear(calls, 0, calls.Length);
+			ticksSeen = 0;
+			reportsLeft--;
+		}
+	}
+
+	// ---- TD Enhancement Pack: urgent refill scan when nothing is marked for refill ---------------------------
+	// WorkGiver_HaulUrgentlyRefill.PotentialWorkThingsGlobal lists every haulable thing on the map and runs
+	// StoreUtility.IsInValidBestStorage (a full better-storage search) on each before it looks at whether any
+	// storage is marked "urgent refill" at all. With nothing marked the answer is always "no work", after about
+	// 5% of the tick (tick trace + sampling profile, 30 colonists, 2026-11-20). Skip the scan while the map's
+	// RefillZoneComp has no marked building and no marked stockpile, which is exactly when both of its lists
+	// are empty. Marking any storage brings the original scan back.
+	[StaticConstructorOnStartup]
+	static class TdUrgentRefillIdle
+	{
+		static readonly Type compType = AccessTools.TypeByName("TD_Enhancement_Pack.RefillZoneComp");
+		static readonly FieldInfo buildings = compType == null ? null : AccessTools.Field(compType, "markedForRefillBuilding");
+		static readonly FieldInfo stockpiles = compType == null ? null : AccessTools.Field(compType, "markedForRefillStockpile");
+
+		static TdUrgentRefillIdle()
+		{
+			var scan = Harmony3StrictCompatMod.Target("TD_Enhancement_Pack.WorkGiver_HaulUrgentlyRefill:PotentialWorkThingsGlobal");
+			if (scan == null || buildings == null || stockpiles == null) return;
+			new Harmony("sammael.harmony3strictcompat").Patch(scan, prefix: new HarmonyMethod(typeof(TdUrgentRefillIdle), nameof(NothingMarked)));
+		}
+
+		static bool NothingMarked(Pawn pawn, ref IEnumerable<Thing> __result)
+		{
+			var comp = pawn.Map?.GetComponent(compType);
+			if (comp == null || buildings.GetValue(comp) is not HashSet<Building_Storage> { Count: 0 }
+				|| stockpiles.GetValue(comp) is not HashSet<Zone_Stockpile> { Count: 0 }) return true;
+			__result = Enumerable.Empty<Thing>();
+			return false;
+		}
+	}
+
+	// ---- Vanilla (Odyssey): gravcore subquest check on every tick (personal tweak) ----------------------------
+	// QuestPart_SubquestGenerator_Gravcores.QuestPartTick asks CanGenerateSubquest every tick, and that getter first
+	// counts the quest's pending and successful subquests by walking every quest in the game (LINQ, twice) before
+	// the cheap tests: minimum time since the last subquest, then the random roll with a mean of 120,000 or
+	// 300,000 ticks. Sampling profile: about 2.4% of main-thread time (2026-11-20). Same tests, cheap ones first:
+	// the quest walk now runs only on a tick where the roll (or the maximum wait) says a subquest is due. The
+	// roll is independent of the other tests, so the chance of a subquest on any tick is unchanged. One real
+	// change: once the maximum wait has passed, the walk is retried every 250 ticks, not every tick.
+	static class GravcoreSubquestTick
+	{
+		static AccessTools.FieldRef<QuestPart_SubquestGenerator_Gravcores, float> lastTick;
+		static Func<QuestPart_SubquestGenerator_Gravcores, int> mtb, minTime, maxTime;
+		static Func<QuestPart_SubquestGenerator_Gravcores, bool> canGenerate, tryGenerate;
+
+		internal static void Init(Harmony harmony)
+		{
+			var tick = Harmony3StrictCompatMod.Target("RimWorld.QuestPart_SubquestGenerator_Gravcores:QuestPartTick");
+			var can = Harmony3StrictCompatMod.Target("RimWorld.QuestPart_SubquestGenerator_Gravcores:get_CanGenerateSubquest");
+			if (tick == null || can == null) return;
+			var type = typeof(QuestPart_SubquestGenerator_Gravcores);
+			lastTick = AccessTools.FieldRefAccess<QuestPart_SubquestGenerator_Gravcores, float>("lastSubquestTick");
+			mtb = AccessTools.MethodDelegate<Func<QuestPart_SubquestGenerator_Gravcores, int>>(AccessTools.PropertyGetter(type, "MTB"));
+			minTime = AccessTools.MethodDelegate<Func<QuestPart_SubquestGenerator_Gravcores, int>>(AccessTools.PropertyGetter(type, "MinTime"));
+			maxTime = AccessTools.MethodDelegate<Func<QuestPart_SubquestGenerator_Gravcores, int>>(AccessTools.PropertyGetter(type, "MaxTime"));
+			canGenerate = AccessTools.MethodDelegate<Func<QuestPart_SubquestGenerator_Gravcores, bool>>((MethodInfo)can);
+			tryGenerate = AccessTools.MethodDelegate<Func<QuestPart_SubquestGenerator_Gravcores, bool>>(AccessTools.Method(type, "TryGenerateSubquest"));
+			harmony.Patch(tick, prefix: new HarmonyMethod(typeof(GravcoreSubquestTick), nameof(Tick)));
+		}
+
+		static bool Tick(QuestPart_SubquestGenerator_Gravcores __instance)
+		{
+			float now = Find.TickManager.TicksGame, last = lastTick(__instance);
+			if (__instance.subquestDefs.Count == 0 || Find.AnyPlayerHomeMap == null || now - last < minTime(__instance)) return false;
+			// Past the maximum wait the original asks on every tick until a subquest can start (in the 30-colonist
+			// save it had been asking for 16 million ticks: three subquests pending). Ask every 250 ticks instead.
+			if (!Rand.MTBEventOccurs(mtb(__instance), 1f, 1f) && (now <= last + maxTime(__instance) || Find.TickManager.TicksGame % 250 != 0)) return false;
+			if (canGenerate(__instance)) tryGenerate(__instance);
+			return false;
+		}
+	}
+
+	// ---- TD Enhancement Pack: "Empty Workbench" alert on benches that cannot have bills ----------------------
+	// Alert_NoBill lists every work table that shows a Bills tab and has an empty bill stack. Altered Carbon's
+	// neural editor (and its compact Gravship variant) is such a table, but no recipe names it: its bills are
+	// created by its gizmos and are gone again when done, so the alert pointed at it permanently. Drop culprits
+	// whose def has no recipes at all; nobody can add a bill to those by hand.
+	[StaticConstructorOnStartup]
+	static class TdEmptyWorkbenchNoRecipes
+	{
+		static TdEmptyWorkbenchNoRecipes()
+		{
+			var report = Harmony3StrictCompatMod.Target("TD_Enhancement_Pack.Alert_NoBill:GetReport");
+			if (report == null) return;
+			new Harmony("sammael.harmony3strictcompat").Patch(report, postfix: new HarmonyMethod(typeof(TdEmptyWorkbenchNoRecipes), nameof(DropBenchesWithoutRecipes)));
+		}
+
+		static void DropBenchesWithoutRecipes(ref AlertReport __result)
+		{
+			if (__result.culpritsThings is not { Count: > 0 } benches) return;
+			benches.RemoveAll(bench => bench.def.AllRecipes.NullOrEmpty());
+			if (benches.Count == 0) __result = AlertReport.Inactive;
+		}
 	}
 
 	// ---- Common Sense: "Getting random element from empty collection" on uncraftable food ---------------------

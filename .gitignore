@@ -6,3 +6,6 @@ Tools/sync_g15.sh
 
 # fpcheck.py parse cache
 Tools/.fpcheck_cache.json
+
+# tick trace diagnostic switch
+ticktrace.on

@@ -789,6 +789,8 @@ namespace Harmony3StrictCompat
 			TickHotPaths.Init(harmony);
 			TickTrace.Init(harmony, content.RootDir);
 			GravcoreSubquestTick.Init(harmony);
+			UirArchitectTwoLineNames.Init(harmony);
+			AdaptedTextOncePerSecond.Init(harmony);
 		}
 
 		// ---- UI Rethemed - Architect + Vanilla Plants Expanded: Tilled soil among the orders ----
@@ -3779,12 +3781,16 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Animals.Motion:Key"] = 0xD8B1E64161CEBA55,                                     // UI Rethemed - Animals 1.7, DLL of 2026-11-09
 			["UIRethemed.Animals.Motion:Hover"] = 0xCF658FE8AAEAECFD,
 			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0x5ACDBDDD5FF8FB5A,                  // UI Rethemed - Architect 1.7, DLL of 2026-11-20 12:28
+			["UIRethemed.Architect.DetailsPanel:Header"] = 0xE960A861D26E369E,                         // UI Rethemed - Architect 1.7, DLL of 2026-11-20 12:28 (names on two lines)
+			["UIRethemed.Architect.DesignatorGrid:get_CardHeight"] = 0xB8237D3366CA6C97,
+			["UIRethemed.Architect.DesignatorGrid:LabelRect"] = 0xEA794A59EE25933A,
 			["PipeSystem.CompResourceTrader:CompInspectStringExtra"] = 0x8799CC4254BA7002,           // VEF PipeSystem 1.7, DLL of 2026-11-20 12:28
 			["Hospitality.JoyGiver_BuyStuff:CanEat"] = 0x304D1E10604FFCD2,                           // Hospitality 1.7
 			["RimWorld.Bill_Production:ShouldDoNow"] = 0x91426C66CA668FA7,                           // game 1.7.5014, 2026-11-20 (bill count cache)
 			["Verse.GenTypes:IsSealedWithCache"] = 0x809310C4C09A3747,                               // game 1.7.5014, 2026-11-20 (tick hot paths)
 			["Verse.ReachabilityCache:ClearForHostile"] = 0x5BED8EFCC91F582A,
 			["Verse.TickManager:TickManagerUpdate"] = 0xBD63B2C8DA3F0F13,
+			["RimWorld.StunHandler:Notify_DamageApplied"] = 0xC6A267835D6DFF3C,                        // game 1.7.5014, 2026-11-20 ("Adapted" text once a second)
 			["RimWorld.QuestPart_SubquestGenerator_Gravcores:QuestPartTick"] = 0x57A1138EAA085FF4,     // game 1.7.5014, 2026-11-20 (cheap tests first)
 			["RimWorld.QuestPart_SubquestGenerator_Gravcores:get_CanGenerateSubquest"] = 0xD22781A31626AD88,
 			["TD_Enhancement_Pack.WorkGiver_HaulUrgentlyRefill:PotentialWorkThingsGlobal"] = 0x666AFF20872A52D4, // TD Enhancement Pack - Continued 1.7, 2026-11-20
@@ -5364,6 +5370,160 @@ namespace Harmony3StrictCompat
 			if (__result.culpritsThings is not { Count: > 0 } benches) return;
 			benches.RemoveAll(bench => bench.def.AllRecipes.NullOrEmpty());
 			if (benches.Count == 0) __result = AlertReport.Inactive;
+		}
+	}
+
+	// ---- UI Rethemed - Architect: names on two lines (personal tweak) -----------------------------------------
+	// Long names were cut to one line with "..." in two places:
+	// 1. The cards of the designator grid. The label area under the icon is 31 px high, one line of the tiny
+	//    font; DesignatorGrid.CardHeight gives it 30 px on top of the icon size. It now gives it room for two
+	//    lines. UIR already wraps the label and cuts it to the area's height (GenText.TruncateHeight), so the
+	//    second line still ends in "..." when the name is longer than that. Grid and orders column both size
+	//    their rows from CardHeight.
+	// 2. The name in the Details panel header (DetailsPanel.Header), a 24 px single line beside the info and
+	//    favourite buttons. When the name does not fit, the header (78 px in the column layout) grows by one line,
+	//    the category row and the chips under it move down by the same amount, and the name is drawn wrapped.
+	//    Whether it fits is measured where the name is drawn and applied from the next frame on. The strip
+	//    layout (details across the bottom), whose header height is not its own, keeps the single line.
+	static class UirArchitectTwoLineNames
+	{
+		static Action<Rect, string, Color, GameFont, TextAnchor> oneLine;                 // CoreWidgets.Line
+		static Action<Rect, string, TextAnchor, Color, GameFont> themeLabel;              // Theme.Label
+		static float titleExtra, titlePending;
+		static bool titleInColumn;
+
+		internal static void Init(Harmony harmony)
+		{
+			var cardHeight = Harmony3StrictCompatMod.Target("UIRethemed.Architect.DesignatorGrid:get_CardHeight");
+			var labelRect = Harmony3StrictCompatMod.Target("UIRethemed.Architect.DesignatorGrid:LabelRect"); // its 31 px is assumed below
+			if (cardHeight != null && labelRect != null)
+				harmony.Patch(cardHeight, transpiler: new HarmonyMethod(typeof(UirArchitectTwoLineNames), nameof(CardLabelRoom)));
+			var header = Harmony3StrictCompatMod.Target("UIRethemed.Architect.DetailsPanel:Header");
+			var line = AccessTools.Method("UIRethemed.Core.CoreWidgets:Line", [typeof(Rect), typeof(string), typeof(Color), typeof(GameFont), typeof(TextAnchor)]);
+			var label = AccessTools.Method("UIRethemed.Core.Theme:Label", [typeof(Rect), typeof(string), typeof(TextAnchor), typeof(Color), typeof(GameFont)]);
+			if (header == null || line == null || label == null) return;
+			oneLine = (Action<Rect, string, Color, GameFont, TextAnchor>)line.CreateDelegate(typeof(Action<Rect, string, Color, GameFont, TextAnchor>));
+			themeLabel = (Action<Rect, string, TextAnchor, Color, GameFont>)label.CreateDelegate(typeof(Action<Rect, string, TextAnchor, Color, GameFont>));
+			harmony.Patch(header, transpiler: new HarmonyMethod(typeof(UirArchitectTwoLineNames), nameof(HeaderTitleRoom)));
+		}
+
+		static IEnumerable<CodeInstruction> CardLabelRoom(IEnumerable<CodeInstruction> instructions)
+		{
+			var codes = instructions.ToList();
+			var thirty = codes.Where(c => c.opcode == OpCodes.Ldc_R4 && c.operand is float f && f == 30f).ToList();
+			if (thirty.Count != 1)
+			{
+				Log.Error($"[Harmony3StrictCompat] UIR Architect CardHeight has {thirty.Count} label heights instead of one, card names stay on one line");
+				return codes;
+			}
+			thirty[0].opcode = OpCodes.Call;
+			thirty[0].operand = AccessTools.Method(typeof(UirArchitectTwoLineNames), nameof(CardLabelHeight));
+			return codes;
+		}
+
+		static float CardLabelHeight() => 30f + Mathf.Max(0f, Mathf.Ceil(2f * Text.LineHeightOf(GameFont.Tiny) - 31f));
+
+		static IEnumerable<CodeInstruction> HeaderTitleRoom(IEnumerable<CodeInstruction> instructions)
+		{
+			var codes = instructions.ToList();
+			var line = AccessTools.Method("UIRethemed.Core.CoreWidgets:Line", [typeof(Rect), typeof(string), typeof(Color), typeof(GameFont), typeof(TextAnchor)]);
+			var height = codes.Where(c => c.opcode == OpCodes.Ldc_R4 && c.operand is float f && f == 78f).ToList();
+			var below = codes.Where(c => c.opcode == OpCodes.Ldc_R4 && c.operand is float f && f == 26f).ToList();
+			var lines = codes.Where(c => c.Calls(line)).ToList();
+			if (height.Count != 1 || below.Count != 1 || lines.Count != 2)
+			{
+				Log.Error($"[Harmony3StrictCompat] UIR Architect DetailsPanel.Header: expected one 78, one 26 and two Line calls, found {height.Count}, {below.Count}, {lines.Count}; the name stays on one line");
+				return codes;
+			}
+			lines[0].operand = AccessTools.Method(typeof(UirArchitectTwoLineNames), nameof(Title));
+			var result = new List<CodeInstruction>(codes.Count + 2);
+			foreach (var c in codes)
+			{
+				result.Add(c);
+				if (c == height[0]) result.Add(new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(UirArchitectTwoLineNames), nameof(ColumnHeaderHeight))));
+				if (c == below[0]) result.Add(new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(UirArchitectTwoLineNames), nameof(BelowTitle))));
+			}
+			return result;
+		}
+
+		// Runs only in the column layout (the strip layout takes its height from the strip), before the name is drawn.
+		static float ColumnHeaderHeight(float height)
+		{
+			titleExtra = titlePending;
+			titleInColumn = true;
+			return height + titleExtra;
+		}
+
+		static float BelowTitle(float y) => y + titleExtra;
+
+		// Same arguments as CoreWidgets.Line, which it replaces for the name only.
+		static void Title(Rect rect, string text, Color color, GameFont font, TextAnchor anchor)
+		{
+			bool column = titleInColumn;
+			titleInColumn = false;
+			if (!column)
+			{
+				titleExtra = titlePending = 0f;
+				oneLine(rect, text, color, font, anchor);
+				return;
+			}
+			Text.Font = font;
+			bool wraps = Text.CalcSize(text).x > rect.width;
+			titlePending = wraps ? Text.LineHeightOf(font) : 0f;
+			if (!wraps || titleExtra <= 0f)
+			{
+				Text.Font = GameFont.Small;
+				oneLine(rect, text, color, font, anchor);
+				return;
+			}
+			var area = new Rect(rect.x, rect.y, rect.width, rect.height + titleExtra);
+			string cut = text.TruncateHeight(area.width, area.height);
+			Text.Font = GameFont.Small;
+			themeLabel(area, cut, TextAnchor.UpperLeft, color, font);
+		}
+	}
+
+	// ---- Vanilla: one "Adapted" text per pawn per second (seen with Alpha Armoury's tesla coil trait) ----------
+	// StunHandler.Notify_DamageApplied throws the floating "Adapted" text for every stun damage instance that
+	// lands on a pawn that has adapted, with no limit. An EMP grenade is one instance. A tesla coil bolt is an EMP
+	// bullet plus an EMP explosion of radius 1.9 at each of up to four impacts (three chain bounces), from a
+	// burst weapon: a group of adapted mechanoids gets dozens of instances per burst, and the texts pile up into
+	// a white blob on each of them. The damage is unchanged; the text shows at most once per second per cell.
+	static class AdaptedTextOncePerSecond
+	{
+		const int Interval = 60;
+		static readonly Dictionary<IntVec3, int> lastShown = new();
+
+		internal static void Init(Harmony harmony)
+		{
+			if (Harmony3StrictCompatMod.Target("RimWorld.StunHandler:Notify_DamageApplied") is { } applied)
+				harmony.Patch(applied, transpiler: new HarmonyMethod(typeof(AdaptedTextOncePerSecond), nameof(Throttle)));
+		}
+
+		static IEnumerable<CodeInstruction> Throttle(IEnumerable<CodeInstruction> instructions)
+		{
+			var codes = instructions.ToList();
+			var throwText = AccessTools.Method(typeof(MoteMaker), nameof(MoteMaker.ThrowText), [typeof(Vector3), typeof(Map), typeof(string), typeof(Color), typeof(float)]);
+			var calls = codes.Where(c => c.Calls(throwText)).ToList();
+			if (calls.Count != 1)
+			{
+				Log.Error($"[Harmony3StrictCompat] StunHandler.Notify_DamageApplied throws {calls.Count} texts instead of one, \"Adapted\" text not limited");
+				return codes;
+			}
+			calls[0].operand = AccessTools.Method(typeof(AdaptedTextOncePerSecond), nameof(ThrowTextOncePerSecond));
+			return codes;
+		}
+
+		// Same arguments as MoteMaker.ThrowText. The text is thrown one cell up and right of the pawn, so the cell
+		// stands in for the pawn; a pawn that moved on gets its text again, which is rare enough.
+		static void ThrowTextOncePerSecond(Vector3 loc, Map map, string text, Color color, float timeBeforeStartFadeout)
+		{
+			int now = Find.TickManager.TicksGame;
+			var cell = new IntVec3((int)loc.x, map?.Index ?? 0, (int)loc.z);
+			if (lastShown.TryGetValue(cell, out int shown) && (uint)(now - shown) < Interval) return;
+			if (lastShown.Count > 512) lastShown.Clear();
+			lastShown[cell] = now;
+			MoteMaker.ThrowText(loc, map, text, color, timeBeforeStartFadeout);
 		}
 	}
 

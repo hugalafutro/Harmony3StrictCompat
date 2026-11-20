@@ -75,6 +75,7 @@
 - UI Rethemed - Notifications: the days of food tooltip holds still while hovered (re-counts every 5 s, not while hovered).
 - UI Rethemed - Colonist Card: info rows show tooltips (the whole line) and highlight on hover; the meal ingredients row leaves out the "only stacks with similar meals" note.
 - UI Rethemed - Architect + Vanilla Plants Expanded (personal tweak): Tilled soil sits in one Orders group with Cancel, Mine and the other orders instead of a group of its own.
+- UI Rethemed - Architect (personal tweak): long names show on two lines, on the grid cards and in the Details panel header, instead of one line cut with "...".
 - UI Rethemed - Colonist Card: the guilty icon in the inspect pane header gets its own slot instead of covering another button.
 - UI Rethemed - Colonist Card (visual tweak): the status pill names the inspiration ("Inspired creativity") instead of "Inspired".
 - UI Rethemed - Quests + Quality Colors (Continued) (visual tweak): quest reward tiles and their hover card titles are drawn in the item's quality colour, and the market value sits on the line under the name instead of beside it.
@@ -113,6 +114,7 @@
 - VEF: verb range factor applied to the result instead of the shared verb def (no stuck ranges).
 - Unburned + VEF: drafted pawns with reach melee weapons auto-attack at full reach again (Unburned replaced the method VEF patches).
 - Alpha Armoury (tesla coil trait) + VEF: tesla chain fire follows vanilla ignition rules (mechanoids no longer burn, one fire per target).
+- Vanilla (seen with Alpha Armoury's tesla coil): the floating "Adapted" text shows at most once per second per pawn instead of once per EMP instance (dozens per tesla burst).
 - Sensible Bed Ownership: reservation prefix skipped for beds with no map.
 - Sensible Bed Ownership: no more NullReferenceException from the spouse-sleep thought when a pawn owns a bed that is on no map.
 - Skilled Refueling: Harmony 3 unchecked binding for its mistyped __instance patch.

@@ -71,6 +71,7 @@
 - Colony Groups and rituals: no more duplicate load ID errors when loading a save.
 - UI Rethemed - Notifications (visual tweak): the top-left messages are drawn as rows in its bottom-right, middle-right or top-right notification stack, live 30 s, a hovered one stays and shows UI Rethemed's hover card, under a folding "Messages" heading.
 - UI Rethemed - Notifications + Satellite Minimap (personal tweak): the top-right notification column starts below the minimap instead of under it.
+- Satellite Minimap (personal tweak): a "Mechanoids" row under Colonists in the layers menu hides colony mechs and keeps them out of the Colonists count; the 50-dots-per-class cap is raised to 250; the colony's own predator animals count as colony animals, not under Predators; colony animals get their own row, apart from wildlife.
 - UI Rethemed - Notifications: the days of food tooltip holds still while hovered (re-counts every 5 s, not while hovered).
 - UI Rethemed - Colonist Card: info rows show tooltips (the whole line) and highlight on hover; the meal ingredients row leaves out the "only stacks with similar meals" note.
 - UI Rethemed - Architect + Vanilla Plants Expanded (personal tweak): Tilled soil sits in one Orders group with Cancel, Mine and the other orders instead of a group of its own.
@@ -131,6 +132,7 @@
 - Vanilla: a failing sibling relation no longer aborts a whole raid group (a RimPacts defend wave froze the game retrying it).
 - Vanilla (personal tweak): install and implant-removal operations get the implant item as their menu icon instead of a grey square.
 - Vanilla (personal tweak): clicking a plant pot or hydroponics basin selects the grower first, the plant on a second click.
+- Vanilla + Better Workbench Management (personal tweak): "do until you have X" bills count their products once per bill every 600 ticks instead of on every work scan; finishing an item refreshes the count at once.
 - (tooling): the previous run's Player.log and Hauler's Dream debug log are copied to Logs/Archive at startup (newest 30 kept).
 - (tooling, temporary): a job that restarts ten times a tick logs what it points at (job-loop probe).</description>
 </ModMetaData>

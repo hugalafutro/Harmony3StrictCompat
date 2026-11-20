@@ -423,6 +423,8 @@ namespace Harmony3StrictCompat
 			{
 				hcThemeLabel = (Action<Rect, string, TextAnchor, Color, GameFont>)hcLabelMethod.CreateDelegate(typeof(Action<Rect, string, TextAnchor, Color, GameFont>));
 				hcTextBright = (Func<Color>)hcBrightGetter.CreateDelegate(typeof(Func<Color>));
+				if (Target("UIRethemed.Core.Theme:HoverGlow") is { } hcGlow)
+					hcHoverGlow = (Func<Rect, float, Rect?, bool>)hcGlow.CreateDelegate(typeof(Func<Rect, float, Rect?, bool>));
 				hcLabel = AccessTools.Field(hcLineType, "label");
 				hcValue = AccessTools.Field(hcLineType, "value");
 				hcIcon = AccessTools.Field(hcLineType, "icon");
@@ -667,6 +669,17 @@ namespace Harmony3StrictCompat
 				if (uirMinimapType != null && Target("UIRethemed.Notifications.Placement:TopStart") is { } uirTopStart)
 					harmony.Patch(uirTopStart, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirTopRightUnderMinimap)));
 			}
+			if (Target("SatelliteMinimap.Feed:GatherCore") is { } smGather && Target("SatelliteMinimap.Feed:Add") is { } smAdd
+				&& Target("SatelliteMinimap.MinimapWindow:OpenLayersMenu") is { } smMenu && Target("SatelliteMinimap.MinimapWindow:Toggle") is { } smToggle
+				&& Target("SatelliteMinimap.MinimapSettings:ExposeData") is { } smExpose)
+			{
+				smToggleCall = smToggle;
+				smCountsField = AccessTools.Field(smGather.DeclaringType, "Counts");
+				harmony.Patch(smGather, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SmGatherWithoutMechs)));
+				harmony.Patch(smAdd, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SmRaiseMarkerCap)));
+				harmony.Patch(smMenu, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SmLayersMenuWithMechs)));
+				harmony.Patch(smExpose, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SmExposeShowMechs)));
+			}
 			if (Target("UIRethemed.Notifications.FoodReadout:Read") is { } uirFoodRead && Target("UIRethemed.Notifications.FoodReadout:Draw") is { } uirFoodDraw
 				&& AccessTools.Field(uirFoodRead.DeclaringType, "nextRead") is { IsStatic: true } uirFoodNext && AccessTools.Field(uirFoodRead.DeclaringType, "shows") is { IsStatic: true } uirFoodShows)
 			{
@@ -772,6 +785,7 @@ namespace Harmony3StrictCompat
 				if (uirEntryCategory != null && uirEntryIsOrder != null)
 					harmony.Patch(uirShownApart, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirOrdersTogether)));
 			}
+			BillCountCache.Init(harmony);
 		}
 
 		// ---- UI Rethemed - Architect + Vanilla Plants Expanded: Tilled soil among the orders ----
@@ -1521,6 +1535,122 @@ namespace Harmony3StrictCompat
 				}
 		}
 
+		// Satellite Minimap files colony mechanoids under "Colonists" (Feed.GatherCore: IsColonist || IsColonyMech) and
+		// Feed.Add draws at most 50 markers per class, so a colony with many mechs shows "Colonists (95)" and the pawns
+		// past the 50th (in map spawn-list order) get no dot at all. Personal tweak: a "Mechanoids" row under Colonists
+		// in the layers menu. Unchecked, GatherCore never sees colony mechs (no dot, not counted). The row is a
+		// sub-filter: mechs still need Colonists checked. The setting is saved in the minimap's own settings file.
+		// The per-class cap goes from 50 to 250 so that checked rows show every pawn they count.
+		// GatherCore also files every predator animal under "Predators" whatever its faction, so the colony's own
+		// hunting animals got the big outlined threat dot and could not be hidden apart from wild predators. A colony
+		// predator now counts as a colony animal (colony animal colour); a manhunting one is still a hostile.
+		// "Predators" is left with the wild and other factions' ones.
+		// GatherCore shows colony animals and wildlife on one switch (showWildlife, read once per class). Colony
+		// animals get their own: a "Colony animals" row under Colonists, independent of every other row, and the
+		// "Wildlife & animals" row becomes "Wildlife" with the wild count alone.
+		const int SmMarkerCap = 250;
+		static bool smShowMechs = true, smShowColonyAnimals = true;
+		static MethodInfo smToggleCall;
+		static FieldInfo smCountsField;
+		static readonly List<Pawn> smPawnsNoMechs = [];
+		static void SmExposeShowMechs()
+		{
+			Scribe_Values.Look(ref smShowMechs, "h3sc_showMechs", true);
+			Scribe_Values.Look(ref smShowColonyAnimals, "h3sc_showColonyAnimals", true);
+		}
+		static bool SmShowColonyAnimals(object minimapSettings) => smShowColonyAnimals;
+		static IReadOnlyList<Pawn> SmPawnsToMark(MapPawns pawns)
+		{
+			var all = pawns.AllPawnsSpawned;
+			if (smShowMechs) return all;
+			smPawnsNoMechs.Clear();
+			for (int i = 0; i < all.Count; i++)
+				if (!all[i].IsColonyMech) smPawnsNoMechs.Add(all[i]);
+			return smPawnsNoMechs;
+		}
+		static FloatMenu SmLayersMenu(List<FloatMenuOption> options)
+		{
+			string colonists = "SM_TglColonists".Translate().Resolve();
+			int at = options.FindIndex(o => o.Label.Contains(colonists));
+			if (at >= 0 && Find.CurrentMap is { } map)
+			{
+				var counts = (int[])smCountsField.GetValue(null); // 0 colonists (and shown mechs), 3 wildlife, 4 colony animals
+				int mechs = map.mapPawns.SpawnedColonyMechs.Count;
+				if (smShowMechs) // Counts[0] then holds colonists and mechs together: show the colonists alone
+					options[at].Label = options[at].Label.Replace($"({counts[0]})", $"({Math.Max(0, counts[0] - mechs)})");
+				options.Insert(at + 1, SmSubRow($"Mechanoids ({mechs})", smShowMechs, v => smShowMechs = v));
+				options.Insert(at + 2, SmSubRow($"{"SM_ColColonyAnimal".Translate().Resolve()} ({counts[4]})", smShowColonyAnimals, v => smShowColonyAnimals = v));
+				string wildlifeRow = $"{"SM_TglWildlife".Translate().Resolve()} ({counts[3] + counts[4]})";
+				if (options.Find(o => o.Label.Contains(wildlifeRow)) is { } wildlife)
+					wildlife.Label = wildlife.Label.Replace(wildlifeRow, $"{"SM_ColWildlife".Translate().Resolve()} ({counts[3]})");
+			}
+			return new FloatMenu(options);
+		}
+		// A row made by the minimap's own Toggle (flips the flag, writes its settings, refreshes the markers), indented.
+		static FloatMenuOption SmSubRow(string label, bool on, Action<bool> set)
+		{
+			var row = (FloatMenuOption)smToggleCall.Invoke(null, [label, on, set]);
+			row.Label = "    " + row.Label;
+			return row;
+		}
+		static bool SmPredatorNotOurs(bool predator, Pawn pawn) => predator && pawn.Faction != Faction.OfPlayer;
+		static IEnumerable<CodeInstruction> SmGatherWithoutMechs(IEnumerable<CodeInstruction> instructions) =>
+			SmColonyPredatorsAsAnimals(SmSwap(instructions, "pawn list read", code => code.Calls(AccessTools.PropertyGetter(typeof(MapPawns), nameof(MapPawns.AllPawnsSpawned))),
+				new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(SmPawnsToMark)))));
+		// "raceProps.predator" becomes "SmPredatorNotOurs(raceProps.predator, pawn)"; the pawn is loaded the way
+		// GatherCore loads it for its own "pawn.RaceProps" read just before.
+		static IEnumerable<CodeInstruction> SmColonyPredatorsAsAnimals(IEnumerable<CodeInstruction> instructions)
+		{
+			var raceProps = AccessTools.PropertyGetter(typeof(Pawn), nameof(Pawn.RaceProps));
+			var predator = AccessTools.Field(typeof(RaceProperties), nameof(RaceProperties.predator));
+			var showWildlife = AccessTools.Field("SatelliteMinimap.MinimapSettings:showWildlife");
+			CodeInstruction previous = null, loadPawn = null;
+			int patched = 0, wildlifeReads = 0;
+			foreach (var code in instructions)
+			{
+				if (code.Calls(raceProps) && previous != null && previous.IsLdloc()) loadPawn = previous;
+				// the class switch reads showWildlife twice: first for wildlife (class 3), then for colony animals (class 4)
+				if (code.LoadsField(showWildlife) && ++wildlifeReads == 2)
+				{
+					code.opcode = OpCodes.Call;
+					code.operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(SmShowColonyAnimals));
+				}
+				yield return code;
+				if (loadPawn != null && code.LoadsField(predator))
+				{
+					yield return new CodeInstruction(loadPawn.opcode, loadPawn.operand);
+					yield return new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(SmPredatorNotOurs)));
+					patched++;
+				}
+				previous = code;
+			}
+			if (patched != 1)
+				Log.Error($"[Harmony3StrictCompat] Satellite Minimap: expected one predator check after the pawn's RaceProps read, patched {patched}");
+			if (wildlifeReads != 2)
+				Log.Error($"[Harmony3StrictCompat] Satellite Minimap: expected two showWildlife reads in the class switch, found {wildlifeReads}");
+		}
+		static IEnumerable<CodeInstruction> SmRaiseMarkerCap(IEnumerable<CodeInstruction> instructions) =>
+			SmSwap(instructions, "marker cap of 50", code => code.LoadsConstant(50), new CodeInstruction(OpCodes.Ldc_I4, SmMarkerCap));
+		static IEnumerable<CodeInstruction> SmLayersMenuWithMechs(IEnumerable<CodeInstruction> instructions) =>
+			SmSwap(instructions, "FloatMenu construction", code => code.opcode == OpCodes.Newobj && Equals(code.operand, AccessTools.Constructor(typeof(FloatMenu), [typeof(List<FloatMenuOption>)])),
+				new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(SmLayersMenu))));
+		static IEnumerable<CodeInstruction> SmSwap(IEnumerable<CodeInstruction> instructions, string what, Func<CodeInstruction, bool> match, CodeInstruction with)
+		{
+			int swapped = 0;
+			foreach (var code in instructions)
+			{
+				if (match(code))
+				{
+					code.opcode = with.opcode;
+					code.operand = with.operand;
+					swapped++;
+				}
+				yield return code;
+			}
+			if (swapped != 1)
+				Log.Error($"[Harmony3StrictCompat] Satellite Minimap: expected one {what}, replaced {swapped}");
+		}
+
 		// UIR Notifications "days of food" row: FoodReadout.Read re-counts every real second and rebuilds the hover card's
 		// text, so its card restarts each second and can only be read while paused. Re-count every 5 s, and not at all
 		// while the row is hovered (hover seen this frame or the last), so the card holds still until the mouse leaves.
@@ -2009,6 +2139,7 @@ namespace Harmony3StrictCompat
 		static MethodInfo hcGroupBodyWidth; // private static float GroupBodyWidth(Card)
 		static Action<Rect, string, TextAnchor, Color, GameFont> hcThemeLabel; // Theme.Label: theme fade (card appear) and colours
 		static Func<Color> hcTextBright;
+		static Func<Rect, float, Rect?, bool> hcHoverGlow; // Theme.HoverGlow: the row glow StatLine draws under every row
 		static FieldInfo hcLabel, hcValue, hcIcon, hcBar, hcAccent;
 		static bool hcInGroup;
 
@@ -2346,6 +2477,7 @@ namespace Harmony3StrictCompat
 			if (extra <= 0f) return true;
 			bool wrap = Text.WordWrap;
 			Text.WordWrap = true;
+			hcHoverGlow?.Invoke(new Rect(x, y, width, 22f + extra), 0.08f, new Rect(x - 6f, y, width + 12f, 22f + extra)); // StatLine's glow, over the taller row
 			hcThemeLabel(new Rect(x, y, labelWidth, 22f + extra), label, TextAnchor.UpperLeft, labelColor ?? hcTextBright(), GameFont.Small);
 			Text.WordWrap = false;
 			hcThemeLabel(new Rect(x, y, width, 22f), value, TextAnchor.UpperRight, valueColor ?? Color.white, GameFont.Small);
@@ -3560,14 +3692,15 @@ namespace Harmony3StrictCompat
 			["Flourish.Everyday.JobAnimationWorker_Anchored:Evaluate"] = 0x817B489F5395FF01,                // Flourish Everyday 1.7, 2026-10-25
 			["VFETribals.FactionUIUtility_DoWindowContents_Patch:Postfix"] = 0x8824F2B542A8AC6E,             // VFE Tribals 1.6 build, 2026-10-14
 			["UIRethemed.Factions.FactionsTab:Themed"] = 0x69BB80B87A3FDA4F,                               // UI Rethemed 1.7, 2026-11-16 13:03
-			["UIRethemed.Core.CoreWidgets:Button"] = 0x7CC2554961083D7D,                             // UI Rethemed - Core 1.7, 2026-11-19 13:35
-			["UIRethemed.Core.CoreWidgets:Icon"] = 0x616408831ECA96D7,
-			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0x6FB38EFFE15C9961,
+			["UIRethemed.Core.CoreWidgets:Button"] = 0xAC739436CAD6A163,                             // UI Rethemed - Core 1.7, DLL of 2026-11-20 12:28
+			["UIRethemed.Core.CoreWidgets:Icon"] = 0xFC59A1CC4DD75F38,
+			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0x9E70C3AD53BA2956,
 			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0x825B03D63888BFBF,
-			["UIRethemed.Core.HoverCard:LineHeight"] = 0x28C05666382E4489,                        // UI Rethemed - Core 1.7, 2026-11-19 13:35 (moved from Inspector Tabs)
-			["UIRethemed.Core.HoverCard:DrawGroup"] = 0xDE063FC330B29647,
-			["UIRethemed.Core.HoverCard:GroupBodyWidth"] = 0x05CC998B6051888D,
-			["UIRethemed.Core.Theme:StatLine"] = 0x58BB681B045C632E,
+			["UIRethemed.Core.HoverCard:LineHeight"] = 0xE3F33941BC95201E,                        // UI Rethemed - Core 1.7, DLL of 2026-11-20 12:28 (moved from Inspector Tabs 2026-11-19)
+			["UIRethemed.Core.HoverCard:DrawGroup"] = 0xDBBADCECC2A5E87E,
+			["UIRethemed.Core.HoverCard:GroupBodyWidth"] = 0x6552CBF7ADBEB5E8,
+			["UIRethemed.Core.Theme:StatLine"] = 0x062E6C21336BB6AC,
+			["UIRethemed.Core.Theme:HoverGlow"] = 0x2C3FA89C8B075F90,
 			["UIRethemed.InspectorTabs.GearTab:RefreshVacuumGauge"] = 0x4AB9C5B7B56F7A55,                // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-20 09:53
 			["UIRethemed.InspectorTabs.GearTab:SlotLabel"] = 0x8C2BEF3E541B48C8,
 			["UIRethemed.InspectorTabs.GearTab:BuildThingCard"] = 0xBCDD6A558D097EED,                 // gear hover card subtitle, 2026-11-16
@@ -3606,11 +3739,11 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Notifications.NotificationStyles:Resolve"] = 0x37E4D5B9BC27B3D0,
 			["UIRethemed.Notifications.Placement:ColumnX"] = 0xE160D086AD81C948,
 			["UIRethemed.Notifications.Placement:get_Position"] = 0x773B4416EAD9CD6E,
-			["UIRethemed.Core.ThemeMotion:Hover"] = 0x58974EF12091BE19,
+			["UIRethemed.Core.ThemeMotion:Hover"] = 0x00BCD04975A7FE25,
 			["UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler"] = 0x6975299B4CC464C6,
-			["UIRethemed.Core.HoverCard:Region"] = 0x6AC34E3234283881,
-			["UIRethemed.Core.HoverCard:DrawPlaced"] = 0x6B8EA68A57F194C5,
-			["UIRethemed.Core.HoverCard:PlacedSize"] = 0x93CD347C090DB2A8,
+			["UIRethemed.Core.HoverCard:Region"] = 0x6C622FBAB75A5B31,
+			["UIRethemed.Core.HoverCard:DrawPlaced"] = 0x7489DFB9A3B1C99F,
+			["UIRethemed.Core.HoverCard:PlacedSize"] = 0xEE89422D353136D4,
 			["UIRethemed.Notifications.Placement:BesideX"] = 0x47679F286AED5F91,
 			["UIRethemed.Notifications.SectionHeading:Shows"] = 0xFD51782B2B3A5A4A,
 			["UIRethemed.Notifications.SectionHeading:Folded"] = 0xAD16F82687E32083,
@@ -3642,9 +3775,15 @@ namespace Harmony3StrictCompat
 			["UIRethemed.ColonistCard.StatusBar:Take"] = 0x57D442485564A584,                            // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-19 17:22
 			["UIRethemed.Animals.Motion:Key"] = 0xD8B1E64161CEBA55,                                     // UI Rethemed - Animals 1.7, DLL of 2026-11-09
 			["UIRethemed.Animals.Motion:Hover"] = 0xCF658FE8AAEAECFD,
-			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0x5B60F2AB7CA092D5,                  // UI Rethemed - Architect 1.7, 2026-11-16 10:44
-			["PipeSystem.CompResourceTrader:CompInspectStringExtra"] = 0x821340C11C9B505C,           // VEF PipeSystem 1.7, 2026-11-16
+			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0x5ACDBDDD5FF8FB5A,                  // UI Rethemed - Architect 1.7, DLL of 2026-11-20 12:28
+			["PipeSystem.CompResourceTrader:CompInspectStringExtra"] = 0x8799CC4254BA7002,           // VEF PipeSystem 1.7, DLL of 2026-11-20 12:28
 			["Hospitality.JoyGiver_BuyStuff:CanEat"] = 0x304D1E10604FFCD2,                           // Hospitality 1.7
+			["RimWorld.Bill_Production:ShouldDoNow"] = 0x91426C66CA668FA7,                           // game 1.7.5014, 2026-11-20 (bill count cache)
+			["SatelliteMinimap.Feed:GatherCore"] = 0x8DE81F8EF7D9D5CA,                             // Satellite Minimap 1.1.2, DLL of 2026-10-09 (Mechanoids layer row, marker cap)
+			["SatelliteMinimap.Feed:Add"] = 0x7B585F47FD6B42DC,
+			["SatelliteMinimap.MinimapWindow:OpenLayersMenu"] = 0xE47E83E43EE95A27,
+			["SatelliteMinimap.MinimapWindow:Toggle"] = 0x2C37E6475E92163E,
+			["SatelliteMinimap.MinimapSettings:ExposeData"] = 0x75F6660846866D5A,
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an
@@ -4806,6 +4945,97 @@ namespace Harmony3StrictCompat
 					$"SBO now says {fresh?.ThingID ?? "no bed"}. Something changed bed ownership without a watched method; entry dropped. Please report what just happened.");
 			return false;
 		}
+	}
+
+	// ---- "Do until you have X" bills: count the products once per bill every 600 ticks -----------------------
+	// Personal tweak, not a fix. Every time a pawn looks for work at a bench, Bill_Production.ShouldDoNow counts the
+	// bill's products: every item of that def on the map for armor and weapons, and Better Workbench Management's
+	// postfix adds every colonist's gear ("count equipped"), caravans ("count away") and its extra product filter on
+	// top. Circinus 2026-11-20, 29 colonists: 0.45 counts a tick, 87 us each in BWM's postfix alone, 2.7% of frame
+	// with Hauler's Dream's postfix and Compositable Loadouts' ShouldDoNow prefix. The answer only matters when it
+	// crosses the bill's target, which is rare.
+	// The count call inside ShouldDoNow goes through a per-bill cache: one real count (vanilla plus every mod's
+	// patches, whatever they are), reused for 600 ticks. Finishing an iteration of any bill drops the entries for
+	// that product, so a bill sees a freshly made item at once and nothing is overcrafted because of the cache.
+	// What is late by up to 600 ticks: a bill restarting after its product was destroyed, sold, or taken off the
+	// map, and a change of the bill's own count options. Bills that count through BWM's extra product filter can
+	// make one item too many when a different bill made the counted item. The bill row ("3/5") and the unpause
+	// check do not go through ShouldDoNow and stay live. A one-time line reports hits/misses.
+	// Applied from the mod constructor like the other game-method fixes, not from a static constructor: read at
+	// [StaticConstructorOnStartup] time (after other mods patched ShouldDoNow) the fingerprint came out as
+	// 0xACA7CD6390EDB9E3 instead of the DLL's 0x91426C66CA668FA7 (2026-11-20; why is not established).
+	static class BillCountCache
+	{
+		const int MaxAgeTicks = 600;
+
+		struct Entry
+		{
+			public int count, tick;
+			public ThingDef product;
+		}
+
+		static readonly System.Collections.Concurrent.ConcurrentDictionary<Bill_Production, Entry> cache = new();
+		static int hits, misses;
+		static bool reported;
+
+		internal static void Init(Harmony harmony)
+		{
+			var shouldDoNow = Harmony3StrictCompatMod.Target("RimWorld.Bill_Production:ShouldDoNow");
+			if (shouldDoNow == null) return;
+			harmony.Patch(shouldDoNow, transpiler: new HarmonyMethod(typeof(BillCountCache), nameof(UseCache)));
+			harmony.Patch(AccessTools.Method(typeof(Bill_Production), nameof(Bill_Production.Notify_IterationCompleted)),
+				postfix: new HarmonyMethod(typeof(BillCountCache), nameof(ProductMade)));
+			harmony.Patch(AccessTools.Method(typeof(MemoryUtility), nameof(MemoryUtility.ClearAllMapsAndWorld)),
+				postfix: new HarmonyMethod(typeof(BillCountCache), nameof(Reset)));
+		}
+
+		static IEnumerable<CodeInstruction> UseCache(IEnumerable<CodeInstruction> instructions)
+		{
+			var codes = instructions.ToList();
+			var live = AccessTools.Method(typeof(RecipeWorkerCounter), nameof(RecipeWorkerCounter.CountProducts));
+			var calls = codes.Where(c => c.Calls(live)).ToList();
+			if (calls.Count != 1)
+			{
+				Log.Error($"[Harmony3StrictCompat] Bill_Production.ShouldDoNow counts products {calls.Count} times instead of once, bill count cache not applied");
+				return codes;
+			}
+			calls[0].opcode = OpCodes.Call;
+			calls[0].operand = AccessTools.Method(typeof(BillCountCache), nameof(Count));
+			return codes;
+		}
+
+		// Same stack shape as the call it replaces: (counter, bill) -> count.
+		static int Count(RecipeWorkerCounter counter, Bill_Production bill)
+		{
+			int now = Find.TickManager.TicksGame;
+			if (cache.TryGetValue(bill, out var e) && (uint)(now - e.tick) < MaxAgeTicks)
+			{
+				hits++;
+				return e.count;
+			}
+			misses++;
+			int count = counter.CountProducts(bill);
+			if (cache.Count > 4096) cache.Clear();
+			cache[bill] = new Entry { count = count, tick = now, product = ProductOf(bill) };
+			if (!reported && hits + misses >= 5000)
+			{
+				reported = true;
+				Log.Message($"[Harmony3StrictCompat] Bill count cache: {hits} hits, {misses} real counts, {cache.Count} bills");
+			}
+			return count;
+		}
+
+		static ThingDef ProductOf(Bill_Production bill) => bill.recipe?.products is { Count: > 0 } p ? p[0].thingDef : null;
+
+		static void ProductMade(Bill_Production __instance)
+		{
+			var product = ProductOf(__instance);
+			foreach (var kv in cache)
+				if (product == null || kv.Value.product == product)
+					cache.TryRemove(kv.Key, out _);
+		}
+
+		static void Reset() => cache.Clear();
 	}
 
 	// ---- Common Sense: "Getting random element from empty collection" on uncraftable food ---------------------

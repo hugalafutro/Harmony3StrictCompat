@@ -792,6 +792,7 @@ namespace Harmony3StrictCompat
 			UirArchitectTwoLineNames.Init(harmony);
 			AdaptedTextOncePerSecond.Init(harmony);
 			AcNoBirthInSleeveCasket.Init(harmony);
+			MssHoloNoBodyNeeds.Init(harmony);
 		}
 
 		// ---- UI Rethemed - Architect + Vanilla Plants Expanded: Tilled soil among the orders ----
@@ -3793,6 +3794,10 @@ namespace Harmony3StrictCompat
 			["Verse.ReachabilityCache:ClearForHostile"] = 0x5BED8EFCC91F582A,
 			["Verse.TickManager:TickManagerUpdate"] = 0xBD63B2C8DA3F0F13,
 			["RimWorld.PregnancyUtility:IsUsableBedFor"] = 0xB20AF11F5CB7A925,                         // game 1.7.5014, 2026-11-20 (no birth in an Altered Carbon sleeve casket)
+			["RimWorld.CompNeuralSupercharger:CanAutoUse"] = 0x8735971C2DE0F655,                       // game 1.7.5014, 2026-11-20 (MSS hologram: no supercharger, no body-need thoughts)
+			["RimWorld.ThoughtWorker_NeedNeuralSupercharge:ShouldHaveThought"] = 0xD1F51B96044129D0,
+			["RimWorld.ThoughtWorker_Precept_HasNoProsthetic:ShouldHaveThought"] = 0x0AF51DBC40387586,
+			["RimWorld.ThoughtWorker_Precept_HasNoProsthetic_Social:ShouldHaveThought"] = 0xC00806208BA0013F,
 			["RimWorld.StunHandler:Notify_DamageApplied"] = 0xC6A267835D6DFF3C,                        // game 1.7.5014, 2026-11-20 ("Adapted" text once a second)
 			["RimWorld.QuestPart_SubquestGenerator_Gravcores:QuestPartTick"] = 0x57A1138EAA085FF4,     // game 1.7.5014, 2026-11-20 (cheap tests first)
 			["RimWorld.QuestPart_SubquestGenerator_Gravcores:get_CanGenerateSubquest"] = 0xD22781A31626AD88,
@@ -5588,6 +5593,48 @@ namespace Harmony3StrictCompat
 		static void NotACasket(Building_Bed bed, ref bool __result)
 		{
 			if (__result && casket.IsInstanceOfType(bed)) __result = false;
+		}
+	}
+
+	// ---- MSS Flavour Pack: the Pondering Orb's hologram and things only a body can do --------------------------
+	// The orb's hologram is a player-faction pawn with the colony's ideoligion. With the transhumanist meme it
+	// gets "wants neural supercharge" and "wants a body modification" like any believer, but MSS filters the
+	// hediffs a hologram can receive and no operation can be done on it. So it ran to the neural superchargers
+	// over and over, emptied each charge for nothing (the supercharge hediff never sticks) and kept both mood
+	// penalties for good. A hologram now never qualifies for supercharger auto-use and never gets those two
+	// thoughts, and other believers do not hold its lack of a prosthetic against it. MSSFPHoloUtil.IsHolo is the mod's own test (a pawn with a live holo projector).
+	static class MssHoloNoBodyNeeds
+	{
+		static Func<Pawn, bool> isHolo;
+
+		internal static void Init(Harmony harmony)
+		{
+			var holo = AccessTools.Method("MSSFP.Holo.MSSFPHoloUtil:IsHolo");
+			if (holo == null) return;
+			isHolo = (Func<Pawn, bool>)holo.CreateDelegate(typeof(Func<Pawn, bool>));
+			if (Harmony3StrictCompatMod.Target("RimWorld.CompNeuralSupercharger:CanAutoUse") is { } canUse)
+				harmony.Patch(canUse, postfix: new HarmonyMethod(typeof(MssHoloNoBodyNeeds), nameof(NotForHolo)));
+			foreach (string name in new[] { "RimWorld.ThoughtWorker_NeedNeuralSupercharge:ShouldHaveThought", "RimWorld.ThoughtWorker_Precept_HasNoProsthetic:ShouldHaveThought" })
+				if (Harmony3StrictCompatMod.Target(name) is { } thought)
+					harmony.Patch(thought, postfix: new HarmonyMethod(typeof(MssHoloNoBodyNeeds), nameof(NoThoughtForHolo)));
+			if (Harmony3StrictCompatMod.Target("RimWorld.ThoughtWorker_Precept_HasNoProsthetic_Social:ShouldHaveThought") is { } social)
+				harmony.Patch(social, postfix: new HarmonyMethod(typeof(MssHoloNoBodyNeeds), nameof(NoOpinionOfHolo)));
+		}
+
+		static void NotForHolo(Pawn pawn, ref bool __result)
+		{
+			if (__result && isHolo(pawn)) __result = false;
+		}
+
+		static void NoThoughtForHolo(Pawn p, ref ThoughtState __result)
+		{
+			if (__result.Active && isHolo(p)) __result = ThoughtState.Inactive;
+		}
+
+		// The social version: believers think less of anyone without a prosthetic. Not of a hologram.
+		static void NoOpinionOfHolo(Pawn otherPawn, ref ThoughtState __result)
+		{
+			if (__result.Active && isHolo(otherPawn)) __result = ThoughtState.Inactive;
 		}
 	}
 

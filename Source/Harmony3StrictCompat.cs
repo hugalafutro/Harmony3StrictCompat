@@ -3568,11 +3568,11 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Core.HoverCard:DrawGroup"] = 0xDE063FC330B29647,
 			["UIRethemed.Core.HoverCard:GroupBodyWidth"] = 0x05CC998B6051888D,
 			["UIRethemed.Core.Theme:StatLine"] = 0x58BB681B045C632E,
-			["UIRethemed.InspectorTabs.GearTab:RefreshVacuumGauge"] = 0xE85C8F9202DD35BA,                // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-19 17:22
-			["UIRethemed.InspectorTabs.GearTab:SlotLabel"] = 0x4F3E3C894031550E,
-			["UIRethemed.InspectorTabs.GearTab:BuildThingCard"] = 0xCA8A10E2272C4002,                 // gear hover card subtitle, 2026-11-16
-			["UIRethemed.InspectorTabs.GearTab:VanillaSlotFor"] = 0x245B00E0BA52EFE3,
-			["UIRethemed.InspectorTabs.GearTab:DrawStatsPanel"] = 0x4D76594C36186138,
+			["UIRethemed.InspectorTabs.GearTab:RefreshVacuumGauge"] = 0x4AB9C5B7B56F7A55,                // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-20 09:53
+			["UIRethemed.InspectorTabs.GearTab:SlotLabel"] = 0x8C2BEF3E541B48C8,
+			["UIRethemed.InspectorTabs.GearTab:BuildThingCard"] = 0xBCDD6A558D097EED,                 // gear hover card subtitle, 2026-11-16
+			["UIRethemed.InspectorTabs.GearTab:VanillaSlotFor"] = 0xFE54E731A6CEA3A9,
+			["UIRethemed.InspectorTabs.GearTab:DrawStatsPanel"] = 0x1B25B9FD83407CA1,
 			["SmartMedicine.Dialog_StockUp:<DoWindowContents>b__10_0"] = 0x287F2659618CDD5B,        // Smart Medicine - Continued 1.7, 2026-11-08 (DLL of 2026-11-02)
 			["Verse.AI.HaulAIUtility:PawnCanAutomaticallyHaul"] = 0x75A234FF82E00239,                            // game 1.7.5011, 2026-11-16
 			["RimWorld.JobGiver_DropUnusedInventory:Drop"] = 0x80ADDA655AAFAE64,                                  // game 1.7.5000, 2026-11-09
@@ -3593,7 +3593,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.MainBar.BarControls:Toggle"] = 0x8B359CF8796161A3,
 			["UIRethemed.MainBar.BarControls:SetSpeed"] = 0x71E7452A5F9EBDD4,
 			["AdaptiveMealBill.AdaptiveRecipeSelection:RecoverRecipe"] = 0x62FA21FEB38C0B91,             // AdaptiveMealBill 1.7, DLL of 2026-11-08
-			["UIRethemed.InspectorTabs.CareSwitchDef:For"] = 0x218940CA4A56EAC9,                         // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-19 14:52
+			["UIRethemed.InspectorTabs.CareSwitchDef:For"] = 0x996220B400AC74A7,                         // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-20 09:53
 			["AutoExtractGenes.Utils:GetAutoExtractGenesComponent"] = 0x41DC32D5B21682AC,                // AutoExtractGenes 1.7, DLL of 2026-11-08
 			["ColonyManagerRedux.Manager:FinalizeInit"] = 0xF523FD8F4AA6A9E5,                           // Colony Manager Redux 1.7, DLL of 2026-11-16 10:44
 			["VFEF.CompScaresAnimals:ScareAnimals"] = 0xA4407F9189E92650,                               // VFE Farming (1.6 DLL), 2026-11-13

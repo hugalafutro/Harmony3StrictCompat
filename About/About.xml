@@ -141,6 +141,7 @@
 - Vanilla Odyssey (personal tweak): the gravcore subquest generator no longer walks every quest on every tick; same odds, cheap tests first.
 - TD Enhancement Pack: the "urgent refill" work scan is skipped while no storage is marked for urgent refill (it searched storage for every haulable item on the map regardless).
 - TD Enhancement Pack + Altered Carbon 2: the "Empty Workbench" alert skips benches no recipe uses (the neural editor, run from its gizmos).
+- Altered Carbon 2: the childbirth ritual no longer picks a sleeve casket as the bed for the mother.
 - (tooling): the previous run's Player.log and Hauler's Dream debug log are copied to Logs/Archive at startup (newest 30 kept).
 - (tooling, temporary): a job that restarts ten times a tick logs what it points at (job-loop probe).</description>
 </ModMetaData>

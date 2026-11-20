@@ -791,6 +791,7 @@ namespace Harmony3StrictCompat
 			GravcoreSubquestTick.Init(harmony);
 			UirArchitectTwoLineNames.Init(harmony);
 			AdaptedTextOncePerSecond.Init(harmony);
+			AcNoBirthInSleeveCasket.Init(harmony);
 		}
 
 		// ---- UI Rethemed - Architect + Vanilla Plants Expanded: Tilled soil among the orders ----
@@ -3612,8 +3613,8 @@ namespace Harmony3StrictCompat
 			["GiddyUp.MountUtility:Dismount"] = 0x4D071C5677D8DCC2,                                                // Giddy-Up 2 Continued 1.7, 2026-11-09 (Dismount still parks lord animals)
 			["PositiveConnectionsNmSpc.RoomRoleWorker_Den:CountDoors"] = 0x3CD5612235092B15,                                    // Positive Connections 1.7, 2026-11-15
 			["GojisMiscGenes.InteractionWorker_Interacted_Patch:Postfix"] = 0x0DC1938A4ABAED83,                       // Goji's Misc Genes 1.7, 2026-11-15
-			["Hospitality.Utilities.SpawnGroupUtility:GenerateNewGearFor"] = 0x9968B91075E1A216,                  // Hospitality 1.7, 2026-11-02
-			["Hospitality.Utilities.ItemUtility:PocketHeadgear"] = 0x5500E1A13797F143,                       // Hospitality 1.7, 2026-11-02
+			["Hospitality.Utilities.SpawnGroupUtility:GenerateNewGearFor"] = 0xC7A47125AA159971,                  // Hospitality 1.7, DLL of 2026-11-20 21:09 (rebuild, body unchanged)
+			["Hospitality.Utilities.ItemUtility:PocketHeadgear"] = 0xEC7B03B8570A7845,                       // Hospitality 1.7, DLL of 2026-11-20 21:09 (rebuild, body unchanged)
 			["HospitalityCasino.JobGiver_PlaySlotMachines:TryGiveJob"] = 0x886CDC4608E3C02D,                 // Casino 1.7, 2026-11-05
 			["HospitalityCasino.VendingMachineJobHelper:InsertCoin"] = 0xDD3ACDA377763174,                   // Casino 1.7, 2026-11-06
 			["HospitalityCasino.CompVendingMachine:CompInspectStringExtra"] = 0x4C16897C23044EC3,            // Casino 1.7, 2026-11-06
@@ -3784,12 +3785,14 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Architect.DetailsPanel:Header"] = 0xE960A861D26E369E,                         // UI Rethemed - Architect 1.7, DLL of 2026-11-20 12:28 (names on two lines)
 			["UIRethemed.Architect.DesignatorGrid:get_CardHeight"] = 0xB8237D3366CA6C97,
 			["UIRethemed.Architect.DesignatorGrid:LabelRect"] = 0xEA794A59EE25933A,
+			["UIRethemed.Architect.DesignatorGrid:Card"] = 0xD4150E0907DE465B,
 			["PipeSystem.CompResourceTrader:CompInspectStringExtra"] = 0x8799CC4254BA7002,           // VEF PipeSystem 1.7, DLL of 2026-11-20 12:28
 			["Hospitality.JoyGiver_BuyStuff:CanEat"] = 0x304D1E10604FFCD2,                           // Hospitality 1.7
 			["RimWorld.Bill_Production:ShouldDoNow"] = 0x91426C66CA668FA7,                           // game 1.7.5014, 2026-11-20 (bill count cache)
 			["Verse.GenTypes:IsSealedWithCache"] = 0x809310C4C09A3747,                               // game 1.7.5014, 2026-11-20 (tick hot paths)
 			["Verse.ReachabilityCache:ClearForHostile"] = 0x5BED8EFCC91F582A,
 			["Verse.TickManager:TickManagerUpdate"] = 0xBD63B2C8DA3F0F13,
+			["RimWorld.PregnancyUtility:IsUsableBedFor"] = 0xB20AF11F5CB7A925,                         // game 1.7.5014, 2026-11-20 (no birth in an Altered Carbon sleeve casket)
 			["RimWorld.StunHandler:Notify_DamageApplied"] = 0xC6A267835D6DFF3C,                        // game 1.7.5014, 2026-11-20 ("Adapted" text once a second)
 			["RimWorld.QuestPart_SubquestGenerator_Gravcores:QuestPartTick"] = 0x57A1138EAA085FF4,     // game 1.7.5014, 2026-11-20 (cheap tests first)
 			["RimWorld.QuestPart_SubquestGenerator_Gravcores:get_CanGenerateSubquest"] = 0xD22781A31626AD88,
@@ -5385,6 +5388,9 @@ namespace Harmony3StrictCompat
 	//    the category row and the chips under it move down by the same amount, and the name is drawn wrapped.
 	//    Whether it fits is measured where the name is drawn and applied from the next frame on. The strip
 	//    layout (details across the bottom), whose header height is not its own, keeps the single line.
+	// 3. With two lines available, a single word wider than the card ("Matterweaver") wrapped in the middle of
+	//    the word ("Matterweave" / "r"). DesignatorGrid.Card now gets its label from CardLabel: a word that does
+	//    not fit the card's width is cut with "..." on its own, then the whole label is cut to the two lines.
 	static class UirArchitectTwoLineNames
 	{
 		static Action<Rect, string, Color, GameFont, TextAnchor> oneLine;                 // CoreWidgets.Line
@@ -5398,6 +5404,8 @@ namespace Harmony3StrictCompat
 			var labelRect = Harmony3StrictCompatMod.Target("UIRethemed.Architect.DesignatorGrid:LabelRect"); // its 31 px is assumed below
 			if (cardHeight != null && labelRect != null)
 				harmony.Patch(cardHeight, transpiler: new HarmonyMethod(typeof(UirArchitectTwoLineNames), nameof(CardLabelRoom)));
+			if (cardHeight != null && labelRect != null && Harmony3StrictCompatMod.Target("UIRethemed.Architect.DesignatorGrid:Card") is { } card)
+				harmony.Patch(card, transpiler: new HarmonyMethod(typeof(UirArchitectTwoLineNames), nameof(CardLabelWholeWords)));
 			var header = Harmony3StrictCompatMod.Target("UIRethemed.Architect.DetailsPanel:Header");
 			var line = AccessTools.Method("UIRethemed.Core.CoreWidgets:Line", [typeof(Rect), typeof(string), typeof(Color), typeof(GameFont), typeof(TextAnchor)]);
 			var label = AccessTools.Method("UIRethemed.Core.Theme:Label", [typeof(Rect), typeof(string), typeof(TextAnchor), typeof(Color), typeof(GameFont)]);
@@ -5422,6 +5430,37 @@ namespace Harmony3StrictCompat
 		}
 
 		static float CardLabelHeight() => 30f + Mathf.Max(0f, Mathf.Ceil(2f * Text.LineHeightOf(GameFont.Tiny) - 31f));
+
+		static IEnumerable<CodeInstruction> CardLabelWholeWords(IEnumerable<CodeInstruction> instructions)
+		{
+			var codes = instructions.ToList();
+			var truncate = AccessTools.Method(typeof(GenText), nameof(GenText.TruncateHeight), [typeof(string), typeof(float), typeof(float), typeof(Dictionary<string, string>)]);
+			var calls = codes.Where(c => c.Calls(truncate)).ToList();
+			if (calls.Count != 1)
+			{
+				Log.Error($"[Harmony3StrictCompat] UIR Architect DesignatorGrid.Card cuts {calls.Count} labels instead of one, long words may still split");
+				return codes;
+			}
+			calls[0].operand = AccessTools.Method(typeof(UirArchitectTwoLineNames), nameof(CardLabel));
+			return codes;
+		}
+
+		// Same arguments and cache use as GenText.TruncateHeight; the caller has set the tiny font.
+		static string CardLabel(string label, float width, float height, Dictionary<string, string> cache)
+		{
+			if (cache != null && cache.TryGetValue(label, out string cut)) return cut;
+			string whole = label;
+			if (Text.CalcSize(label).x > width)
+			{
+				var words = label.Split(' ');
+				for (int i = 0; i < words.Length; i++)
+					if (Text.CalcSize(words[i]).x > width) words[i] = words[i].Truncate(width);
+				whole = string.Join(" ", words);
+			}
+			cut = whole.TruncateHeight(width, height);
+			if (cache != null) cache[label] = cut;
+			return cut;
+		}
 
 		static IEnumerable<CodeInstruction> HeaderTitleRoom(IEnumerable<CodeInstruction> instructions)
 		{
@@ -5524,6 +5563,31 @@ namespace Harmony3StrictCompat
 			if (lastShown.Count > 512) lastShown.Clear();
 			lastShown[cell] = now;
 			MoteMaker.ThrowText(loc, map, text, color, timeBeforeStartFadeout);
+		}
+	}
+
+	// ---- Altered Carbon 2: childbirth is not held in a sleeve casket --------------------------------------------
+	// The sleeve casket is a Building_Bed (a medical one, with the best tend bonus). Altered Carbon keeps it out of
+	// ordinary bed searches by taking its def off RestUtility's sorted bed lists, but the childbirth ritual does
+	// not use those lists: its targets, its "target still allowed" check and the mother role all ask
+	// PregnancyUtility.IsUsableBedFor, which only runs RestUtility.IsValidBedFor, and that accepts the casket.
+	// Started from the mother's own gizmo the ritual therefore picked a casket, and the attendant carried her
+	// there (seen 2026-11-20, with "Could not reserve ... for job DeliverToBed ... AC_SleeveCasket" when a
+	// doctor was rescuing her to a hospital bed at the same time). A sleeve casket is no bed for a birth.
+	static class AcNoBirthInSleeveCasket
+	{
+		static Type casket;
+
+		internal static void Init(Harmony harmony)
+		{
+			casket = AccessTools.TypeByName("AlteredCarbon.Building_SleeveCasket");
+			if (casket != null && Harmony3StrictCompatMod.Target("RimWorld.PregnancyUtility:IsUsableBedFor") is { } usable)
+				harmony.Patch(usable, postfix: new HarmonyMethod(typeof(AcNoBirthInSleeveCasket), nameof(NotACasket)));
+		}
+
+		static void NotACasket(Building_Bed bed, ref bool __result)
+		{
+			if (__result && casket.IsInstanceOfType(bed)) __result = false;
 		}
 	}
 

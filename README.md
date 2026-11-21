@@ -780,7 +780,7 @@ Build: `Tools/build.ps1` (compiles `Source/*.cs` against the game's DLLs into `1
 | 599 | [SQUISHY Ranged](https://steamcommunity.com/sharedfiles/filedetails/?id=3833016652) | `local.gunrecoil` |
 | 600 | [SQUISHY Melee](https://steamcommunity.com/sharedfiles/filedetails/?id=3839642536) | `local.gunrecoil.melee` |
 | 601 | [Overlord Warcasket](https://steamcommunity.com/sharedfiles/filedetails/?id=3841078351) | `shunter.overlordwarcasket` |
-| 602 | [Endless Horizon](https://steamcommunity.com/sharedfiles/filedetails/?id=3842486043) | `jongsh.endlesshorizon` |
+| 602 | [Infestations Spawn in Darkness (Continued)](https://steamcommunity.com/sharedfiles/filedetails/?id=3551839891) | `koth.infestationsspawnindarkness` |
 | 603 | [Hospitality + Ideology Patch](https://steamcommunity.com/sharedfiles/filedetails/?id=3789536584) | `fumblesneeze.guestbedgizmo` |
 | 604 | [VV - New Harvest: Compatibility Patches](https://steamcommunity.com/sharedfiles/filedetails/?id=3570411438) | `octodecoy.vvnewharvest.compatpatches` |
 | 605 | [[WYD] Better Campsites](https://steamcommunity.com/sharedfiles/filedetails/?id=3546818262) | `wyr3d.bettercampsites` |

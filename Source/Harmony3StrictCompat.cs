@@ -389,6 +389,17 @@ namespace Harmony3StrictCompat
 				harmony.Patch(raidInfo, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FriendlyRaidDressedForCold)));
 			// Smarter Visitors' leave dialog gets Event Image Popup's visitor picture; both mods fingerprinted.
 			var eipAdd = Target("EventImagePopup.Patch_WindowStackAdd:Prefix");
+			if (Target("StylishDialogs.CollageLayout:Decoration") != null && Target("StylishDialogs.DialogCollagePatch:Get") is { } sdGet)
+			{
+				sdGetDialog = sdGet;
+				sdPortrait = AccessTools.Property(AccessTools.TypeByName("StylishDialogs.CollageDialog"), "Portrait");
+				sdArt = AccessTools.Property(AccessTools.TypeByName("StylishDialogs.CollagePortrait"), "Art");
+				if (sdPortrait != null && sdArt != null)
+					harmony.Patch(AccessTools.Method(typeof(Window), "SetInitialSizeAndPosition"),
+						postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SdCenterPanel)));
+				else
+					Log.Error("[Harmony3StrictCompat] Stylish Dialogs CollageDialog.Portrait / CollagePortrait.Art changed: dialog panel not centred");
+			}
 			var svLeave = svPrefix; // fingerprinted above, before its own patch (a second look after patching hashes differently)
 			if (eipAdd != null && svLeave != null)
 			{
@@ -462,6 +473,9 @@ namespace Harmony3StrictCompat
 			var uirStatsPanel = Target("UIRethemed.InspectorTabs.GearTab:DrawStatsPanel");
 			if (uirStatsPanel != null)
 				harmony.Patch(uirStatsPanel, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirStatsPanelOrder)));
+			foreach (var m in new[] { "Contents", "Row" })
+				if (Target("UIRethemed.InspectorTabs.GearCompareWindow:" + m) is { } uirCompare)
+					harmony.Patch(uirCompare, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCompareSideColors)));
 			var uirSlotLabel = Target("UIRethemed.InspectorTabs.GearTab:SlotLabel");
 			if (uirSlotLabel != null)
 				harmony.Patch(uirSlotLabel, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirShortSlotLabel)));
@@ -2172,6 +2186,42 @@ namespace Harmony3StrictCompat
 		}
 		static FieldInfo uirVacuumGauge, uirVacuumLabelWidth, uirGaugeLabel;
 
+		// Personal tweak: the Compare gear window marks its two sides with the theme's blue (equipped) and yellow
+		// (comparing): bars, slot frames, the "Equipped · Legendary" subtitle and the values. That blue is exactly UIR's
+		// Excellent quality colour and the yellow is close to Legendary, so "Equipped · Legendary" reads as an Excellent
+		// item and the other way round. The sides get teal and pink, hues no quality uses (red, brown, green, blue,
+		// purple, orange). Swaps the HeldColor/OtherColor and Theme.TextBlue/TextYellow reads in Contents and Row.
+		static readonly Color UirCompareHeld = new(0.21f, 0.77f, 0.75f), UirCompareOther = new(0.85f, 0.29f, 0.57f);
+		static readonly Color UirCompareHeldText = new(0.60f, 0.91f, 0.89f), UirCompareOtherText = new(0.95f, 0.63f, 0.78f);
+		static Color UirCompareHeldColor() => UirCompareHeld;
+		static Color UirCompareOtherColor() => UirCompareOther;
+		static Color UirCompareHeldTextColor() => UirCompareHeldText;
+		static Color UirCompareOtherTextColor() => UirCompareOtherText;
+
+		static IEnumerable<CodeInstruction> UirCompareSideColors(IEnumerable<CodeInstruction> instructions)
+		{
+			var swap = new Dictionary<string, string>
+			{
+				["get_HeldColor"] = nameof(UirCompareHeldColor),
+				["get_OtherColor"] = nameof(UirCompareOtherColor),
+				["get_TextBlue"] = nameof(UirCompareHeldTextColor),
+				["get_TextYellow"] = nameof(UirCompareOtherTextColor),
+			};
+			int swapped = 0;
+			foreach (var c in instructions)
+			{
+				if (c.opcode == OpCodes.Call && c.operand is MethodInfo m && swap.TryGetValue(m.Name, out var to)
+					&& (m.DeclaringType.Name == "GearCompareWindow" || m.DeclaringType.FullName == "UIRethemed.Core.Theme"))
+				{
+					c.operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), to);
+					swapped++;
+				}
+				yield return c;
+			}
+			if (swapped == 0)
+				Log.Error("[Harmony3StrictCompat] UI Rethemed GearCompareWindow shape changed, compare side colours not applied");
+		}
+
 		// Personal tweak: the Gear tab overview draws its cards as loadout, mass, stock-up, comfy temperature, combat.
 		// Wanted: mass, combat, temperature, stock-up. The stock-up loop and the temperature card are inline, so the
 		// `DrawGaugeCard(ref y, width)` call (ldloca y; ldloc width; call) is cut from the end and dropped in front of the
@@ -2758,6 +2808,26 @@ namespace Harmony3StrictCompat
 				check = true;
 			}
 			return worn > 0;
+		}
+
+		// ---- Stylish Dialogs: centre the panel, not the panel plus the storyteller --------------------------------
+		// Personal tweak. Stylish Dialogs draws letters and node-tree dialogs as one window: the storyteller portrait
+		// on the left, the text panel from x = portrait width - 28 to 12 px short of the right edge
+		// (CollageLayout.Decoration, portrait width min(430, 0.42 * width)). The game centres that whole window, so the
+		// panel sits about 195 px right of the screen centre. Shift the window left by half the difference between
+		// the panel's left and right gaps; the portrait then hangs off the left of a centred panel. Only when the
+		// dialog has a portrait (no portrait: the panel already fills the window).
+		static MethodInfo sdGetDialog;
+		static PropertyInfo sdPortrait, sdArt;
+
+		static void SdCenterPanel(Window __instance)
+		{
+			var type = __instance.GetType();
+			if (type != typeof(Dialog_NodeTree) && type != typeof(Dialog_NodeTreeWithFactionInfo)) return;
+			var dialog = sdGetDialog.Invoke(null, [__instance]);
+			if (sdArt.GetValue(sdPortrait.GetValue(dialog)) == null) return;
+			float shift = Mathf.Round((Math.Min(430f, __instance.windowRect.width * 0.42f) - 28f - 12f) / 2f);
+			__instance.windowRect.x = Math.Max(0f, __instance.windowRect.x - shift);
 		}
 
 		// ---- Smarter Visitors x Event Image Popup: "visitors are about to leave" has no picture --------------------
@@ -3577,6 +3647,8 @@ namespace Harmony3StrictCompat
 			["LevelUp.Patcher:DirtyAptitudesPostfix"] = 0xE6A4CB86C9A72804,                                   // Level Up! 1.6 DLL, 2026-11-17 (no announcements for unspawned pawns)
 			["LevelUp.Patcher:LearnPostfix"] = 0x425B4856BEAB93EA,
 			["Verse.HediffComp_MessageBase:Message"] = 0x4DC3B7073B69E6C6,                                     // game 1.7.5011, 2026-11-18 (no post without message text)
+			["StylishDialogs.CollageLayout:Decoration"] = 0xDAE1569EF4A2CD37,                              // Stylish Dialogs 1.7, 2026-11-21 (centre the panel)
+			["StylishDialogs.DialogCollagePatch:Get"] = 0xD912B11A385DBBC4,
 			["RimWorld.PlaceWorker_MonumentMarker:AllowsPlacing"] = 0x615326571B614842,                        // game 1.7.5011, 2026-11-18 (VE pipes count as conduits)
 			["RimWorld.MonumentMarker:get_FirstDisallowedBuilding"] = 0x56B58DC4E8C9010E,
 			["Rachek128.RitualAttenuation.RitualExtendedDataRef:get_Comp"] = 0x357FBBDFAE580E43,               // Ritual Size Attenuation 1.6 DLL, 2026-11-16
@@ -3713,6 +3785,8 @@ namespace Harmony3StrictCompat
 			["UIRethemed.InspectorTabs.GearTab:BuildThingCard"] = 0xBCDD6A558D097EED,                 // gear hover card subtitle, 2026-11-16
 			["UIRethemed.InspectorTabs.GearTab:VanillaSlotFor"] = 0xFE54E731A6CEA3A9,
 			["UIRethemed.InspectorTabs.GearTab:DrawStatsPanel"] = 0x1B25B9FD83407CA1,
+			["UIRethemed.InspectorTabs.GearCompareWindow:Contents"] = 0x78A1E911BFE8830D,             // compare side colours, 2026-11-20
+			["UIRethemed.InspectorTabs.GearCompareWindow:Row"] = 0xF22B86E17E8E0078,
 			["SmartMedicine.Dialog_StockUp:<DoWindowContents>b__10_0"] = 0x287F2659618CDD5B,        // Smart Medicine - Continued 1.7, 2026-11-08 (DLL of 2026-11-02)
 			["Verse.AI.HaulAIUtility:PawnCanAutomaticallyHaul"] = 0x75A234FF82E00239,                            // game 1.7.5011, 2026-11-16
 			["RimWorld.JobGiver_DropUnusedInventory:Drop"] = 0x80ADDA655AAFAE64,                                  // game 1.7.5000, 2026-11-09

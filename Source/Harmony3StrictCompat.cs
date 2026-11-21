@@ -400,6 +400,14 @@ namespace Harmony3StrictCompat
 				else
 					Log.Error("[Harmony3StrictCompat] Stylish Dialogs CollageDialog.Portrait / CollagePortrait.Art changed: dialog panel not centred");
 			}
+			if (Target("VFEPirates.JobDriver_DoWelding:CollectIngredientsToils") is { } weldCollect
+				&& Target("Shelf.HarmonyPatches:JumpIfTargetInisdeBillGiver") is { } shelfHook)
+			{
+				Fingerprint("VFEPirates.JobDriver_DoWelding:CollectIngredientsToils/MoveNext", AccessTools.EnumeratorMoveNext(weldCollect));
+				shelfPickupHook = (Action<JobDriver_DoBill, Toil, Toil, TargetIndex, TargetIndex>)shelfHook.CreateDelegate(
+					typeof(Action<JobDriver_DoBill, Toil, Toil, TargetIndex, TargetIndex>));
+				harmony.Patch(weldCollect, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(WeldShelfPickup)));
+			}
 			var svLeave = svPrefix; // fingerprinted above, before its own patch (a second look after patching hashes differently)
 			if (eipAdd != null && svLeave != null)
 			{
@@ -2810,6 +2818,33 @@ namespace Harmony3StrictCompat
 			return worn > 0;
 		}
 
+		// ---- VFE Pirates warcasket foundry x Shelf Stack Logistics: welding ingredients ignore the pickup point -------
+		// Shelf Stack Logistics moves a bill ingredient from a depot tile to the pickup point nearest the bench by
+		// wrapping the vanilla JobDriver_DoBill toil that runs right after the next ingredient is taken from the queue
+		// (JumpIfTargetInsideBillGiver). VFE Pirates' warcasket welding job has its own CollectIngredientsToils, a copy
+		// of the vanilla one without that toil, so welders walked to the depot itself, often across the map. Insert a
+		// toil after the extract toil and let Shelf's own postfix wrap it; Shelf never reads its __instance argument.
+		// Probed 2026-11-21: every ingredient goes through the pickup point; the later ones are picked up in the same
+		// tick they appear, because the welder already stands next to it.
+		static Action<JobDriver_DoBill, Toil, Toil, TargetIndex, TargetIndex> shelfPickupHook;
+
+		static void WeldShelfPickup(ref IEnumerable<Toil> __result, TargetIndex ingredientInd, TargetIndex billGiverInd) =>
+			__result = WithShelfPickup(__result, ingredientInd, billGiverInd);
+
+		static IEnumerable<Toil> WithShelfPickup(IEnumerable<Toil> toils, TargetIndex ingredientInd, TargetIndex billGiverInd)
+		{
+			bool first = true;
+			foreach (var toil in toils)
+			{
+				yield return toil;
+				if (!first) continue;
+				first = false;
+				var hook = new Toil { initAction = () => { } };
+				shelfPickupHook(null, hook, toil, ingredientInd, billGiverInd);
+				yield return hook;
+			}
+		}
+
 		// ---- Stylish Dialogs: centre the panel, not the panel plus the storyteller --------------------------------
 		// Personal tweak. Stylish Dialogs draws letters and node-tree dialogs as one window: the storyteller portrait
 		// on the left, the text panel from x = portrait width - 28 to 12 px short of the right edge
@@ -3649,6 +3684,9 @@ namespace Harmony3StrictCompat
 			["Verse.HediffComp_MessageBase:Message"] = 0x4DC3B7073B69E6C6,                                     // game 1.7.5011, 2026-11-18 (no post without message text)
 			["StylishDialogs.CollageLayout:Decoration"] = 0xDAE1569EF4A2CD37,                              // Stylish Dialogs 1.7, 2026-11-21 (centre the panel)
 			["StylishDialogs.DialogCollagePatch:Get"] = 0xD912B11A385DBBC4,
+			["VFEPirates.JobDriver_DoWelding:CollectIngredientsToils"] = 0x98754CD024471CA6,               // VFE Pirates 1.7 + Shelf Stack Logistics, 2026-11-21 (welding uses the pickup point)
+			["VFEPirates.JobDriver_DoWelding:CollectIngredientsToils/MoveNext"] = 0x8E5A0D6D7B3FDABF,
+			["Shelf.HarmonyPatches:JumpIfTargetInisdeBillGiver"] = 0x4F41E4AC2D5CEB22,
 			["RimWorld.PlaceWorker_MonumentMarker:AllowsPlacing"] = 0x615326571B614842,                        // game 1.7.5011, 2026-11-18 (VE pipes count as conduits)
 			["RimWorld.MonumentMarker:get_FirstDisallowedBuilding"] = 0x56B58DC4E8C9010E,
 			["Rachek128.RitualAttenuation.RitualExtendedDataRef:get_Comp"] = 0x357FBBDFAE580E43,               // Ritual Size Attenuation 1.6 DLL, 2026-11-16

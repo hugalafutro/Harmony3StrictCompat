@@ -704,8 +704,9 @@ namespace Harmony3StrictCompat
 				uirPositionCall = uirPosition;
 				uirTopRight = (int)Enum.Parse(uirPosition.ReturnType, "TopRight");
 				uirMinimapType = AccessTools.TypeByName("SatelliteMinimap.MinimapWindow");
-				if (uirMinimapType != null && Target("UIRethemed.Notifications.Placement:TopStart") is { } uirTopStart)
-					harmony.Patch(uirTopStart, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirTopRightUnderMinimap)));
+				uirTileFeatures = AccessTools.TypeByName("AlphaBiomes.AlphaBiomes_WorldInterface_CheckOpenOrCloseInspectPane_Patch") != null;
+				if ((uirMinimapType != null || uirTileFeatures) && Target("UIRethemed.Notifications.Placement:TopStart") is { } uirTopStart)
+					harmony.Patch(uirTopStart, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirTopRightUnderWindows)));
 			}
 			if (Target("SatelliteMinimap.Feed:GatherCore") is { } smGather && Target("SatelliteMinimap.Feed:Add") is { } smAdd
 				&& Target("SatelliteMinimap.MinimapWindow:OpenLayersMenu") is { } smMenu && Target("SatelliteMinimap.MinimapWindow:Toggle") is { } smToggle
@@ -1589,20 +1590,21 @@ namespace Harmony3StrictCompat
 		static Func<Rect, int, bool, float> uirHoverCall;
 		static int uirBottomRight, uirMiddleRight, uirTopRight;
 		static Type uirMinimapType;
+		static bool uirTileFeatures;
+		const int AbTileFeaturesWindowId = -32520; // Alpha Biomes' ImmediateWindow 32520 ("Features in this tile:"); WindowStack stores immediate ids negated
 
 		// UIR's top-right column starts 12 px from the top (lower only under colonist portraits or the learning helper)
-		// and knows nothing of Satellite Minimap, whose window then covers its top. Start below the minimap window while
-		// it is open. ponytail: assumes the minimap sits in the top-right corner (the user's layout); a minimap moved
-		// elsewhere still pushes the column down by its bottom edge.
-		static void UirTopRightUnderMinimap(ref float __result)
+		// and knows nothing of windows in the top-right corner, which then cover its top: Satellite Minimap's window,
+		// and on the world map Alpha Biomes' "Features in this tile:" panel (an immediate window at the screen's top
+		// right while a tile with mutators is selected). Start below whichever is open. ponytail: assumes the minimap
+		// sits in the top-right corner (the user's layout); a minimap moved elsewhere still pushes the column down by
+		// its bottom edge.
+		static void UirTopRightUnderWindows(ref float __result)
 		{
 			if ((int)uirPositionCall.Invoke(null, null) != uirTopRight) return;
 			foreach (var window in Find.WindowStack.Windows)
-				if (window.GetType() == uirMinimapType)
-				{
+				if (window.GetType() == uirMinimapType || uirTileFeatures && window.ID == AbTileFeaturesWindowId && window is ImmediateWindow)
 					__result = Mathf.Max(__result, window.windowRect.yMax + 10f);
-					return;
-				}
 		}
 
 		// Satellite Minimap files colony mechanoids under "Colonists" (Feed.GatherCore: IsColonist || IsColonyMech) and

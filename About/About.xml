@@ -146,6 +146,7 @@
 - TD Enhancement Pack + Altered Carbon 2: the "Empty Workbench" alert skips benches no recipe uses (the neural editor, run from its gizmos).
 - Altered Carbon 2: the childbirth ritual no longer picks a sleeve casket as the bed for the mother.
 - 1trickPwnyta's Ideology Patch: big raids no longer freeze the game while raiders are generated (its "Look change desired" check now runs without rebuilding lists of every hairstyle).
+- VFE Factory: an end-of-line splitter no longer stops the line when the cell it faces holds a building (lamp); it picks a side output first.
 - (tooling): the previous run's Player.log and Hauler's Dream debug log are copied to Logs/Archive at startup (newest 30 kept).
 - (tooling, temporary): a job that restarts ten times a tick logs what it points at (job-loop probe).</description>
 </ModMetaData>

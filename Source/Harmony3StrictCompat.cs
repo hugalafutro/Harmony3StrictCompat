@@ -638,6 +638,17 @@ namespace Harmony3StrictCompat
 				harmony.Patch(vfefScare, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ScarecrowSpawnedOnly)));
 			if (Target("VanillaFurnitureExpandedFactory.Building_Conveyor:DetermineGraphic") is { } vfeConveyorGraphic)
 				harmony.Patch(vfeConveyorGraphic, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SplitterGraphicByFacing)));
+			if (Target("VanillaFurnitureExpandedFactory.Building_Conveyor:TryDumpItem") is { } vfeConveyorDump
+				&& Target("VanillaFurnitureExpandedFactory.Building_Conveyor:SelectNextOutput") is { } vfeSelectNext)
+			{
+				var conveyor = vfeConveyorDump.DeclaringType;
+				vffIsSplitter = AccessTools.FieldRefAccess<bool>(conveyor, "cachedIsSplitter");
+				vffSelectedOutput = AccessTools.FieldRefAccess<Rot4>(conveyor, "cachedSelectedOutput");
+				vffState = AccessTools.Field(conveyor, "state");
+				vffMoving = Enum.ToObject(vffState.FieldType, 1); // ConveyorState.Moving
+				vffSelectNext = vfeSelectNext;
+				harmony.Patch(vfeConveyorDump, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SplitterNoFrontDump)));
+			}
 			if (Target("Impact.ArmorDeflection:Prefix") is { } impactArmor)
 				harmony.Patch(impactArmor, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ImpactBreachNaturalArmor)));
 			if (Target("ColonyManagerRedux.Manager:FinalizeInit") is { } cmrInit)
@@ -1249,6 +1260,29 @@ namespace Harmony3StrictCompat
 				new CodeInstruction(OpCodes.Call, AccessTools.PropertyGetter(typeof(Thing), nameof(Thing.Rotation))),
 			]);
 			return codes;
+		}
+
+		// VFE Factory end-of-line splitter (belt in, outputs only to the sides) stops dead when the cell it faces holds a
+		// building (a lamp): each item's output is reset after a transfer (cachedSelectedOutput = Invalid), so ForwardCell
+		// falls back to the facing cell, which holds no conveyor, and ProcessMovement calls TryDumpItem(facing cell).
+		// GetDumpCapability returns CannotDump for any non-refuelable building there, the belt goes Waiting, and the
+		// round-robin pick (InitiateTransfer -> SelectNextOutput) is never reached. With an empty floor there it works
+		// only because CanDump leads to InitiateTransfer, which picks a side belt; nothing is ever dumped on that cell.
+		// A splitter's facing cell is never an output unless it holds a conveyor (IsValidOutput), so pick the next output
+		// first and start moving, as the empty-floor path does; if no output can be picked, run the original.
+		static AccessTools.FieldRef<object, bool> vffIsSplitter;
+		static AccessTools.FieldRef<object, Rot4> vffSelectedOutput;
+		static FieldInfo vffState;
+		static object vffMoving;
+		static MethodInfo vffSelectNext;
+
+		static bool SplitterNoFrontDump(Building __instance)
+		{
+			if (!vffIsSplitter(__instance) || vffSelectedOutput(__instance).IsValid) return true;
+			vffSelectNext.Invoke(__instance, null);
+			if (!vffSelectedOutput(__instance).IsValid) return true;
+			vffState.SetValue(__instance, vffMoving);
+			return false;
 		}
 
 		// VFE Farming scarecrow: CompScaresAnimals.ScareAnimals walks map.mapPawns.AllPawns, which also lists pawns that
@@ -3852,6 +3886,8 @@ namespace Harmony3StrictCompat
 			["ColonyManagerRedux.Manager:FinalizeInit"] = 0xF523FD8F4AA6A9E5,                           // Colony Manager Redux 1.7, DLL of 2026-11-16 10:44
 			["VFEF.CompScaresAnimals:ScareAnimals"] = 0xA4407F9189E92650,                               // VFE Farming (1.6 DLL), 2026-11-13
 			["VanillaFurnitureExpandedFactory.Building_Conveyor:DetermineGraphic"] = 0x2F791A57EA0AD116, // VFE Factory 1.7, DLL of 2026-11-18 17:23
+			["VanillaFurnitureExpandedFactory.Building_Conveyor:TryDumpItem"] = 0x471514D91FC8D405,      // VFE Factory 1.7, DLL of 2026-11-18 17:23
+			["VanillaFurnitureExpandedFactory.Building_Conveyor:SelectNextOutput"] = 0x7647CECB91A642A7, // VFE Factory 1.7, DLL of 2026-11-18 17:23
 			["Flourish.AnimEventWorkers:HasMuzzle"] = 0x09D80ABDB9276A61,                               // Flourish - Combat Animations 2.1.5
 			["TacticalGroups.ColonistGroup:GetUniqueLoadID"] = 0x5F30AAACFB7C28AE,                      // Colony Groups 1.6 build
 			["SmartDeconstruct.SmartDeconstructMod:getDesignation"] = 0x53C1CCCAD3316AC2,               // Smart Deconstruct 1.7

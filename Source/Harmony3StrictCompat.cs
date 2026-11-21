@@ -671,6 +671,14 @@ namespace Harmony3StrictCompat
 						Log.Error($"[Harmony3StrictCompat] VFE Factory conveyor shape changed ({vffCapReads} stack limit reads, {vffCapPlaces} placements; expected 11 and 2): check the Kanban max stack fix");
 				}
 			}
+			if (Target("EPrimeReadouts.GameCounts:AccumulateMap") is { } eprAccumulate
+				&& Target("EPrimeReadouts.Core.CountAccumulator:AddSearch") is { } eprAdd
+				&& AccessTools.TypeByName("VanillaFurnitureExpandedFactory.Building_Conveyor") is { } eprBelt)
+			{
+				eprAddSearch = eprAdd;
+				eprBeltType = eprBelt;
+				harmony.Patch(eprAccumulate, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(EprCountBeltStock)));
+			}
 			// Personal tweak: no grey group frame behind colonist-bar groups. Vanilla and LTO Colony Groups draw one per
 			// group as soon as a second group exists (e.g. a caravan leaves). Only the drawing is skipped; frame clicks stay.
 			foreach (var groupFrame in new[] { Target("RimWorld.ColonistBarColonistDrawer:DrawGroupFrame"), Target("TacticalGroups.TacticalGroups_ColonistBarColonistDrawer:DrawGroupFrame") })
@@ -1436,6 +1444,38 @@ namespace Harmony3StrictCompat
 			if (!GenPlace.TryPlaceThing(piece, cell, map, mode, placedAction, nearPlaceValidator, rot, squareRadius))
 				thing.TryAbsorbStack(piece, false);
 			return false; // the rest stays on the belt
+		}
+
+		// EPrime's Readouts does not show the vanilla resource counter: it scans spawned items and haul-source
+		// containers itself (GameCounts.AccumulateMap) and shows that tally. A stack riding a VFE Factory conveyor is
+		// neither (not spawned, and a conveyor is no haul source), so belt stock was missing from the readout (306 gold)
+		// while the vanilla counter, which VFE Factory extends with belt contents, and Colony Manager had it. After
+		// each scan, belt contents are added as stored, unforbidden stock, with VFE Factory's own rules (fresh, not
+		// fogged). Stacks inside an underground tunnel stay uncounted, as in the vanilla counter.
+		static MethodInfo eprAddSearch;
+		static Type eprBeltType;
+		static List<ThingDef> eprBeltDefs;
+		static readonly Dictionary<ThingDef, int> eprBeltStock = new();
+
+		static void EprCountBeltStock(Map map, object accumulator)
+		{
+			eprBeltDefs ??= DefDatabase<ThingDef>.AllDefsListForReading.Where(def => def.thingClass != null && eprBeltType.IsAssignableFrom(def.thingClass)).ToList();
+			foreach (var beltDef in eprBeltDefs)
+				foreach (var belt in map.listerThings.ThingsOfDef(beltDef))
+				{
+					if (belt.Position.Fogged(map) || (belt as IThingHolder)?.GetDirectlyHeldThings() is not { } held) continue;
+					for (int i = 0; i < held.Count; i++)
+					{
+						var thing = held[i].GetInnerIfMinified();
+						if (!thing.def.CountAsResource || thing.IsNotFresh()) continue;
+						eprBeltStock.TryGetValue(thing.def, out int count);
+						eprBeltStock[thing.def] = count + thing.stackCount;
+					}
+				}
+			// The scan runs every 204 ticks and belts carry a handful of defs, so a reflection call per def is cheap.
+			foreach (var stock in eprBeltStock)
+				eprAddSearch.Invoke(accumulator, [stock.Key.defName, (int)stock.Key.shortHash, stock.Value, true, false]);
+			eprBeltStock.Clear();
 		}
 
 		// VFE Farming scarecrow: CompScaresAnimals.ScareAnimals walks map.mapPawns.AllPawns, which also lists pawns that
@@ -4052,6 +4092,8 @@ namespace Harmony3StrictCompat
 			["VanillaFurnitureExpandedFactory.Building_Conveyor:TransferItemTo"] = 0x9021F8A2586BAA37,
 			["VanillaFurnitureExpandedFactory.Building_Conveyor:CanTransferToTarget"] = 0xCCEABA6758BC961D,
 			["VanillaFurnitureExpandedFactory.Building_Conveyor:CanStackWithAny"] = 0xBE40C866C491B523,
+			["EPrimeReadouts.GameCounts:AccumulateMap"] = 0x63E37E8779538722,                           // EPrime's Readouts 1.7 DLLs, 2026-11-21 (belt stock)
+			["EPrimeReadouts.Core.CountAccumulator:AddSearch"] = 0xEEAD82F6179AE79C,
 			["Flourish.AnimEventWorkers:HasMuzzle"] = 0x09D80ABDB9276A61,                               // Flourish - Combat Animations 2.1.5
 			["TacticalGroups.ColonistGroup:GetUniqueLoadID"] = 0x5F30AAACFB7C28AE,                      // Colony Groups 1.6 build
 			["SmartDeconstruct.SmartDeconstructMod:getDesignation"] = 0x53C1CCCAD3316AC2,               // Smart Deconstruct 1.7

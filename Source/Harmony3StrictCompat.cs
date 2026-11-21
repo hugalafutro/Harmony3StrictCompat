@@ -815,6 +815,7 @@ namespace Harmony3StrictCompat
 			AdaptedTextOncePerSecond.Init(harmony);
 			AcNoBirthInSleeveCasket.Init(harmony);
 			MssHoloNoBodyNeeds.Init(harmony);
+			IpCanUseStyleNoLists.Init(harmony);
 		}
 
 		// ---- UI Rethemed - Architect + Vanilla Plants Expanded: Tilled soil among the orders ----
@@ -3888,6 +3889,7 @@ namespace Harmony3StrictCompat
 			["UsefulMarks.Dialog_NamePawn_DoWindowContents_Patch:Postfix"] = 0xF33AD5F31EB56B3B,        // Useful Marks 1.7, DLL of 2026-10-22
 			["UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix"] = 0xD2A3A440ED802D16,
 			["AlteredCarbon.JobGiver_Reload_TryGiveJob_Patch:Postfix"] = 0xAA1E07B7E7346A11,             // Altered Carbon 2 1.6 DLL, 2026-10-29
+			["IdeologyPatch.LookChangeDesiredFix.LookChangeDesiredUtility:CanUseStyle"] = 0x59A806A930DD6F06, // 1trickPwnyta's Ideology Patch 1.6 DLL, 2026-11-21
 			["RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"] = 0x9ADB9BA182DCDD68,               // vanilla 1.7.5013, guilty icon slot
 			["UIRethemed.ColonistCard.Card:get_ThemingHeader"] = 0xE0BB7E0F75774563,                     // UI Rethemed - Colonist Card 1.7, 2026-11-15 03:21
 			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0x140F60EC9F696E2F,
@@ -5748,6 +5750,48 @@ namespace Harmony3StrictCompat
 		{
 			if (__result.Active && isHolo(otherPawn)) __result = ThoughtState.Inactive;
 		}
+	}
+
+	// ---- 1trickPwnyta's Ideology Patch: pawn generation freeze from its "Look change desired" fix --------------
+	// Its postfix on PawnStyleItemChooser.WantsToUseStyle asks LookChangeDesiredUtility.CanUseStyle, which (outside
+	// the styling station) builds two lists over every hair, beard or tattoo def (genes allow it / the ideoligion
+	// does not say Never) and intersects them, on every call. Vanilla RandomHairFor asks once per candidate hairstyle,
+	// so each generated pawn costs (hair defs)^2 list work: a 207-shambler swarm froze the game 30 s, 27 s of it in
+	// here (dotnet-trace, 2026-11-21). Same rule without lists: a style passes when the pawn's genes and ideoligion
+	// both accept it; otherwise it passes only when no style of that kind satisfies both. The mod's styling-station
+	// cache (one list shared by every pawn) is not kept; each answer is for the pawn asked.
+	static class IpCanUseStyleNoLists
+	{
+		internal static void Init(Harmony harmony)
+		{
+			if (Harmony3StrictCompatMod.Target("IdeologyPatch.LookChangeDesiredFix.LookChangeDesiredUtility:CanUseStyle") is { } canUse)
+				harmony.Patch(canUse, prefix: new HarmonyMethod(typeof(IpCanUseStyleNoLists), nameof(CanUseStyle)));
+		}
+
+		static bool CanUseStyle(Pawn pawn, StyleItemDef style, TattooType? tattooType, ref bool __result)
+		{
+			__result = style switch
+			{
+				HairDef => Allowed(pawn, style, DefDatabase<HairDef>.AllDefsListForReading, null),
+				BeardDef => Allowed(pawn, style, DefDatabase<BeardDef>.AllDefsListForReading, null),
+				TattooDef when tattooType.HasValue => Allowed(pawn, style, DefDatabase<TattooDef>.AllDefsListForReading, tattooType),
+				_ => true,
+			};
+			return false;
+		}
+
+		static bool Allowed(Pawn pawn, StyleItemDef style, IReadOnlyList<StyleItemDef> all, TattooType? type)
+		{
+			if (Fits(pawn, style, type)) return true;
+			for (int i = 0; i < all.Count; i++)
+				if (Fits(pawn, all[i], type)) return false;
+			return true;
+		}
+
+		static bool Fits(Pawn pawn, StyleItemDef s, TattooType? type) =>
+			(type == null || ((TattooDef)s).tattooType == type.Value)
+			&& (pawn.genes == null || pawn.genes.StyleItemAllowed(s))
+			&& pawn.Ideo != null && pawn.Ideo.style.GetFrequency(s) != StyleItemFrequency.Never;
 	}
 
 	// ---- Common Sense: "Getting random element from empty collection" on uncraftable food ---------------------

@@ -671,8 +671,6 @@ namespace Harmony3StrictCompat
 						Log.Error($"[Harmony3StrictCompat] VFE Factory conveyor shape changed ({vffCapReads} stack limit reads, {vffCapPlaces} placements; expected 11 and 2): check the Kanban max stack fix");
 				}
 			}
-			if (Target("AlphaBiomes.JobDriver_OperateCoreSampleDrill+<>c__DisplayClass1_0:<MakeNewToils>b__0") is { } abDrillTick)
-				harmony.Patch(abDrillTick, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AbCoreDrillSkillless)));
 			// Personal tweak: no grey group frame behind colonist-bar groups. Vanilla and LTO Colony Groups draw one per
 			// group as soon as a second group exists (e.g. a caravan leaves). Only the drawing is skipped; frame clicks stay.
 			foreach (var groupFrame in new[] { Target("RimWorld.ColonistBarColonistDrawer:DrawGroupFrame"), Target("TacticalGroups.TacticalGroups_ColonistBarColonistDrawer:DrawGroupFrame") })
@@ -1439,31 +1437,6 @@ namespace Harmony3StrictCompat
 				thing.TryAbsorbStack(piece, false);
 			return false; // the rest stays on the belt
 		}
-
-		// Alpha Biomes core sample drill: its work giver (work type Mining) has no canBeDoneByMechs=false, so a
-		// Tunneler takes the job, and the job's work tick calls actor.skills.Learn with no null check (vanilla's deep
-		// drill job uses skills?.Learn). A mech has no skills: one tick of drilling, NullReferenceException ("Exception
-		// in JobDriver fixed tick ... JobDriver_OperateCoreSampleDrill"), job ended, repeat. Learn only with skills.
-		static IEnumerable<CodeInstruction> AbCoreDrillSkillless(IEnumerable<CodeInstruction> instructions)
-		{
-			var learn = AccessTools.Method(typeof(Pawn_SkillTracker), nameof(Pawn_SkillTracker.Learn), [typeof(SkillDef), typeof(float), typeof(bool), typeof(bool)]);
-			int replaced = 0;
-			foreach (var code in instructions)
-			{
-				if (learn != null && code.Calls(learn))
-				{
-					code.opcode = OpCodes.Call;
-					code.operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(LearnIfSkilled));
-					replaced++;
-				}
-				yield return code;
-			}
-			if (replaced != 1)
-				Log.Error($"[Harmony3StrictCompat] Alpha Biomes core sample drill: expected one skills.Learn call, replaced {replaced}");
-		}
-
-		static void LearnIfSkilled(Pawn_SkillTracker skills, SkillDef skill, float xp, bool direct, bool ignoreLearnRate) =>
-			skills?.Learn(skill, xp, direct, ignoreLearnRate);
 
 		// VFE Farming scarecrow: CompScaresAnimals.ScareAnimals walks map.mapPawns.AllPawns, which also lists pawns that
 		// are not spawned (held in a building or container). For such a wild animal in range it asks for a flee cell on
@@ -4079,7 +4052,6 @@ namespace Harmony3StrictCompat
 			["VanillaFurnitureExpandedFactory.Building_Conveyor:TransferItemTo"] = 0x9021F8A2586BAA37,
 			["VanillaFurnitureExpandedFactory.Building_Conveyor:CanTransferToTarget"] = 0xCCEABA6758BC961D,
 			["VanillaFurnitureExpandedFactory.Building_Conveyor:CanStackWithAny"] = 0xBE40C866C491B523,
-			["AlphaBiomes.JobDriver_OperateCoreSampleDrill+<>c__DisplayClass1_0:<MakeNewToils>b__0"] = 0x5B0915AA91662DCA, // Alpha Biomes 1.6 DLL of 2026-09-05
 			["Flourish.AnimEventWorkers:HasMuzzle"] = 0x09D80ABDB9276A61,                               // Flourish - Combat Animations 2.1.5
 			["TacticalGroups.ColonistGroup:GetUniqueLoadID"] = 0x5F30AAACFB7C28AE,                      // Colony Groups 1.6 build
 			["SmartDeconstruct.SmartDeconstructMod:getDesignation"] = 0x53C1CCCAD3316AC2,               // Smart Deconstruct 1.7

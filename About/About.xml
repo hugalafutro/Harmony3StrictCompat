@@ -149,7 +149,6 @@
 - 1trickPwnyta's Ideology Patch: big raids no longer freeze the game while raiders are generated (its "Look change desired" check now runs without rebuilding lists of every hairstyle).
 - VFE Factory: an end-of-line splitter no longer stops the line when the cell it faces holds a building (lamp); it picks a side output first.
 - VFE Factory + Kanban Stockpile: a conveyor fills the hopper or storage it ends at only up to that storage's Kanban max stack size.
-- Alpha Biomes: mining mechs can operate the core sample drill (no error for a pawn without skills).
 - Vanilla colonist bar + LTO Colony Groups (personal tweak): no grey frame behind colonist-bar groups.
 - (tooling): the previous run's Player.log and Hauler's Dream debug log are copied to Logs/Archive at startup (newest 30 kept).
 - (tooling, temporary): a job that restarts ten times a tick logs what it points at (job-loop probe).</description>

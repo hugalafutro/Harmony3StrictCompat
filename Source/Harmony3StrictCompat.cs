@@ -649,6 +649,11 @@ namespace Harmony3StrictCompat
 				vffSelectNext = vfeSelectNext;
 				harmony.Patch(vfeConveyorDump, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SplitterNoFrontDump)));
 			}
+			// Personal tweak: no grey group frame behind colonist-bar groups. Vanilla and LTO Colony Groups draw one per
+			// group as soon as a second group exists (e.g. a caravan leaves). Only the drawing is skipped; frame clicks stay.
+			foreach (var groupFrame in new[] { Target("RimWorld.ColonistBarColonistDrawer:DrawGroupFrame"), Target("TacticalGroups.TacticalGroups_ColonistBarColonistDrawer:DrawGroupFrame") })
+				if (groupFrame != null)
+					harmony.Patch(groupFrame, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SkipOriginal)));
 			if (Target("Impact.ArmorDeflection:Prefix") is { } impactArmor)
 				harmony.Patch(impactArmor, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ImpactBreachNaturalArmor)));
 			if (Target("ColonyManagerRedux.Manager:FinalizeInit") is { } cmrInit)
@@ -3887,6 +3892,8 @@ namespace Harmony3StrictCompat
 			["VFEF.CompScaresAnimals:ScareAnimals"] = 0xA4407F9189E92650,                               // VFE Farming (1.6 DLL), 2026-11-13
 			["VanillaFurnitureExpandedFactory.Building_Conveyor:DetermineGraphic"] = 0x2F791A57EA0AD116, // VFE Factory 1.7, DLL of 2026-11-18 17:23
 			["VanillaFurnitureExpandedFactory.Building_Conveyor:TryDumpItem"] = 0x471514D91FC8D405,      // VFE Factory 1.7, DLL of 2026-11-18 17:23
+			["RimWorld.ColonistBarColonistDrawer:DrawGroupFrame"] = 0x2E4FDEB5E441EDD1,                           // game 1.7.5014, 2026-11-21 (no group frame)
+			["TacticalGroups.TacticalGroups_ColonistBarColonistDrawer:DrawGroupFrame"] = 0x96ECDD94A5927A8F,      // LTO Colony Groups 1.6 build, 2026-11-21 (no group frame)
 			["VanillaFurnitureExpandedFactory.Building_Conveyor:SelectNextOutput"] = 0x7647CECB91A642A7, // VFE Factory 1.7, DLL of 2026-11-18 17:23
 			["Flourish.AnimEventWorkers:HasMuzzle"] = 0x09D80ABDB9276A61,                               // Flourish - Combat Animations 2.1.5
 			["TacticalGroups.ColonistGroup:GetUniqueLoadID"] = 0x5F30AAACFB7C28AE,                      // Colony Groups 1.6 build

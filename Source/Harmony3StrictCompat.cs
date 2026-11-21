@@ -649,6 +649,30 @@ namespace Harmony3StrictCompat
 				vffSelectNext = vfeSelectNext;
 				harmony.Patch(vfeConveyorDump, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SplitterNoFrontDump)));
 			}
+			if (Target("VanillaFurnitureExpandedFactory.Building_Conveyor:CanTransferToStorage") is { } vfeCanStore
+				&& Target("VanillaFurnitureExpandedFactory.Building_Conveyor:GetDumpCapability") is { } vfeDumpCapability
+				&& Target("VanillaFurnitureExpandedFactory.Building_Conveyor:CompleteTransfer") is { } vfeCompleteTransfer
+				&& Target("KanbanStockpileContinue.KanbanStockpileAPI:TryGetSettings") is { } ksGetSettings)
+			{
+				vffKanbanGet = (HdKanbanStackCap.KanbanGet)ksGetSettings.CreateDelegate(typeof(HdKanbanStackCap.KanbanGet));
+				vffConveyor = vfeCanStore.DeclaringType;
+				vffUnderground = AccessTools.TypeByName("VanillaFurnitureExpandedFactory.Building_UndergroundConveyorBase");
+				vffEntrance = AccessTools.TypeByName("VanillaFurnitureExpandedFactory.Building_UndergroundConveyorEntrance");
+				if (vffEntrance == null || vffUnderground == null || AccessTools.Field(vffUnderground, "linkedBuilding") == null)
+					Log.Error("[Harmony3StrictCompat] VFE Factory underground conveyor types or linkedBuilding no longer exist: its mod updated, Kanban max stack fix not applied");
+				else
+				{
+					vffLinked = AccessTools.FieldRefAccess<Thing>(vffUnderground, "linkedBuilding");
+					var vfeBeltMerges = new[] { "TryAdd", "CanAcceptItem", "TransferItemTo", "CanTransferToTarget", "CanStackWithAny" }
+						.Select(name => Target("VanillaFurnitureExpandedFactory.Building_Conveyor:" + name)).Where(method => method != null);
+					foreach (var method in new[] { vfeCanStore, vfeDumpCapability, vfeCompleteTransfer }.Concat(vfeBeltMerges))
+						harmony.Patch(method, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ConveyorKanbanCap)));
+					if (vffCapReads != 11 || vffCapPlaces != 2)
+						Log.Error($"[Harmony3StrictCompat] VFE Factory conveyor shape changed ({vffCapReads} stack limit reads, {vffCapPlaces} placements; expected 11 and 2): check the Kanban max stack fix");
+				}
+			}
+			if (Target("AlphaBiomes.JobDriver_OperateCoreSampleDrill+<>c__DisplayClass1_0:<MakeNewToils>b__0") is { } abDrillTick)
+				harmony.Patch(abDrillTick, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AbCoreDrillSkillless)));
 			// Personal tweak: no grey group frame behind colonist-bar groups. Vanilla and LTO Colony Groups draw one per
 			// group as soon as a second group exists (e.g. a caravan leaves). Only the drawing is skipped; frame clicks stay.
 			foreach (var groupFrame in new[] { Target("RimWorld.ColonistBarColonistDrawer:DrawGroupFrame"), Target("TacticalGroups.TacticalGroups_ColonistBarColonistDrawer:DrawGroupFrame") })
@@ -1290,6 +1314,156 @@ namespace Harmony3StrictCompat
 			vffState.SetValue(__instance, vffMoving);
 			return false;
 		}
+
+		// VFE Factory conveyors ignore Kanban Stockpile's max stack size. A belt that ends at a storage building (or at
+		// a stockpile cell) tops the stack there up to the def's stack limit itself (`stackCount +=` in
+		// CompleteTransfer; CanTransferToStorage and GetDumpCapability test the same limit), and drops a new stack whole.
+		// Kanban only acts on hauling jobs and on Thing.TryAbsorbStack, so a hopper capped at 300 that a belt feeds
+		// filled to the full stack (2,469 gold seen), and since a belt also empties the capped hopper it starts from,
+		// haulers carried the whole stockpile in, 300 at a time. In those three methods every "def.stackLimit" of a
+		// stack lying in storage now reads min(stack limit, Kanban max stack of that storage), and a new stack is
+		// placed only up to the cap; the rest waits on the belt, as it already does at a full stack. Storage without a
+		// Kanban max stack is untouched. The refill threshold is not applied: a belt tops up whenever there is room.
+		// Belt pieces merge what they carry up to the stack limit as well (TryAdd, TransferItemTo and their checks), so
+		// with only the storage capped the surplus piled up on the belt piece in front of it (3,639 gold on the
+		// underground exit). A stack riding the belt piece that ends at capped storage gets that storage's cap too.
+		// The cap carries back along the whole line: every belt piece takes the Kanban max stack of the storage its line
+		// ends at (through turns, underground links and splitters; at a splitter the smallest cap of its branches), so
+		// a long backed-up line holds one capped stack per piece instead of full stacks on the middle pieces.
+		static HdKanbanStackCap.KanbanGet vffKanbanGet;
+		static int vffCapReads, vffCapPlaces;
+		static Type vffConveyor, vffUnderground, vffEntrance;
+		static AccessTools.FieldRef<object, Thing> vffLinked;
+		static readonly Dictionary<int, (int tick, int mss)> vffLineMss = new();
+		static int vffWalkDepth;
+
+		// Kanban max stack (0 = none) of the storage this belt piece's line ends at.
+		// ponytail: answer kept 60 ticks per piece, so a rebuilt line or a changed max stack reaches the belts within a
+		// second; hook Kanban's settings-changed event and the conveyor recache if that lag ever shows.
+		static int LineMss(Building belt)
+		{
+			int now = Find.TickManager.TicksGame;
+			if (vffLineMss.TryGetValue(belt.thingIDNumber, out var hit) && now - hit.tick is >= 0 and < 60) return hit.mss;
+			if (vffWalkDepth >= 256) return 0; // looped line
+			if (vffLineMss.Count > 4096) vffLineMss.Clear();
+			vffWalkDepth++;
+			int mss;
+			try { mss = LineMssUncached(belt); }
+			finally { vffWalkDepth--; }
+			vffLineMss[belt.thingIDNumber] = (now, mss);
+			return mss;
+		}
+
+		// Next pieces as the mod picks outputs (IsValidOutput): the belt ahead unless it points back at this piece, and
+		// a belt to either side that runs across this one and away from it. No belt to go to: the faced cell's storage.
+		static int LineMssUncached(Building belt)
+		{
+			var map = belt.Map;
+			if (vffEntrance.IsInstanceOfType(belt))
+				return vffLinked(belt) is Building { Spawned: true } exit && exit.Map == map ? LineMss(exit) : 0;
+			var ahead = belt.Position + belt.Rotation.FacingCell;
+			bool anyBelt = false;
+			int best = 0;
+			if (BeltAt(ahead, map) is { } next && next.Position + next.Rotation.FacingCell != belt.Position)
+			{
+				anyBelt = true;
+				best = LineMss(next);
+			}
+			if (!vffUnderground.IsInstanceOfType(belt))
+				foreach (var side in new[] { belt.Rotation.Rotated(RotationDirection.Clockwise), belt.Rotation.Rotated(RotationDirection.Counterclockwise) })
+				{
+					if (BeltAt(belt.Position + side.FacingCell, map) is not { } turn || vffUnderground.IsInstanceOfType(turn)
+						|| turn.Rotation != side) continue;
+					anyBelt = true;
+					int mss = LineMss(turn);
+					if (mss > 0 && (best == 0 || mss < best)) best = mss;
+				}
+			return anyBelt ? best : KanbanMssAt(ahead, map);
+		}
+
+		static Building BeltAt(IntVec3 cell, Map map)
+		{
+			if (!cell.InBounds(map)) return null;
+			foreach (var thing in map.thingGrid.ThingsListAt(cell))
+				if (vffConveyor.IsInstanceOfType(thing)) return (Building)thing;
+			return null;
+		}
+
+		static IEnumerable<CodeInstruction> ConveyorKanbanCap(IEnumerable<CodeInstruction> instructions)
+		{
+			var def = AccessTools.Field(typeof(Thing), nameof(Thing.def));
+			var limit = AccessTools.Field(typeof(ThingDef), nameof(ThingDef.stackLimit));
+			var place = AccessTools.Method(typeof(GenPlace), nameof(GenPlace.TryPlaceThing), [typeof(Thing), typeof(IntVec3), typeof(Map),
+				typeof(ThingPlaceMode), typeof(Action<Thing, int>), typeof(Predicate<IntVec3>), typeof(Rot4?), typeof(int)]);
+			var codes = instructions.ToList();
+			for (int i = 1; i < codes.Count; i++)
+			{
+				if (codes[i].LoadsField(limit) && codes[i - 1].LoadsField(def) && codes[i].labels.Count == 0)
+				{
+					codes[i - 1].opcode = OpCodes.Call;
+					codes[i - 1].operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(KanbanStackCap));
+					codes[i].opcode = OpCodes.Nop;
+					codes[i].operand = null;
+					vffCapReads++;
+				}
+				else if (codes[i].Calls(place))
+				{
+					codes[i].operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(KanbanCappedPlace));
+					vffCapPlaces++;
+				}
+			}
+			return codes;
+		}
+
+		// One short owner-key string per call inside Kanban's API; only reached for a cell that is storage.
+		static int KanbanMssAt(IntVec3 cell, Map map) =>
+			cell.InBounds(map) && map.haulDestinationManager.SlotGroupAt(cell)?.Settings?.owner is { } owner
+			&& vffKanbanGet(owner, out _, out _, out int mss) ? mss : 0;
+
+		// A stack lying in storage: that storage's cap. A stack riding a belt: the cap of the storage its line ends at.
+		static int KanbanStackCap(Thing thing)
+		{
+			int limit = thing.def.stackLimit;
+			int mss = thing.Spawned ? KanbanMssAt(thing.Position, thing.Map)
+				: thing.holdingOwner?.Owner is Building { Spawned: true } belt && vffConveyor.IsInstanceOfType(belt) ? LineMss(belt) : 0;
+			return mss > 0 ? Math.Min(limit, mss) : limit;
+		}
+
+		static bool KanbanCappedPlace(Thing thing, IntVec3 cell, Map map, ThingPlaceMode mode, Action<Thing, int> placedAction,
+			Predicate<IntVec3> nearPlaceValidator, Rot4? rot, int squareRadius)
+		{
+			int cap = KanbanMssAt(cell, map) is > 0 and var mss ? Math.Min(thing.def.stackLimit, mss) : thing.def.stackLimit;
+			if (thing.stackCount <= cap) return GenPlace.TryPlaceThing(thing, cell, map, mode, placedAction, nearPlaceValidator, rot, squareRadius);
+			var piece = thing.SplitOff(cap);
+			if (!GenPlace.TryPlaceThing(piece, cell, map, mode, placedAction, nearPlaceValidator, rot, squareRadius))
+				thing.TryAbsorbStack(piece, false);
+			return false; // the rest stays on the belt
+		}
+
+		// Alpha Biomes core sample drill: its work giver (work type Mining) has no canBeDoneByMechs=false, so a
+		// Tunneler takes the job, and the job's work tick calls actor.skills.Learn with no null check (vanilla's deep
+		// drill job uses skills?.Learn). A mech has no skills: one tick of drilling, NullReferenceException ("Exception
+		// in JobDriver fixed tick ... JobDriver_OperateCoreSampleDrill"), job ended, repeat. Learn only with skills.
+		static IEnumerable<CodeInstruction> AbCoreDrillSkillless(IEnumerable<CodeInstruction> instructions)
+		{
+			var learn = AccessTools.Method(typeof(Pawn_SkillTracker), nameof(Pawn_SkillTracker.Learn), [typeof(SkillDef), typeof(float), typeof(bool), typeof(bool)]);
+			int replaced = 0;
+			foreach (var code in instructions)
+			{
+				if (learn != null && code.Calls(learn))
+				{
+					code.opcode = OpCodes.Call;
+					code.operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(LearnIfSkilled));
+					replaced++;
+				}
+				yield return code;
+			}
+			if (replaced != 1)
+				Log.Error($"[Harmony3StrictCompat] Alpha Biomes core sample drill: expected one skills.Learn call, replaced {replaced}");
+		}
+
+		static void LearnIfSkilled(Pawn_SkillTracker skills, SkillDef skill, float xp, bool direct, bool ignoreLearnRate) =>
+			skills?.Learn(skill, xp, direct, ignoreLearnRate);
 
 		// VFE Farming scarecrow: CompScaresAnimals.ScareAnimals walks map.mapPawns.AllPawns, which also lists pawns that
 		// are not spawned (held in a building or container). For such a wild animal in range it asks for a flee cell on
@@ -3897,6 +4071,15 @@ namespace Harmony3StrictCompat
 			["RimWorld.ColonistBarColonistDrawer:DrawGroupFrame"] = 0x2E4FDEB5E441EDD1,                           // game 1.7.5014, 2026-11-21 (no group frame)
 			["TacticalGroups.TacticalGroups_ColonistBarColonistDrawer:DrawGroupFrame"] = 0x96ECDD94A5927A8F,      // LTO Colony Groups 1.6 build, 2026-11-21 (no group frame)
 			["VanillaFurnitureExpandedFactory.Building_Conveyor:SelectNextOutput"] = 0x7647CECB91A642A7, // VFE Factory 1.7, DLL of 2026-11-18 17:23
+			["VanillaFurnitureExpandedFactory.Building_Conveyor:CanTransferToStorage"] = 0x1FC90CACFD97663A, // VFE Factory 1.7, DLL of 2026-11-18 17:23 (Kanban max stack)
+			["VanillaFurnitureExpandedFactory.Building_Conveyor:GetDumpCapability"] = 0xC18ADDF4A0F62508,
+			["VanillaFurnitureExpandedFactory.Building_Conveyor:CompleteTransfer"] = 0x801B26B36B1A32BF,
+			["VanillaFurnitureExpandedFactory.Building_Conveyor:TryAdd"] = 0x496F782ACCE0E38D,
+			["VanillaFurnitureExpandedFactory.Building_Conveyor:CanAcceptItem"] = 0x5A27ECF8B10E3800,
+			["VanillaFurnitureExpandedFactory.Building_Conveyor:TransferItemTo"] = 0x9021F8A2586BAA37,
+			["VanillaFurnitureExpandedFactory.Building_Conveyor:CanTransferToTarget"] = 0xCCEABA6758BC961D,
+			["VanillaFurnitureExpandedFactory.Building_Conveyor:CanStackWithAny"] = 0xBE40C866C491B523,
+			["AlphaBiomes.JobDriver_OperateCoreSampleDrill+<>c__DisplayClass1_0:<MakeNewToils>b__0"] = 0x5B0915AA91662DCA, // Alpha Biomes 1.6 DLL of 2026-09-05
 			["Flourish.AnimEventWorkers:HasMuzzle"] = 0x09D80ABDB9276A61,                               // Flourish - Combat Animations 2.1.5
 			["TacticalGroups.ColonistGroup:GetUniqueLoadID"] = 0x5F30AAACFB7C28AE,                      // Colony Groups 1.6 build
 			["SmartDeconstruct.SmartDeconstructMod:getDesignation"] = 0x53C1CCCAD3316AC2,               // Smart Deconstruct 1.7
@@ -5967,7 +6150,7 @@ namespace Harmony3StrictCompat
 	[StaticConstructorOnStartup]
 	static class HdKanbanStackCap
 	{
-		delegate bool KanbanGet(IStoreSettingsParent owner, out int srt, out int ssl, out int mss);
+		internal delegate bool KanbanGet(IStoreSettingsParent owner, out int srt, out int ssl, out int mss);
 
 		static readonly KanbanGet kanbanGet;
 		static readonly Func<bool> hdInsideSpaceScan;

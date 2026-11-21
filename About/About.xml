@@ -117,6 +117,7 @@
 - Unburned + VEF: drafted pawns with reach melee weapons auto-attack at full reach again (Unburned replaced the method VEF patches).
 - Alpha Armoury (tesla coil trait) + VEF: tesla chain fire follows vanilla ignition rules (mechanoids no longer burn, one fire per target).
 - Vanilla (seen with Alpha Armoury's tesla coil): the floating "Adapted" text shows at most once per second per pawn instead of once per EMP instance (dozens per tesla burst).
+- Vanilla (seen with Alpha Genes plagued shamblers): a hit fully blocked by armor no longer adds its disease at severity 0, so no false "Disease: Shambler plague" letter.
 - Sensible Bed Ownership: reservation prefix skipped for beds with no map.
 - Sensible Bed Ownership: no more NullReferenceException from the spouse-sleep thought when a pawn owns a bed that is on no map.
 - Skilled Refueling: Harmony 3 unchecked binding for its mistyped __instance patch.

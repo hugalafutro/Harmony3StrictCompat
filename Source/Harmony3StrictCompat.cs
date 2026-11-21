@@ -813,6 +813,7 @@ namespace Harmony3StrictCompat
 			GravcoreSubquestTick.Init(harmony);
 			UirArchitectTwoLineNames.Init(harmony);
 			AdaptedTextOncePerSecond.Init(harmony);
+			NoZeroSeverityDamageHediffs.Init(harmony);
 			AcNoBirthInSleeveCasket.Init(harmony);
 			MssHoloNoBodyNeeds.Init(harmony);
 			IpCanUseStyleNoLists.Init(harmony);
@@ -3913,6 +3914,7 @@ namespace Harmony3StrictCompat
 			["RimWorld.ThoughtWorker_Precept_HasNoProsthetic:ShouldHaveThought"] = 0x0AF51DBC40387586,
 			["RimWorld.ThoughtWorker_Precept_HasNoProsthetic_Social:ShouldHaveThought"] = 0xC00806208BA0013F,
 			["RimWorld.StunHandler:Notify_DamageApplied"] = 0xC6A267835D6DFF3C,                        // game 1.7.5014, 2026-11-20 ("Adapted" text once a second)
+			["Verse.Pawn_HealthTracker:PostApplyDamage"] = 0x7279655035C5644A,                        // game 1.7.5014, 2026-11-21 (no zero-severity damage hediffs)
 			["RimWorld.QuestPart_SubquestGenerator_Gravcores:QuestPartTick"] = 0x57A1138EAA085FF4,     // game 1.7.5014, 2026-11-20 (cheap tests first)
 			["RimWorld.QuestPart_SubquestGenerator_Gravcores:get_CanGenerateSubquest"] = 0xD22781A31626AD88,
 			["TD_Enhancement_Pack.WorkGiver_HaulUrgentlyRefill:PotentialWorkThingsGlobal"] = 0x666AFF20872A52D4, // TD Enhancement Pack - Continued 1.7, 2026-11-20
@@ -5682,6 +5684,40 @@ namespace Harmony3StrictCompat
 			if (lastShown.Count > 512) lastShown.Clear();
 			lastShown[cell] = now;
 			MoteMaker.ThrowText(loc, map, text, color, timeBeforeStartFadeout);
+		}
+	}
+
+	// ---- Vanilla: a blocked hit adds no disease (seen with Alpha Genes' plagued shamblers) -------------------
+	// Pawn_HealthTracker.PostApplyDamage adds a damage def's additionalHediffs with severity damage dealt x
+	// severityPerDamageDealt, scaled by the victim stat, and adds it when that is >= 0. PostApplyDamage runs for
+	// every hit, also one the armor fully blocked (0 damage dealt) or one on a pawn with 100% of the scaling stat,
+	// so the hediff is added at severity 0. Alpha Genes' "shambler plague" is discoverable: the add sends its
+	// "Disease: Shambler plague" letter, and the next health tick removes the hediff (Severity <= 0), so the
+	// pawn's health tab never shows it (seen 2026-11-21, two letters for an armored pawn). Only > 0 is added now.
+	static class NoZeroSeverityDamageHediffs
+	{
+		internal static void Init(Harmony harmony)
+		{
+			if (Harmony3StrictCompatMod.Target("Verse.Pawn_HealthTracker:PostApplyDamage") is { } post)
+				harmony.Patch(post, transpiler: new HarmonyMethod(typeof(NoZeroSeverityDamageHediffs), nameof(OnlyPositive)));
+		}
+
+		// The test is "ldloc num; ldc.r4 0; blt.un skip", right before ldloc entry; ldfld entry.hediff.
+		static IEnumerable<CodeInstruction> OnlyPositive(IEnumerable<CodeInstruction> instructions)
+		{
+			var codes = instructions.ToList();
+			var hediffField = AccessTools.Field(typeof(DamageDefAdditionalHediff), nameof(DamageDefAdditionalHediff.hediff));
+			var tests = Enumerable.Range(2, Math.Max(0, codes.Count - 2))
+				.Where(i => codes[i].LoadsField(hediffField) && (codes[i - 2].opcode == OpCodes.Blt_Un_S || codes[i - 2].opcode == OpCodes.Blt_Un)
+					&& codes[i - 3].opcode == OpCodes.Ldc_R4 && (float)codes[i - 3].operand == 0f)
+				.ToList();
+			if (tests.Count != 1)
+			{
+				Log.Error($"[Harmony3StrictCompat] Pawn_HealthTracker.PostApplyDamage has {tests.Count} severity tests instead of one, zero-severity damage hediffs not skipped");
+				return codes;
+			}
+			codes[tests[0] - 2].opcode = OpCodes.Ble_Un;
+			return codes;
 		}
 	}
 

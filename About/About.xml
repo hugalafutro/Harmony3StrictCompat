@@ -51,6 +51,7 @@
 - [FSF] Advanced Bionics Expansion + Block Unwanted Minutiae: hediff message comps without message text post nothing (EMP shield implants no longer throw every tick after an EMP hit).
 - Designator Shapes + Better Architect Menu: flood fill stops at doors again.
 - Vanilla + VFE Pirates: quest raid previews ("raid of roughly this size:") no longer come out blank; pawn groups whose every pawn costs more than the faction allows at those points are skipped (e.g. the melee-only Junker group).
+- Vanilla (personal tweak): the Alt cell inspector is 110 px wider, so room stat values show in full with their numbers.
 - Vanilla Quests Expanded - Ancients (personal tweak): the pneumatic capsule arrival message lists what arrived.
 - Vanilla Social Interactions Expanded: "cured my friend" thought label resolves for implied relatives (no more template errors or Social tab fallback).
 - TD Enhancement Pack (personal tweak): the Deteriorating alert leaves out corpses.
@@ -63,6 +64,7 @@
 - UI Rethemed - Main Bar (personal tweak): left- or right-click on the temperature readout toggles the temperature overlay (Heat Map's colours when it is active).
 - UI Rethemed - Main Bar + TD Enhancement Pack: Shift-click on the speed tile (or a flyout speed) ends the forced 1x slowdown, as TD does on the vanilla time controls.
 - UI Rethemed - Inspector Tabs + Auto Extract Genes: the Auto-Extract Genes switch is back, in the themed Health tab's Care section.
+- VFE Pirates: boxed warcasket weapons (on the map or in storage) no longer show an oversized icon.
 - VFE Pirates + Shelf Stack Logistics: warcasket welding takes its ingredients from the logistics pickup point next to the foundry, like any bill, instead of walking to the depot.
 - Colony Manager Redux + MSS Tweaks and Fun: loading a save no longer counts as researching a tech, so it stops granting a free reformation point.
 - Flourish + Muzzle Flash: no double flash; guns with Muzzle Flash art use it, every other gun uses Flourish's flash.

@@ -854,6 +854,14 @@ namespace Harmony3StrictCompat
 				if (uirEntryCategory != null && uirEntryIsOrder != null)
 					harmony.Patch(uirShownApart, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirOrdersTogether)));
 			}
+			foreach (var inspectorPart in new[] { "OnGUI", "DrawRow", "DrawThingRow", "DrawHeader", "DrawDivider", "DrawMapInspector", "DrawWorldInspector" })
+				if (Target("Verse.CellInspectorDrawer:" + inspectorPart) is { } cellInspector)
+					harmony.Patch(cellInspector, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(WiderCellInspector)));
+			floorGraphicData = AccessTools.Field(AccessTools.TypeByName("VEF.Graphics.FloorGraphicExtension"), "graphicData");
+			if (floorGraphicData != null && Target("Verse.Widgets:GetIconFor", args: [typeof(Thing), typeof(Vector2), typeof(Rot4?), typeof(bool),
+					typeof(float).MakeByRefType(), typeof(float).MakeByRefType(), typeof(Vector2).MakeByRefType(), typeof(Color).MakeByRefType(),
+					typeof(Material).MakeByRefType()]) is { } thingIcon)
+				harmony.Patch(thingIcon, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FloorGraphicIconScale)));
 			BillCountCache.Init(harmony);
 			TickHotPaths.Init(harmony);
 			TickTrace.Init(harmony, content.RootDir);
@@ -2423,6 +2431,47 @@ namespace Harmony3StrictCompat
 			Text.Font = __state;
 		}
 		static FieldInfo uirVacuumGauge, uirVacuumLabelWidth, uirGaugeLabel;
+
+		// Personal tweak: the Alt cell inspector is 336 wide with a 170 value column, so "Unbelievably impressive (170.3)"
+		// is cut to "Unbelievably impressiv..." and the room stat numbers never show. The widths are inlined consts:
+		// window/divider 336, row 312, value column and Truncate 170. Each grows by CellInspectorExtraWidth in every
+		// method that draws the window. Other mods' rows (Geological Landforms) go through DrawRow and widen with it.
+		const float CellInspectorExtraWidth = 110f; // tune here if a longer stage label still gets cut
+
+		static IEnumerable<CodeInstruction> WiderCellInspector(IEnumerable<CodeInstruction> instructions)
+		{
+			foreach (var c in instructions)
+			{
+				if (c.opcode == OpCodes.Ldc_R4 && c.operand is float f && (f == 336f || f == 312f || f == 170f))
+					c.operand = f + CellInspectorExtraWidth;
+				yield return c;
+			}
+		}
+
+		// VEF ThingWithFloorGraphic (VFE Pirates warcasket weapons): on the map the thing shows the graphic of its
+		// FloorGraphicExtension (the boxed weapon, drawSize 1), but Widgets.GetIconFor takes the icon scale from
+		// GenUI.IconDrawScale(def), i.e. the weapon's own graphicData.drawSize (1.7). The box icon is drawn 1.7x and
+		// spills out of its slot in the info card, inspect pane and storage tab. While the floor graphic is the icon,
+		// the scale comes from the floor graphic's drawSize. Per def: 0 = no floor graphic.
+		static FieldInfo floorGraphicData;
+		static readonly Dictionary<ThingDef, float> floorIconScale = new();
+
+		static void FloorGraphicIconScale(Thing thing, ref float scale)
+		{
+			// same test as ThingWithFloorGraphic.Graphic; a minified or carried thing has another holder
+			if (thing?.ParentHolder is not Map ||!thing.def.uiIconPath.NullOrEmpty() || thing.UIIconOverride != null || thing.StyleDef?.UIIcon != null)
+				return;
+			var def = thing.def;
+			if (!floorIconScale.TryGetValue(def, out float floorScale))
+			{
+				var extension = def.modExtensions?.Find(e => e.GetType() == floorGraphicData.DeclaringType);
+				floorScale = extension != null && floorGraphicData.GetValue(extension) is GraphicData floor
+					? def.uiIconScale * Mathf.Min(floor.drawSize.x / def.Size.x, floor.drawSize.y / def.Size.z) : 0f;
+				floorIconScale[def] = floorScale;
+			}
+			if (floorScale > 0f)
+				scale = floorScale;
+		}
 
 		// Personal tweak: the Compare gear window marks its two sides with the theme's blue (equipped) and yellow
 		// (comparing): bars, slot frames, the "Equipped · Legendary" subtitle and the values. That blue is exactly UIR's
@@ -4159,6 +4208,14 @@ namespace Harmony3StrictCompat
 			["Verse.Pawn_HealthTracker:PostApplyDamage"] = 0x7279655035C5644A,                        // game 1.7.5014, 2026-11-21 (no zero-severity damage hediffs)
 			["RimWorld.QuestPart_SubquestGenerator_Gravcores:QuestPartTick"] = 0x57A1138EAA085FF4,     // game 1.7.5014, 2026-11-20 (cheap tests first)
 			["RimWorld.QuestPart_SubquestGenerator_Gravcores:get_CanGenerateSubquest"] = 0xD22781A31626AD88,
+			["Verse.CellInspectorDrawer:OnGUI"] = 0x61C79C22E0809E53,                                  // game 1.7.5014, 2026-11-22 (wider Alt cell inspector)
+			["Verse.CellInspectorDrawer:DrawRow"] = 0xA3DBA1BA87FFE7BE,
+			["Verse.CellInspectorDrawer:DrawThingRow"] = 0x2A68EEF385EC54DF,
+			["Verse.CellInspectorDrawer:DrawHeader"] = 0x754A6C2ABA91690F,
+			["Verse.CellInspectorDrawer:DrawDivider"] = 0x512EB3753CC82A88,
+			["Verse.CellInspectorDrawer:DrawMapInspector"] = 0x5645A56FAD5DCE29,
+			["Verse.CellInspectorDrawer:DrawWorldInspector"] = 0x0315662F65B51CB2,
+			["Verse.Widgets:GetIconFor"] = 0x2EA01CE62364ED0C,                                         // (Thing, ...) overload, game 1.7.5014, 2026-11-22 (VEF floor graphic icon scale)
 			["TD_Enhancement_Pack.WorkGiver_HaulUrgentlyRefill:PotentialWorkThingsGlobal"] = 0x666AFF20872A52D4, // TD Enhancement Pack - Continued 1.7, 2026-11-20
 			["TD_Enhancement_Pack.Alert_NoBill:GetReport"] = 0x749F608E209682C4,
 			["SatelliteMinimap.Feed:GatherCore"] = 0x8DE81F8EF7D9D5CA,                             // Satellite Minimap 1.1.2, DLL of 2026-10-09 (Mechanoids layer row, marker cap)

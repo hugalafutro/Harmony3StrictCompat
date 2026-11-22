@@ -154,6 +154,7 @@
 - VFE Factory + Kanban Stockpile: a conveyor fills the hopper or storage it ends at only up to that storage's Kanban max stack size.
 - VFE Factory + EPrime's Readouts: the readout also counts what rides on conveyors.
 - Vanilla colonist bar + LTO Colony Groups (personal tweak): no grey frame behind colonist-bar groups.
+- WOWGAG's Performance Patch: its turret/pawn target reuse no longer asks the runtime for the validator's method on every search (about half of all turret tick time); a small table gives the same answer.
 - (tooling): the previous run's Player.log and Hauler's Dream debug log are copied to Logs/Archive at startup (newest 30 kept).
 - (tooling, temporary): a job that restarts ten times a tick logs what it points at (job-loop probe).</description>
 </ModMetaData>

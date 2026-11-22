@@ -9,3 +9,7 @@ Tools/.fpcheck_cache.json
 
 # tick trace diagnostic switch
 ticktrace.on
+
+# delegate table check build output
+Tools/dlgtest/bin/
+Tools/dlgtest/obj/

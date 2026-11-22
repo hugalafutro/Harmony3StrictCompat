@@ -871,6 +871,7 @@ namespace Harmony3StrictCompat
 				harmony.Patch(thingIcon, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FloorGraphicIconScale)));
 			BillCountCache.Init(harmony);
 			VgeWarcomputerOnlyForGaussGuns.Init(harmony);
+			WppFightTargetCheapValidatorMethod.Init(harmony);
 			TickHotPaths.Init(harmony);
 			TickTrace.Init(harmony, content.RootDir);
 			GravcoreSubquestTick.Init(harmony);
@@ -4235,7 +4236,9 @@ namespace Harmony3StrictCompat
 			["RimWorld.Bill_Production:ShouldDoNow"] = 0x91426C66CA668FA7,                           // game 1.7.5014, 2026-11-20 (bill count cache)
 			["Inventory.BillUtility:Satisfied"] = 0xAC4273F963D8D1D6,                                // Loadout Compositing 1.7, 2026-11-22 (bill count cache, per-tag bills)
 			["VanillaGravshipExpanded2.WarcomputerHelper:ApplyForcedMissRadiusBuffs"] = 0x7C5E4AA83043349A, // Vanilla Gravship Expanded - Chapter 2 1.7, 2026-11-22
-			["Verse.GenTypes:IsSealedWithCache"] = 0x809310C4C09A3747,                              // game 1.7.5014, 2026-11-20 (tick hot paths)
+			["GUIPerformancePatch.GppFightTarget:Pre"] = 0xAF4C93966FEC285C,                         // WOWGAG's Performance Patch 1.7, DLL of 2026-11-22 13:07 (validator method lookup)
+			["GUIPerformancePatch.GppFightTarget:Post"] = 0x5AE7AB06B9684842,
+			["Verse.GenTypes:IsSealedWithCache"] = 0x809310C4C09A3747,                             // game 1.7.5014, 2026-11-20 (tick hot paths)
 			["Verse.ReachabilityCache:ClearForHostile"] = 0x5BED8EFCC91F582A,
 			["Verse.TickManager:TickManagerUpdate"] = 0xBD63B2C8DA3F0F13,
 			["RimWorld.PregnancyUtility:IsUsableBedFor"] = 0xB20AF11F5CB7A925,                         // game 1.7.5014, 2026-11-20 (no birth in an Altered Carbon sleeve casket)
@@ -5578,6 +5581,82 @@ namespace Harmony3StrictCompat
 				Log.Message($"[Harmony3StrictCompat] Warcomputer check: skipped for {skipped} of {calls} turret calls (only gauss turrets use it)");
 			}
 			return run;
+		}
+	}
+
+	// ---- WOWGAG's Performance Patch: "fight target reuse" looks up the validator's method on every call ---------
+	// Its prefix and postfix on AttackTargetFinder.BestAttackTarget (GppFightTarget.Pre / Post) remember each
+	// searcher's last target and, to know whether a later call asks the same question, compare the validator
+	// delegate's Method. A turret hands over a new delegate on every search, so the runtime resolves the method
+	// from the code address again each time (Delegate.FindMethodHandle). Sampling profiles 2026-11-22: 2.5 s and
+	// 3.1 s in 3 minutes, about half of all turret tick time and more than the search the reuse saves.
+	// The one Delegate.Method call in each of the two methods goes through a table instead. What the runtime's
+	// GetMethodImpl answer depends on is the key (code address, second address, target type, delegate type), so
+	// the table returns the same MethodInfo the real call would. Left to the real call: combined delegates and
+	// function-pointer wrappers (invocation count not 0), and methods in unloadable code, whose address can be
+	// reused. Pre and Post only get here on the main thread (their own IsMain checks), so a plain dictionary is
+	// enough. A one-time line reports real lookups against table hits.
+	static class WppFightTargetCheapValidatorMethod
+	{
+		static AccessTools.FieldRef<Delegate, IntPtr> methodPtr, methodPtrAux;
+		static AccessTools.FieldRef<MulticastDelegate, IntPtr> invocationCount;
+		static readonly Dictionary<(IntPtr, IntPtr, Type, Type), MethodInfo> known = new();
+		static int lookups, real;
+		static bool reported;
+
+		internal static void Init(Harmony harmony)
+		{
+			var pre = Harmony3StrictCompatMod.Target("GUIPerformancePatch.GppFightTarget:Pre");
+			var post = Harmony3StrictCompatMod.Target("GUIPerformancePatch.GppFightTarget:Post");
+			if (pre == null || post == null) return;
+			if (AccessTools.Field(typeof(Delegate), "_methodPtr")?.FieldType != typeof(IntPtr)
+				|| AccessTools.Field(typeof(Delegate), "_methodPtrAux")?.FieldType != typeof(IntPtr)
+				|| AccessTools.Field(typeof(MulticastDelegate), "_invocationCount")?.FieldType != typeof(IntPtr))
+			{
+				Log.Error("[Harmony3StrictCompat] This runtime's Delegate has no _methodPtr / _methodPtrAux / _invocationCount of type IntPtr: WOWGAG fight target validator lookup left as it is");
+				return;
+			}
+			methodPtr = AccessTools.FieldRefAccess<Delegate, IntPtr>("_methodPtr");
+			methodPtrAux = AccessTools.FieldRefAccess<Delegate, IntPtr>("_methodPtrAux");
+			invocationCount = AccessTools.FieldRefAccess<MulticastDelegate, IntPtr>("_invocationCount");
+			var swap = new HarmonyMethod(typeof(WppFightTargetCheapValidatorMethod), nameof(UseTable));
+			harmony.Patch(pre, transpiler: swap);
+			harmony.Patch(post, transpiler: swap);
+		}
+
+		static IEnumerable<CodeInstruction> UseTable(IEnumerable<CodeInstruction> instructions, MethodBase original)
+		{
+			var codes = instructions.ToList();
+			var getMethod = AccessTools.PropertyGetter(typeof(Delegate), nameof(Delegate.Method));
+			var calls = codes.Where(c => c.Calls(getMethod)).ToList();
+			if (calls.Count != 1)
+			{
+				Log.Error($"[Harmony3StrictCompat] GppFightTarget.{original.Name} reads Delegate.Method {calls.Count} times instead of once, validator lookup left as it is");
+				return codes;
+			}
+			calls[0].opcode = OpCodes.Call;
+			calls[0].operand = AccessTools.Method(typeof(WppFightTargetCheapValidatorMethod), nameof(MethodOf));
+			return codes;
+		}
+
+		// Same stack shape as the call it replaces: (delegate) -> MethodInfo.
+		static MethodInfo MethodOf(Delegate d)
+		{
+			if (d is not MulticastDelegate m || invocationCount(m) != IntPtr.Zero) return d.Method;
+			var key = (methodPtr(d), methodPtrAux(d), d.Target?.GetType(), d.GetType());
+			lookups++;
+			if (!known.TryGetValue(key, out var method))
+			{
+				real++;
+				method = d.Method;
+				if (method.DeclaringType is { } type && !type.Assembly.IsCollectible) known[key] = method;
+			}
+			if (!reported && lookups >= 20000)
+			{
+				reported = true;
+				Log.Message($"[Harmony3StrictCompat] Fight target validator method: {real} real lookups of {lookups}, {known.Count} validators known");
+			}
+			return method;
 		}
 	}
 

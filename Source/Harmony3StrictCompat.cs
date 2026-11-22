@@ -379,10 +379,13 @@ namespace Harmony3StrictCompat
 			hdIsBatchBill = Target("HaulersDream.HaulersDreamGameComponent:IsBatchBill");
 			hdCanPawnBatch = Target("HaulersDream.CraftBatchPlanner:CanPawnBatch");
 			hdInstance = AccessTools.PropertyGetter(AccessTools.TypeByName("HaulersDream.HaulersDreamGameComponent"), "Instance");
-			if (hdShare != null && hdIsBatchBill != null && hdCanPawnBatch != null && hdInstance != null)
+			// Fingerprinted here, before this mod's own postfix below: the IL read back from a method that is
+			// already patched differs on this runtime (VanillaWorkSearchScans relies on this method too).
+			doBillJobOnThing = Target("RimWorld.WorkGiver_DoBill:JobOnThing");
+			if (hdShare != null && hdIsBatchBill != null && hdCanPawnBatch != null && hdInstance != null && doBillJobOnThing != null)
 			{
 				harmony.Patch(hdShare, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdShareOnlyForBatchJobs)));
-				harmony.Patch(AccessTools.Method(typeof(WorkGiver_DoBill), nameof(WorkGiver_DoBill.JobOnThing)),
+				harmony.Patch(doBillJobOnThing,
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdNoBillOnForeignInventory)) { priority = Priority.Last });
 			}
 			if (Target("RimWorld.IncidentWorker_Raid:TryGenerateRaidInfo") is { } raidInfo)
@@ -4300,6 +4303,7 @@ namespace Harmony3StrictCompat
 		}
 
 		internal static bool tmmGuildSkipped;
+		internal static MethodInfo doBillJobOnThing;
 		static bool SkipOriginal() => false;
 
 		static void Fingerprint(string name, MethodBase method)
@@ -6440,7 +6444,7 @@ namespace Harmony3StrictCompat
 				harmony.Patch(find, prefix: new HarmonyMethod(me, nameof(NoneOnMap)));
 			// The bench list rests on how these three use it; a changed fingerprint on any of them is the cue to re-read.
 			var things = Harmony3StrictCompatMod.Target("RimWorld.WorkGiver_Scanner:PotentialWorkThingsGlobal");
-			if (things == null || Harmony3StrictCompatMod.Target("RimWorld.WorkGiver_DoBill:JobOnThing") == null
+			if (things == null || Harmony3StrictCompatMod.doBillJobOnThing == null
 				|| Harmony3StrictCompatMod.Target("RimWorld.JobGiver_Work:TryIssueJobPackage") == null
 				|| Harmony3StrictCompatMod.Target("Verse.GenClosest:ClosestThingReachable") == null) return;
 			harmony.Patch(things, postfix: new HarmonyMethod(me, nameof(OwnBenchesOnly)));

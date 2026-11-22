@@ -856,7 +856,14 @@ namespace Harmony3StrictCompat
 			}
 			foreach (var inspectorPart in new[] { "OnGUI", "DrawRow", "DrawThingRow", "DrawHeader", "DrawDivider", "DrawMapInspector", "DrawWorldInspector" })
 				if (Target("Verse.CellInspectorDrawer:" + inspectorPart) is { } cellInspector)
-					harmony.Patch(cellInspector, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(WiderCellInspector)));
+					harmony.Patch(cellInspector, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(WiderCellInspector)),
+						prefix: inspectorPart switch
+						{
+							"OnGUI" => new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(CellInspectorResize)),
+							"DrawRow" => new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(CellInspectorMeasureRow)),
+							"DrawHeader" => new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(CellInspectorMeasureHeader)),
+							_ => null,
+						});
 			floorGraphicData = AccessTools.Field(AccessTools.TypeByName("VEF.Graphics.FloorGraphicExtension"), "graphicData");
 			if (floorGraphicData != null && Target("Verse.Widgets:GetIconFor", args: [typeof(Thing), typeof(Vector2), typeof(Rot4?), typeof(bool),
 					typeof(float).MakeByRefType(), typeof(float).MakeByRefType(), typeof(Vector2).MakeByRefType(), typeof(Color).MakeByRefType(),
@@ -2434,18 +2441,47 @@ namespace Harmony3StrictCompat
 
 		// Personal tweak: the Alt cell inspector is 336 wide with a 170 value column, so "Unbelievably impressive (170.3)"
 		// is cut to "Unbelievably impressiv..." and the room stat numbers never show. The widths are inlined consts:
-		// window/divider 336, row 312, value column and Truncate 170. Each grows by CellInspectorExtraWidth in every
-		// method that draws the window. Other mods' rows (Geological Landforms) go through DrawRow and widen with it.
-		const float CellInspectorExtraWidth = 110f; // tune here if a longer stage label still gets cut
+		// window/divider 336, row 312, value column and Truncate 170. Each gets + cellInspectorExtra in every method
+		// that draws the window. The extra follows the content, the way vanilla sizes the height from last frame's
+		// numLines: DrawRow and DrawHeader measure their text while drawing, and OnGUI turns the widest overflow of the
+		// last fill into the next window's extra (0 when everything fits). Other mods' rows (Geological Landforms) go
+		// through DrawRow and count too.
+		const float CellInspectorMaxExtra = 300f; // never wider than 336 + this
+		static float cellInspectorExtra, cellInspectorNeed = -1f; // -1: no fill since the last OnGUI, keep the old width
 
 		static IEnumerable<CodeInstruction> WiderCellInspector(IEnumerable<CodeInstruction> instructions)
 		{
+			var extra = AccessTools.Field(typeof(Harmony3StrictCompatMod), nameof(cellInspectorExtra));
 			foreach (var c in instructions)
 			{
-				if (c.opcode == OpCodes.Ldc_R4 && c.operand is float f && (f == 336f || f == 312f || f == 170f))
-					c.operand = f + CellInspectorExtraWidth;
 				yield return c;
+				if (c.opcode == OpCodes.Ldc_R4 && c.operand is float f && (f == 336f || f == 312f || f == 170f))
+				{
+					yield return new CodeInstruction(OpCodes.Ldsfld, extra);
+					yield return new CodeInstruction(OpCodes.Add);
+				}
 			}
+		}
+
+		static void CellInspectorResize()
+		{
+			if (cellInspectorNeed < 0f) return;
+			cellInspectorExtra = Mathf.Min(Mathf.Ceil(cellInspectorNeed), CellInspectorMaxExtra);
+			cellInspectorNeed = -1f;
+		}
+
+		// value column is 170 wide; LabelEllipses (Text.ClampTextWithEllipsis) cuts text wider than the column - 13
+		static void CellInspectorMeasureRow(string info) =>
+			cellInspectorNeed = Mathf.Max(cellInspectorNeed, Mathf.Max(0f, info.NullOrEmpty() ? 0f : Text.CalcSize(info).x + 14f - 170f));
+
+		// heading (room role) is drawn centred in Medium font across the 312 row
+		static void CellInspectorMeasureHeader(string text)
+		{
+			if (text.NullOrEmpty()) return;
+			var font = Text.Font;
+			Text.Font = GameFont.Medium;
+			cellInspectorNeed = Mathf.Max(cellInspectorNeed, Mathf.Max(0f, Text.CalcSize(text).x + 8f - 312f));
+			Text.Font = font;
 		}
 
 		// VEF ThingWithFloorGraphic (VFE Pirates warcasket weapons): on the map the thing shows the graphic of its

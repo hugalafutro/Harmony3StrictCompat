@@ -836,6 +836,12 @@ namespace Harmony3StrictCompat
 				foreach (var drawer in new[] { Target("RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"), umInspect })
 					if (drawer != null)
 						harmony.Patch(drawer, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirccGuiltyIconInSlot)));
+				uirccHeaderSlots = AccessTools.Field(uirccSlot.DeclaringType, "headerSlots");
+				uirccHeaderRowWidth = AccessTools.Field(uirccSlot.DeclaringType, "headerRowWidth");
+				if (uirccHeaderSlots?.FieldType != typeof(int) || uirccHeaderRowWidth?.FieldType != typeof(float))
+					Log.Error("[Harmony3StrictCompat] UI Rethemed - Colonist Card: Card.headerSlots / headerRowWidth are gone, header button tooltips not moved");
+				else if (Target("TD_Enhancement_Pack.JumpToSelection:Postfix") is { } tdJump)
+					harmony.Patch(tdJump, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirccTipInLastSlot)));
 			}
 			if (Target("UIRethemed.ColonistCard.StatusBar:Take") is { } uirccTake)
 			{
@@ -887,6 +893,7 @@ namespace Harmony3StrictCompat
 			AcNoBirthInSleeveCasket.Init(harmony);
 			MssHoloNoBodyNeeds.Init(harmony);
 			IpCanUseStyleNoLists.Init(harmony);
+			CatalogButtonsInUir.Init(harmony);
 		}
 
 		// ---- UI Rethemed - Architect + Vanilla Plants Expanded: Tilled soil among the orders ----
@@ -1026,8 +1033,8 @@ namespace Harmony3StrictCompat
 		// is a plain GUI.DrawTexture, so it stayed at vanilla's spot and covered a slotted button (Useful Marks' marker).
 		// In vanilla's DoInspectPaneButtons and Useful Marks' copy of it, the rect local handed to that DrawTexture (and
 		// to its tooltip right after) is moved into the next slot while the card header is drawing.
-		static Func<bool> uirccThemingHeader;
-		static Func<Rect> uirccNextSlot;
+		internal static Func<bool> uirccThemingHeader;
+		internal static Func<Rect> uirccNextSlot;
 
 		static Rect UirccGuiltySlot(Rect rect) => uirccThemingHeader() ? uirccNextSlot() : rect;
 
@@ -1059,6 +1066,34 @@ namespace Harmony3StrictCompat
 			}
 			if (done != 1)
 				Log.Error($"[Harmony3StrictCompat] guilty icon slot: expected one guilty icon draw in {__originalMethod.DeclaringType?.Name}.{__originalMethod.Name}, found {done}");
+			return codes;
+		}
+
+		// ---- UI Rethemed - Colonist Card: tooltip of a slotted header button left at the game's spot ----
+		// A mod button drawn from a DoInspectPaneButtons postfix as Widgets.ButtonImage(rect) + TooltipHandler.TipRegion(rect)
+		// (TD Enhancement Pack's "jump to selection" eye) gets its icon moved into a header slot, but the tooltip region
+		// stays at the game's coordinates: an invisible "Jump to this object" area over whichever button sits there.
+		// The TipRegion call right after the button is sent to the slot handed out last. That slot is rebuilt from the
+		// card's counters with the layout of Card.NextHeaderSlot (24 px slots, 4 px gaps, from the right), which is
+		// fingerprinted above, so a layout change shows as a red line.
+		static FieldInfo uirccHeaderSlots, uirccHeaderRowWidth;
+
+		static void UirccTipRegion(Rect rect, TipSignal tip)
+		{
+			if (uirccThemingHeader() && (int)uirccHeaderSlots.GetValue(null) is var slots and > 0)
+				rect = new Rect(Mathf.Round((float)uirccHeaderRowWidth.GetValue(null) - slots * 24f - (slots - 1) * 4f), 0f, 24f, 24f);
+			TooltipHandler.TipRegion(rect, tip);
+		}
+
+		static IEnumerable<CodeInstruction> UirccTipInLastSlot(IEnumerable<CodeInstruction> instructions, MethodBase __originalMethod)
+		{
+			var tip = AccessTools.Method(typeof(TooltipHandler), nameof(TooltipHandler.TipRegion), [typeof(Rect), typeof(TipSignal)]);
+			var codes = instructions.ToList();
+			var calls = codes.Where(c => c.Calls(tip)).ToList();
+			if (calls.Count != 1)
+				Log.Error($"[Harmony3StrictCompat] header tooltip slot: expected one TipRegion call in {__originalMethod.DeclaringType?.Name}.{__originalMethod.Name}, found {calls.Count}");
+			else
+				calls[0].operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(UirccTipRegion));
 			return codes;
 		}
 
@@ -4233,6 +4268,11 @@ namespace Harmony3StrictCompat
 			["RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"] = 0x9ADB9BA182DCDD68,               // vanilla 1.7.5013, guilty icon slot
 			["UIRethemed.ColonistCard.Card:get_ThemingHeader"] = 0xE0BB7E0F75774563,                     // UI Rethemed - Colonist Card 1.7, 2026-11-15 03:21
 			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0x140F60EC9F696E2F,
+			["TD_Enhancement_Pack.JumpToSelection:Postfix"] = 0xED9E022B9869D83B,                         // TD Enhancement Pack - Continued 1.7, DLL of 2026-10-22 (eye button tooltip)
+			["DOORAJP.ColonyKit.InfoButtons:DrawInspect"] = 0xC5783460D410E954,                                   // Colony Tabs Framework 1.7, DLL of 2026-11-22 16:02 (Catalog "C" button)
+			["DOORAJP.ColonyKit.InfoButtons:DrawCard"] = 0xE1B1120907D6711F,
+			["UIRethemed.InfoCard.InfoCardWindow:TitleTools"] = 0x5F5F9D5CAFCF963F,                                // UI Rethemed - Info Card 1.7, DLL of 2026-11-22 16:52
+			["UIRethemed.InfoCard.InfoCardWindow:Themed"] = 0xD26943316A2109F1,
 			["UIRethemed.ColonistCard.StatusBar:Take"] = 0x57D442485564A584,                            // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-19 17:22
 			["UIRethemed.Animals.Motion:Key"] = 0xD8B1E64161CEBA55,                                     // UI Rethemed - Animals 1.7, DLL of 2026-11-09
 			["UIRethemed.Animals.Motion:Hover"] = 0xCF658FE8AAEAECFD,
@@ -7537,6 +7577,166 @@ namespace Harmony3StrictCompat
 				else
 					h.Severity = severity;
 			}
+		}
+	}
+
+	// ---- Catalog Tab (Colony Tabs Framework) + UI Rethemed: the "C" jump button ----
+	// Colony Tabs Framework draws each registered info button (Catalog Tab's "C": open this thing in the catalog)
+	// from two postfixes, as its own box at the game's coordinates:
+	//  - Inspect pane (InfoButtons.DrawInspect, after DoInspectPaneButtons): UI Rethemed - Colonist Card runs that
+	//    method for its card header and moves only Widgets.ButtonImage buttons into its 24 px slots, so the box
+	//    stayed at the game's spot, between and under the slotted buttons.
+	//  - Info card (InfoButtons.DrawCard, after Dialog_InfoCard.DoWindowContents): UI Rethemed - Info Card draws the
+	//    whole window itself, so the box landed on the themed title text. That title bar is also a drag grip that
+	//    uses the mouse-down (InfoCardWindow.Grip) before the postfix runs, so the click never reached the button.
+	// While UI Rethemed is drawing, the framework's own draw is skipped and each shown button is drawn as a UI
+	// Rethemed header button holding its letter: in the card header's next slot, and left of the info card's title
+	// tools (Compare, materials, back), which are drawn before the grip. A click goes through the framework's own
+	// InfoButtons.Press. With the theming off (setting, failsafe) the framework draws as before.
+	static class CatalogButtonsInUir
+	{
+		struct Button
+		{
+			public string key, letter;
+			public Func<ThingDef, bool> shows;
+			public Func<ThingDef, string> tip;
+		}
+
+		static FieldInfo registered;
+		static object readFrom;
+		static Button[] buttons = [];
+		static Func<string, ThingDef, bool, bool> press;
+		static Func<Thing, ThingDef> defFor;
+		static Func<Rect, Texture, Color, string, string, float, bool> headerButton;
+		static Action<Rect, string, TextAnchor, Color, GameFont> label;
+		static Func<Color> hoverFill, textDim;
+		static Action<Action> later;
+		static Func<Window, bool> cardThemed;
+		static AccessTools.FieldRef<Dialog_InfoCard, Thing> cardThing;
+		static AccessTools.FieldRef<Dialog_InfoCard, Def> cardDef;
+		static Rect titleRoom;
+
+		// A lookup that throws (an update adds an overload) must not end the mod constructor: on 2026-11-22 an
+		// ambiguous HeaderButton lookup here did, and the add-on DLLs then failed to load too.
+		internal static void Init(Harmony harmony)
+		{
+			try { Apply(harmony); }
+			catch (Exception e) { Log.Error("[Harmony3StrictCompat] Catalog button in UI Rethemed not applied: " + e); }
+		}
+
+		static void Apply(Harmony harmony)
+		{
+			var kit = AccessTools.TypeByName("DOORAJP.ColonyKit.InfoButtons");
+			var theme = AccessTools.TypeByName("UIRethemed.Core.Theme");
+			if (kit == null || theme == null) return;
+			registered = AccessTools.Field(kit, "buttons");
+			press = Bind<Func<string, ThingDef, bool, bool>>(AccessTools.Method(kit, "Press", [typeof(string), typeof(ThingDef), typeof(bool)]));
+			defFor = Bind<Func<Thing, ThingDef>>(AccessTools.Method(kit, "DefFor", [typeof(Thing)]));
+			headerButton = Bind<Func<Rect, Texture, Color, string, string, float, bool>>(AccessTools.Method("UIRethemed.Core.CoreWidgets:HeaderButton", [typeof(Rect), typeof(Texture), typeof(Color), typeof(string), typeof(string), typeof(float)]));
+			label = Bind<Action<Rect, string, TextAnchor, Color, GameFont>>(AccessTools.Method(theme, "Label", [typeof(Rect), typeof(string), typeof(TextAnchor), typeof(Color), typeof(GameFont)]));
+			hoverFill = Bind<Func<Color>>(AccessTools.PropertyGetter(theme, "HighlightGray"));
+			textDim = Bind<Func<Color>>(AccessTools.PropertyGetter(theme, "TextDim"));
+			later = Bind<Action<Action>>(AccessTools.Method("UIRethemed.Core.Failsafe:Later", [typeof(Action)]));
+			if (registered == null || press == null || defFor == null || headerButton == null || label == null || hoverFill == null || textDim == null || later == null)
+			{
+				Log.Error("[Harmony3StrictCompat] Catalog button in UI Rethemed: Colony Tabs Framework or UI Rethemed - Core no longer has what this fix calls, not applied");
+				return;
+			}
+			if (Harmony3StrictCompatMod.uirccThemingHeader != null && Harmony3StrictCompatMod.Target("DOORAJP.ColonyKit.InfoButtons:DrawInspect") is { } drawInspect)
+				harmony.Patch(drawInspect, prefix: new HarmonyMethod(typeof(CatalogButtonsInUir), nameof(InspectInHeaderSlots)));
+			var themed = Harmony3StrictCompatMod.Target("UIRethemed.InfoCard.InfoCardWindow:Themed");
+			var titleTools = Harmony3StrictCompatMod.Target("UIRethemed.InfoCard.InfoCardWindow:TitleTools");
+			if (themed == null || titleTools == null || Harmony3StrictCompatMod.Target("DOORAJP.ColonyKit.InfoButtons:DrawCard") is not { } drawCard) return;
+			cardThemed = Bind<Func<Window, bool>>(themed);
+			cardThing = AccessTools.FieldRefAccess<Dialog_InfoCard, Thing>("thing");
+			cardDef = AccessTools.FieldRefAccess<Dialog_InfoCard, Def>("def");
+			if (cardThemed == null)
+			{
+				Log.Error("[Harmony3StrictCompat] Catalog button in UI Rethemed: InfoCardWindow.Themed changed its signature, info card part not applied");
+				return;
+			}
+			harmony.Patch(drawCard, prefix: new HarmonyMethod(typeof(CatalogButtonsInUir), nameof(CardNotThemed)));
+			harmony.Patch(titleTools, postfix: new HarmonyMethod(typeof(CatalogButtonsInUir), nameof(CardTitleTools)));
+		}
+
+		// Null when the method is gone or its signature changed.
+		static T Bind<T>(MethodInfo method) where T : Delegate =>
+			method == null ? null : Delegate.CreateDelegate(typeof(T), method, throwOnBindFailure: false) as T;
+
+		// The framework replaces its button array on every Register, so the typed copy is rebuilt only then.
+		static Button[] Buttons()
+		{
+			var now = registered.GetValue(null);
+			if (now == readFrom) return buttons;
+			readFrom = now;
+			var list = new List<Button>();
+			foreach (var b in (Array)now)
+			{
+				var t = b.GetType();
+				list.Add(new Button
+				{
+					key = (string)AccessTools.Field(t, "key").GetValue(b),
+					letter = (string)AccessTools.Field(t, "letter").GetValue(b),
+					shows = (Func<ThingDef, bool>)AccessTools.Field(t, "shows").GetValue(b),
+					tip = (Func<ThingDef, string>)AccessTools.Field(t, "tip").GetValue(b),
+				});
+			}
+			return buttons = list.ToArray();
+		}
+
+		static void Draw(ThingDef def, bool fromCard, Func<Rect> slot)
+		{
+			if (def == null) return;
+			foreach (var b in Buttons())
+			{
+				bool shown;
+				try { shown = b.shows(def); }
+				catch { shown = false; }
+				if (!shown) continue;
+				Rect rect = slot();
+				bool over = Mouse.IsOver(rect);
+				string tip = null;
+				if (over && b.tip != null)
+					try { tip = b.tip(def); }
+					catch { }
+				bool clicked = headerButton(rect, null, hoverFill(), null, tip, 16f);
+				label(rect, b.letter, TextAnchor.MiddleCenter, over ? Color.white : textDim(), GameFont.Small);
+				if (!clicked) continue;
+				Verse.Sound.SoundStarter.PlayOneShotOnCamera(SoundDefOf.Tick_High);
+				string key = b.key;
+				later(() => press(key, def, fromCard));   // closes the card / switches the main tab: after the draw, as UI Rethemed does
+			}
+		}
+
+		// Prefix on InfoButtons.DrawInspect.
+		static bool InspectInHeaderSlots()
+		{
+			if (!Harmony3StrictCompatMod.uirccThemingHeader()) return true;
+			if (Find.Selector.NumSelected == 1)
+				Draw(defFor(Find.Selector.SingleSelectedThing), false, Harmony3StrictCompatMod.uirccNextSlot);
+			return false;
+		}
+
+		// Prefix on InfoButtons.DrawCard.
+		static bool CardNotThemed(Dialog_InfoCard card) => !cardThemed(card);
+
+		// Postfix on InfoCardWindow.TitleTools. Its result is the room left of its own tools; they go right to left
+		// from its right edge, 24 px each with a 4 px gap, and so do these.
+		// ponytail: only checks that the first button fits; a second registered button could run under a long title.
+		static void CardTitleTools(Dialog_InfoCard card, ref Rect __result)
+		{
+			if (__result.width < 28f) return;
+			var thing = cardThing(card);
+			titleRoom = __result;
+			Draw(thing != null ? defFor(thing) : cardDef(card) as ThingDef, true, NextTitleSlot);
+			__result = titleRoom;
+		}
+
+		static Rect NextTitleSlot()
+		{
+			var slot = new Rect(titleRoom.xMax - 24f, Mathf.Round(titleRoom.center.y - 12f), 24f, 24f);
+			titleRoom.xMax = slot.x - 4f;
+			return slot;
 		}
 	}
 }

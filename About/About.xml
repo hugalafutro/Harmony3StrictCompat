@@ -29,6 +29,7 @@
 - Better Workbench Management (personal tweak): previous/next bill arrows drawn 7 px higher, clear of the ingredient filter.
 - Biosculpter Pod and Neural Supercharger Resize + Vanilla Textures Expanded: a resized biosculpter pod shows its resized icon (not VTE's squeezed 3x2 one) on blueprints and the architect button.
 - Busywork + LTO Colony Groups: "Upper" job icons show on Colony Groups portraits (Busywork only hooked the vanilla colonist bar).
+- Catalog Tab + UI Rethemed: the "C" catalog button sits with the other header buttons in the themed inspect pane and info card, and its click works on the info card.
 - Sensible Bed Ownership: OwnedBed answers cached per pawn until bed ownership changes (was rescanning every bed hundreds of thousands of times a minute); spot-checked against SBO; also used by the parallel render threads, and SBO's bed list scan is locked (sleeping animals in animal beds halved FPS, render jobs threw "Collection was modified").
 - Hauler's Dream: bulk-hauled loads reach their higher-priority storage instead of going straight back where they came from (no more "bulk-hauled 6 times ... net-zero" loops, food no longer left outside the fridge).
 - Hauler's Dream + Compositable Loadouts: loadout items are kept during surplus unload again (CL's items now list several defs; HD only knew Item.Def).
@@ -83,6 +84,7 @@
 - UI Rethemed - Architect + Vanilla Plants Expanded (personal tweak): Tilled soil sits in one Orders group with Cancel, Mine and the other orders instead of a group of its own.
 - UI Rethemed - Architect (personal tweak): long names show on two lines, on the grid cards and in the Details panel header, instead of one line cut with "...".
 - UI Rethemed - Colonist Card: the guilty icon in the inspect pane header gets its own slot instead of covering another button.
+- UI Rethemed - Colonist Card + TD Enhancement Pack: the "jump to selection" eye button shows its tooltip on itself, not over another header button.
 - UI Rethemed - Colonist Card (visual tweak): the status pill names the inspiration ("Inspired creativity") instead of "Inspired".
 - UI Rethemed - Quests + Quality Colors (Continued) (visual tweak): quest reward tiles and their hover card titles are drawn in the item's quality colour, and the market value sits on the line under the name instead of beside it.
 - Altered Carbon 2 + Too Many Mods: no NullReferenceException from the Cuirassier belt reload check when Too Many Mods has swapped its VEF shield for the vanilla one (Altered Carbon's belt-charging job is skipped then).

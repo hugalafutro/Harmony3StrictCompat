@@ -96,9 +96,11 @@
 - Mod Settings Framework (VEF): slider settings reach every def their xpath matches, not just the first (ReBuild's grate speed slider now covers the sterile grate tile).
 - MSS Tweaks and Fun: haunt portraits no longer saved upside down on 1.7/Vulkan.
 - MSS Tweaks and Fun (Pondering Orb): its hologram no longer drains neural superchargers or sulks about wanting a supercharge or a body modification it can never get, and others do not think less of it for having no prosthetic.
+- MSS Tweaks and Fun: the AI core haul work giver no longer asks every colony building for an AI core on a map that has none.
 - MSS Tweaks and Fun: VFE Pirates Buckoneer culture patch remapped to the VFEP_Mercenaries faction.
 - Hospitality: Casino: tables given Casino's vending comp by LocalTweaks (tongo, billiards) charge visitors once per game.
 - Hospitality: Casino: the inspect pane shows the pricing setting and the silver charged per game.
+- Hospitality: Casino, Vending Machines: the "withdraw earnings" work givers list vending machines without filtering every colony building.
 - Hospitality: Casino: only casino visitors and trade caravans at their chill spot play slot machines (bestowers, shuttle guards and leaving caravans keep their duty).
 - Hospitality: visitors in warcaskets skip the arrival re-gear (casket pieces re-locked) and keep their casket helmet on.
 - Hospitality: guests no longer sleep on the floor after a save is loaded in the same session (stale per-pawn guest comp cache cleared on load).
@@ -145,6 +147,7 @@
 - Vanilla (personal tweak): two tick hot paths made cheap: the "is this comp type sealed" lookup no longer takes a lock, and doors ask "is this pawn hostile" once per pawn per tick instead of once per reachability cache entry.
 - Vanilla (personal tweak): up to 12 ticks per frame at 3x speed instead of 6, so a slow frame no longer costs ticks (frame rate is traded for tick rate).
 - Diagnostic (off unless a file ticktrace.on is in the mod folder): logs exact time per phase of the pawn tick, or (file contains "reach") work search time and reachability checks per work giver.
+- Vanilla (personal tweak): a reachability cache miss floods the region map once per pawn and room instead of once per destination room; the first 5000 answers of a session are checked against the game's own flood.
 - Vanilla Odyssey (personal tweak): the gravcore subquest generator no longer walks every quest on every tick; same odds, cheap tests first.
 - TD Enhancement Pack: the "urgent refill" work scan is skipped while no storage is marked for urgent refill (it searched storage for every haulable item on the map regardless).
 - TD Enhancement Pack + Altered Carbon 2: the "Empty Workbench" alert skips benches no recipe uses (the neural editor, run from its gizmos).

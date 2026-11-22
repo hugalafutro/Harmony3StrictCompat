@@ -872,6 +872,8 @@ namespace Harmony3StrictCompat
 			BillCountCache.Init(harmony);
 			VgeWarcomputerOnlyForGaussGuns.Init(harmony);
 			WppFightTargetCheapValidatorMethod.Init(harmony);
+			ReachFloodMemo.Init(harmony);
+			ModWorkGiverScans.Init(harmony);
 			TickHotPaths.Init(harmony);
 			TickTrace.Init(harmony, content.RootDir);
 			GravcoreSubquestTick.Init(harmony);
@@ -4238,7 +4240,13 @@ namespace Harmony3StrictCompat
 			["VanillaGravshipExpanded2.WarcomputerHelper:ApplyForcedMissRadiusBuffs"] = 0x7C5E4AA83043349A, // Vanilla Gravship Expanded - Chapter 2 1.7, 2026-11-22
 			["GUIPerformancePatch.GppFightTarget:Pre"] = 0xAF4C93966FEC285C,                         // WOWGAG's Performance Patch 1.7, DLL of 2026-11-22 13:07 (validator method lookup)
 			["GUIPerformancePatch.GppFightTarget:Post"] = 0x5AE7AB06B9684842,
-			["Verse.GenTypes:IsSealedWithCache"] = 0x809310C4C09A3747,                             // game 1.7.5014, 2026-11-20 (tick hot paths)
+			["Verse.Reachability:CheckRegionBasedReachability"] = 0x0AE52A32FAF5BA8D,                // game 1.7.5014, 2026-11-22 (reach flood memo)
+			["Verse.Reachability:QueueNewOpenRegion"] = 0xAA67D4BF0BC72D97,
+			["Verse.Reachability:CanReach"] = 0x22585B275FCEF578,
+			["MSSFP.AICore.WorkGiver_HaulToAICore:ShouldSkip"] = 0x0350B7DEC7D6189E,                 // MSS Tweaks and Fun 1.7 DLL, 2026-11-22 (work givers walking every building)
+			["HospitalityCasino.VendingMachineJobHelper:GetActiveVendingMachines"] = 0xDBFC4DAEA453A8BB, // Hospitality: Casino 1.7, 2026-11-22
+			["VendingMachines.VendingMachineJobHelper:GetActiveVendingMachines"] = 0xE1112F0CE73AFE00,   // Vending Machines 1.7, 2026-11-22
+			["Verse.GenTypes:IsSealedWithCache"] = 0x809310C4C09A3747,                            // game 1.7.5014, 2026-11-20 (tick hot paths)
 			["Verse.ReachabilityCache:ClearForHostile"] = 0x5BED8EFCC91F582A,
 			["Verse.TickManager:TickManagerUpdate"] = 0xBD63B2C8DA3F0F13,
 			["RimWorld.PregnancyUtility:IsUsableBedFor"] = 0xB20AF11F5CB7A925,                         // game 1.7.5014, 2026-11-20 (no birth in an Altered Carbon sleeve casket)
@@ -5768,7 +5776,7 @@ namespace Harmony3StrictCompat
 		}
 
 		// Same stack shape as the call it replaces: (pawn, thing) -> hostile.
-		static bool Hostile(Thing pawn, Thing to)
+		internal static bool Hostile(Thing pawn, Thing to)
 		{
 			if (to is not Building_Door || to.Destroyed || to.Faction is not { } faction) return pawn.HostileTo(to);
 			int now = Find.TickManager.TicksGame;
@@ -6022,6 +6030,344 @@ namespace Harmony3StrictCompat
 			Log.Message(sb.ToString());
 			ticksSeen = 0;
 			reportsLeft--;
+		}
+	}
+
+	// ---- Vanilla: one region flood per pawn and room instead of one per destination room (personal tweak) -------
+	// Reach probe 2026-11-22: work searches cost 0.4 ms of a 3.6 ms tick and at least 40% of that is
+	// Reachability.CanReach. A work giver's global search asks CanReach for every candidate (Refuel: 200 things,
+	// every DoBills giver: all 240 bill benches). The game's cache stores one answer per (start district,
+	// destination district, traverse parameters), and every miss floods the region graph from the pawn until it
+	// meets the destination: 420-710 regions per flood, 30 and more floods in one Refuel turn, because each
+	// destination room is asked separately and each room the pawn stands in starts over.
+	// A flood that runs to the end has already seen everything reachable from there. On a cache miss with one
+	// starting region the flood now always runs to the end and the districts it reached are kept per (pawn,
+	// start district, traverse parameters). Later misses from the same place are answered from that list, and
+	// the same entry the game would have written goes into its own cache. A district is reached as a whole or
+	// not at all (the game's cache already assumes that: door, fence and danger tests are per district).
+	// The lists are dropped whenever the game drops its cache (everything, one pawn, pawns hostile to a door)
+	// and a list older than 600 ticks is not used, because door locks, temperature danger and the pawn's own
+	// room change what a flood finds without clearing anything; the game's cached answers have the same blind
+	// spot, one room pair at a time. The first 5000 answers from a list are checked against the game's own
+	// flood: differences are logged, and above 0.2% the memo switches itself off for the session.
+	// Left to the game: searches with more than one starting region (pawn on an impassable cell) and the two
+	// traverse modes its cache does not serve.
+	static class ReachFloodMemo
+	{
+		const int MaxAgeTicks = 600, MaxRecords = 8192, ShadowAnswers = 5000;
+
+		readonly struct Key : IEquatable<Key>
+		{
+			readonly int district;
+			readonly TraverseParms parms;
+			public Key(int district, TraverseParms parms) { this.district = district; this.parms = parms; }
+			public bool Equals(Key other) => district == other.district && parms == other.parms;
+			public override bool Equals(object obj) => obj is Key other && Equals(other);
+			public override int GetHashCode() => Gen.HashCombineInt(parms.GetHashCode(), district);
+		}
+
+		sealed class Record
+		{
+			public int[] reached;   // district IDs, sorted
+			public int tick;
+		}
+
+		sealed class Table
+		{
+			public readonly Dictionary<Thing, Dictionary<Key, Record>> byPawn = new();
+			public readonly Dictionary<Key, Record> noPawn = new();
+			public int count;
+
+			public Dictionary<Key, Record> For(Pawn pawn)
+			{
+				if (pawn == null) return noPawn;
+				if (!byPawn.TryGetValue(pawn, out var records)) byPawn[pawn] = records = new();
+				return records;
+			}
+
+			public void Clear()
+			{
+				byPawn.Clear();
+				noPawn.Clear();
+				count = 0;
+			}
+		}
+
+		static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ReachabilityCache, Table> tables = new();
+		static readonly AccessTools.FieldRef<Reachability, ReachabilityCache> cacheOf = AccessTools.FieldRefAccess<Reachability, ReachabilityCache>("cache");
+		static readonly AccessTools.FieldRef<Reachability, Queue<Region>> openQueue = AccessTools.FieldRefAccess<Reachability, Queue<Region>>("openQueue");
+		static readonly AccessTools.FieldRef<Reachability, List<Region>> startingRegions = AccessTools.FieldRefAccess<Reachability, List<Region>>("startingRegions");
+		static readonly AccessTools.FieldRef<Reachability, List<Region>> destRegions = AccessTools.FieldRefAccess<Reachability, List<Region>>("destRegions");
+		static readonly AccessTools.FieldRef<Reachability, uint> reachedIndex = AccessTools.FieldRefAccess<Reachability, uint>("reachedIndex");
+		static readonly AccessTools.FieldRef<Reachability, int> numRegionsOpened = AccessTools.FieldRefAccess<Reachability, int>("numRegionsOpened");
+		static Func<Reachability, TraverseParms, bool> gameFlood;
+		[ThreadStatic] static bool inShadow;
+		[ThreadStatic] static List<int> ids;
+		[ThreadStatic] static List<Thing> gone;
+		static int floods, answers, shadowed, differed;
+		static bool off, reported;
+
+		internal static void Init(Harmony harmony)
+		{
+			var flood = Harmony3StrictCompatMod.Target("Verse.Reachability:CheckRegionBasedReachability");
+			if (flood == null || Harmony3StrictCompatMod.Target("Verse.Reachability:QueueNewOpenRegion") == null
+				|| Harmony3StrictCompatMod.Target("Verse.Reachability:CanReach",
+					args: [typeof(IntVec3), typeof(LocalTargetInfo), typeof(PathEndMode), typeof(TraverseParms)]) == null) return;
+			var me = typeof(ReachFloodMemo);
+			// Made before patching; a call still goes through the patched method, where inShadow lets the game's body run.
+			gameFlood = AccessTools.MethodDelegate<Func<Reachability, TraverseParms, bool>>(flood);
+			harmony.Patch(flood, prefix: new HarmonyMethod(me, nameof(Flood)));
+			harmony.Patch(AccessTools.Method(typeof(Reachability), nameof(Reachability.ClearCache)), postfix: new HarmonyMethod(me, nameof(Cleared)));
+			harmony.Patch(AccessTools.Method(typeof(Reachability), nameof(Reachability.ClearCacheFor)), postfix: new HarmonyMethod(me, nameof(ClearedFor)));
+			harmony.Patch(AccessTools.Method(typeof(Reachability), nameof(Reachability.ClearCacheForHostile)), postfix: new HarmonyMethod(me, nameof(ClearedForHostile)));
+		}
+
+		static bool Flood(Reachability __instance, TraverseParms traverseParams, ref bool __result)
+		{
+			if (inShadow || off || traverseParams.mode == TraverseMode.PassAllDestroyableThingsNotWater
+				|| traverseParams.mode == TraverseMode.NoPassClosedDoorsOrWater) return true;
+			var starts = startingRegions(__instance);
+			if (starts.Count != 1 || starts[0].District is not { } from) return true;
+			var dests = destRegions(__instance);
+			var cache = cacheOf(__instance);
+			var table = tables.GetOrCreateValue(cache);
+			lock (table)
+			{
+				int now = Find.TickManager.TicksGame;
+				var key = new Key(from.ID, traverseParams);
+				var records = table.For(traverseParams.pawn);
+				if (records.TryGetValue(key, out var record) && (uint)(now - record.tick) < MaxAgeTicks)
+				{
+					Region found = null;
+					for (int i = 0; i < dests.Count && found == null; i++)
+						if (dests[i].District is { } district && Array.BinarySearch(record.reached, district.ID) >= 0) found = dests[i];
+					if (shadowed < ShadowAnswers)
+					{
+						// The start region is still queued and marked, exactly what the game's flood expects.
+						inShadow = true;
+						try { __result = gameFlood(__instance, traverseParams); }
+						finally { inShadow = false; }
+						Compare(found != null, __result, traverseParams, from, now - record.tick);
+						return false;
+					}
+					answers++;
+					Book(cache, from, dests, found, traverseParams);
+					__result = found != null;
+					Report();
+					return false;
+				}
+
+				// The game's flood, minus the early return at the destination.
+				var list = ids ??= new List<int>();
+				list.Clear();
+				list.Add(from.ID);
+				var queue = openQueue(__instance);
+				uint mark = reachedIndex(__instance);
+				ref int opened = ref numRegionsOpened(__instance);
+				while (queue.Count > 0)
+				{
+					var links = queue.Dequeue().links;
+					for (int i = 0; i < links.Count; i++)
+						for (int j = 0; j < 2; j++)
+						{
+							var next = links[i].regions[j];
+							if (next == null || next.reachedIndex == mark || !next.type.Passable() || !next.Allows(traverseParams, isDestination: false)) continue;
+							queue.Enqueue(next);
+							next.reachedIndex = mark;
+							opened++;
+							if (next.District is { } district) list.Add(district.ID);
+						}
+				}
+				list.Sort();
+				int n = 0;
+				for (int i = 0; i < list.Count; i++)
+					if (i == 0 || list[i] != list[i - 1]) list[n++] = list[i];
+				var reached = new int[n];
+				list.CopyTo(0, reached, 0, n);
+
+				if (record == null)
+				{
+					if (table.count >= MaxRecords)
+					{
+						table.Clear();
+						records = table.For(traverseParams.pawn);
+					}
+					table.count++;
+				}
+				records[key] = new Record { reached = reached, tick = now };
+
+				Region hit = null;
+				for (int i = 0; i < dests.Count && hit == null; i++)
+					if (dests[i].reachedIndex == mark) hit = dests[i];
+				floods++;
+				Book(cache, from, dests, hit, traverseParams);
+				__result = hit != null;
+				Report();
+				return false;
+			}
+		}
+
+		// The entries the game's flood writes: the found pair as reachable, or every asked pair as unreachable.
+		static void Book(ReachabilityCache cache, District from, List<Region> dests, Region found, TraverseParms parms)
+		{
+			if (found != null)
+			{
+				if (found.District is { } to) cache.AddCachedResult(from, to, parms, reachable: true);
+				return;
+			}
+			for (int i = 0; i < dests.Count; i++)
+				if (dests[i].District is { } to) cache.AddCachedResult(from, to, parms, reachable: false);
+		}
+
+		static void Compare(bool memo, bool game, TraverseParms parms, District from, int age)
+		{
+			shadowed++;
+			if (memo != game && ++differed <= 5)
+				Log.Warning($"[Harmony3StrictCompat] Reach flood memo differs from the game's flood: memo {memo}, game {game}, pawn {parms.pawn.ToStringSafe()}, mode {parms.mode}, max danger {parms.maxDanger}, from district {from.ID}, list {age} ticks old");
+			if (shadowed != ShadowAnswers) return;
+			off = differed * 500 > shadowed;
+			if (off) Log.Error($"[Harmony3StrictCompat] Reach flood memo switched off: {differed} of {shadowed} checked answers differed from the game's flood");
+			else Log.Message($"[Harmony3StrictCompat] Reach flood memo check: {differed} of {shadowed} answers differed from the game's flood, memo stays on");
+		}
+
+		static void Report()
+		{
+			if (reported || floods + answers < 50000) return;
+			reported = true;
+			Log.Message($"[Harmony3StrictCompat] Reach flood memo: {floods} floods, {answers} answers without a flood");
+		}
+
+		static void Cleared(Reachability __instance)
+		{
+			if (tables.TryGetValue(cacheOf(__instance), out var table))
+				lock (table) table.Clear();
+		}
+
+		static void ClearedFor(Reachability __instance, Pawn pawn)
+		{
+			if (pawn == null || !tables.TryGetValue(cacheOf(__instance), out var table)) return;
+			lock (table)
+				if (table.byPawn.Remove(pawn, out var records)) table.count -= records.Count;
+		}
+
+		// Same rule and same per-tick hostility memo as the game's own cache clearing (TickHotPaths).
+		static void ClearedForHostile(Reachability __instance, Thing hostileTo)
+		{
+			if (!tables.TryGetValue(cacheOf(__instance), out var table)) return;
+			lock (table)
+			{
+				if (table.byPawn.Count == 0) return;
+				var list = gone ??= new List<Thing>();
+				list.Clear();
+				foreach (var pawn in table.byPawn.Keys)
+					if (TickHotPaths.Hostile(pawn, hostileTo)) list.Add(pawn);
+				for (int i = 0; i < list.Count; i++)
+					if (table.byPawn.Remove(list[i], out var records)) table.count -= records.Count;
+				list.Clear();
+			}
+		}
+	}
+
+	// ---- Three mod work givers that walk every colony building on each turn ------------------------------------
+	// Reach probe 2026-11-22: about 1 ms per turn each, without a single reachability call, together a tenth of
+	// all work search time.
+	// MSS Tweaks and Fun, WorkGiver_HaulToAICore.ShouldSkip: asks every colony building for its AI core comp,
+	// also on a map without any AI core. Prefix: when no thing of a def that carries that comp is on the map,
+	// the answer is "skip", which is what the walk would find; otherwise the original runs.
+	// Hospitality: Casino and Vending Machines, VendingMachineJobHelper.GetActiveVendingMachines (same code in
+	// both): filters every colony building through IsVendingMachine. Prefix: only the player's things of defs
+	// that carry the mod's vending comp go through the mod's own IsVendingMachine. Same machines; the list is
+	// ordered by def instead of by building order, which only decides between two machines at exactly the same
+	// distance from the pawn.
+	// Both rest on comps coming from the def's comp list, as these mods' comps do.
+	static class ModWorkGiverScans
+	{
+		sealed class Vending
+		{
+			public Type comp;
+			public Func<Building, bool> isMachine;
+		}
+
+		static readonly Dictionary<Type, ThingDef[]> defsWithComp = new();
+		static readonly Dictionary<Type, Vending> vending = new();
+		static Type coreComp;
+		static int coreCalls, coreSkips, listCalls, listCandidates;
+		static bool coreReported, listReported;
+
+		internal static void Init(Harmony harmony)
+		{
+			var me = typeof(ModWorkGiverScans);
+			if (Harmony3StrictCompatMod.Target("MSSFP.AICore.WorkGiver_HaulToAICore:ShouldSkip") is { } skip)
+			{
+				coreComp = AccessTools.TypeByName("MSSFP.Comps.CompTrueAICore");
+				if (coreComp != null) harmony.Patch(skip, prefix: new HarmonyMethod(me, nameof(NoCoreOnMap)));
+				else Log.Error("[Harmony3StrictCompat] MSSFP.Comps.CompTrueAICore no longer exists: its mod updated, remove or redo this fix");
+			}
+			foreach (var mod in new[] { "HospitalityCasino", "VendingMachines" })
+			{
+				if (Harmony3StrictCompatMod.Target($"{mod}.VendingMachineJobHelper:GetActiveVendingMachines") is not { } list) continue;
+				var comp = AccessTools.TypeByName($"{mod}.CompVendingMachine");
+				var isMachine = AccessTools.Method(list.DeclaringType, "IsVendingMachine", [typeof(Building)]);
+				if (comp == null || isMachine == null)
+				{
+					Log.Error($"[Harmony3StrictCompat] {mod}.CompVendingMachine or VendingMachineJobHelper.IsVendingMachine no longer exists: its mod updated, remove or redo this fix");
+					continue;
+				}
+				vending[list.DeclaringType] = new Vending { comp = comp, isMachine = AccessTools.MethodDelegate<Func<Building, bool>>(isMachine) };
+				harmony.Patch(list, prefix: new HarmonyMethod(me, nameof(ActiveMachines)));
+			}
+		}
+
+		// Defs whose comp list holds this comp class or a subclass. Asked in a running game only, so defs are final.
+		static ThingDef[] DefsWith(Type compClass)
+		{
+			lock (defsWithComp)
+			{
+				if (!defsWithComp.TryGetValue(compClass, out var defs))
+					defsWithComp[compClass] = defs = DefDatabase<ThingDef>.AllDefsListForReading
+						.Where(d => d.comps != null && d.comps.Any(c => c.compClass != null && compClass.IsAssignableFrom(c.compClass))).ToArray();
+				return defs;
+			}
+		}
+
+		static bool NoCoreOnMap(Pawn pawn, ref bool __result)
+		{
+			var lister = pawn.Map.listerThings;
+			bool any = false;
+			foreach (var def in DefsWith(coreComp))
+				if (lister.ThingsOfDef(def).Count > 0) { any = true; break; }
+			coreCalls++;
+			if (!any) coreSkips++;
+			if (!coreReported && coreCalls >= 300)
+			{
+				coreReported = true;
+				Log.Message($"[Harmony3StrictCompat] AI core haul check: {coreSkips} of {coreCalls} turns answered without walking the colony's buildings (no AI core on the map)");
+			}
+			if (any) return true;
+			__result = true;
+			return false;
+		}
+
+		static bool ActiveMachines(Map map, ref List<Building> __result, MethodBase __originalMethod)
+		{
+			if (!vending.TryGetValue(__originalMethod.DeclaringType, out var mod)) return true;
+			var machines = new List<Building>();
+			var lister = map.listerThings;
+			var player = Faction.OfPlayer;
+			foreach (var def in DefsWith(mod.comp))
+			{
+				var things = lister.ThingsOfDef(def);
+				listCandidates += things.Count;
+				for (int i = 0; i < things.Count; i++)
+					if (things[i] is Building building && building.Faction == player && mod.isMachine(building)) machines.Add(building);
+			}
+			if (!listReported && ++listCalls >= 300)
+			{
+				listReported = true;
+				Log.Message($"[Harmony3StrictCompat] Vending machine listing: {listCalls} turns looked at {listCandidates} machines instead of every colony building ({map.listerBuildings.allBuildingsColonist.Count} here)");
+			}
+			__result = machines;
+			return false;
 		}
 	}
 

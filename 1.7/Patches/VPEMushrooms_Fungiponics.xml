@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Patch>
+  <!-- Vanilla Plants Expanded - Mushrooms (workshop 3006389281) + Biomes! Caverns (workshop 2969748433).
+       Personal tweak, not a fix. Caverns' own patch (1.7/Mods/VanillaPlantsExpandedMushrooms/Patches/
+       BiomesCaverns_VanillaExpandedMushrooms.xml) gives its fungiponics sow tag to six VPE mushrooms: timbercap,
+       healtruffle, stinker, blisscap, bileceps and mycothread. The other seven cannot be planted in a
+       fungiponics basin (BMT_FungiponicsBasin, BMT_AdvancedFungiponicsBasin; both use sowTag BMT_Fungiponics):
+       redcap, zapcap, foampuffer, toxpuff (Biotech) and the decorative lullabloom, glowcap and thermoregulus.
+       This adds the tag to those seven. Their research prerequisites and own growing rules are untouched.
+       Zapcap still needs a power conduit under the basin: it spawns its power "building" (not an edifice, so it
+       does not displace the basin) on its own cell.
+       Each PatchOperationTest fails with a red patch error when the plant is gone or already carries the tag,
+       i.e. one of the two mods updated and this file needs re-checking. -->
+  <Operation Class="PatchOperationSequence" MayRequire="VanillaExpanded.VPlantsEMushrooms">
+    <operations>
+      <li Class="PatchOperationTest">
+        <xpath>Defs/ThingDef[defName="VPE_Plant_Redcap"]/plant/sowTags[not(li="BMT_Fungiponics")]</xpath>
+      </li>
+      <li Class="PatchOperationTest">
+        <xpath>Defs/ThingDef[defName="VPE_Plant_Zapcap"]/plant/sowTags[not(li="BMT_Fungiponics")]</xpath>
+      </li>
+      <li Class="PatchOperationTest">
+        <xpath>Defs/ThingDef[defName="VPE_Plant_Foampuffer"]/plant/sowTags[not(li="BMT_Fungiponics")]</xpath>
+      </li>
+      <li Class="PatchOperationTest">
+        <xpath>Defs/ThingDef[defName="VPE_Plant_Lullabloom"]/plant/sowTags[not(li="BMT_Fungiponics")]</xpath>
+      </li>
+      <li Class="PatchOperationTest">
+        <xpath>Defs/ThingDef[defName="VPE_Plant_Glowcap"]/plant/sowTags[not(li="BMT_Fungiponics")]</xpath>
+      </li>
+      <li Class="PatchOperationTest">
+        <xpath>Defs/ThingDef[defName="VPE_Plant_Thermoregulus"]/plant/sowTags[not(li="BMT_Fungiponics")]</xpath>
+      </li>
+      <li Class="PatchOperationTest" MayRequire="Ludeon.RimWorld.Biotech">
+        <xpath>Defs/ThingDef[defName="VPE_Plant_Toxpuff"]/plant/sowTags[not(li="BMT_Fungiponics")]</xpath>
+      </li>
+      <li Class="PatchOperationAdd">
+        <xpath>Defs/ThingDef[defName="VPE_Plant_Redcap" or defName="VPE_Plant_Zapcap" or defName="VPE_Plant_Foampuffer" or defName="VPE_Plant_Lullabloom" or defName="VPE_Plant_Glowcap" or defName="VPE_Plant_Thermoregulus"]/plant/sowTags</xpath>
+        <value>
+          <li>BMT_Fungiponics</li>
+        </value>
+      </li>
+      <li Class="PatchOperationAdd" MayRequire="Ludeon.RimWorld.Biotech">
+        <xpath>Defs/ThingDef[defName="VPE_Plant_Toxpuff"]/plant/sowTags</xpath>
+        <value>
+          <li>BMT_Fungiponics</li>
+        </value>
+      </li>
+    </operations>
+  </Operation>
+</Patch>

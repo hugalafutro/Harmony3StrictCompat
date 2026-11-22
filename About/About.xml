@@ -44,6 +44,7 @@
 - Kanban Stockpile Continue: a storage holding more stacks than its similar stack limit takes nothing more of that kind until the surplus is hauled out (no more topping up the stack that remove-excess is carrying away).
 - Kanban Stockpile Continue: with several stacks allowed and a stack size below the item's own stack limit, the later stacks fill up too (a stack already at its size no longer blocks topping up the others).
 - Kanban Stockpile Continue: remove-excess only offers a job when it can really build one (no "provided target but yielded no actual job" when the destination is already at its own max stack size).
+- Kanban Stockpile Continue: newly built storage no longer starts with the Kanban numbers of whatever was copied or built last (storage settings without an owner each keep their own, instead of sharing the clipboard slot).
 - Useful Marks: selected items and buildings show one info card button, not two.
 - Vanilla Ideology + Alpha Memes (heart extraction): sacrificing an innocent prisoner in a ritual no longer counts as executing an innocent or as a prisoner death through neglect (no opinion / mood penalties for the ideoligion's own ritual).
 - Common Sense: no "random element from empty collection" warnings for food no recipe makes (meal ingredients lookup skipped).

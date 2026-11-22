@@ -895,6 +895,7 @@ namespace Harmony3StrictCompat
 			IpCanUseStyleNoLists.Init(harmony);
 			CatalogButtonsInUir.Init(harmony);
 			NewSettlementWantForSettlers.Init(harmony);
+			KanbanOwnerlessSettings.Init(harmony);
 		}
 
 		// ---- UI Rethemed - Architect + Vanilla Plants Expanded: Tilled soil among the orders ----
@@ -4142,6 +4143,8 @@ namespace Harmony3StrictCompat
 			["KanbanStockpileContinue.WorkGiver_RemoveExcessFromKanban:HasJobOnThing"] = 0x2F571A215357C57E,   // 2026-11-18 (remove-excess checks in sync)
 			["KanbanStockpileContinue.WorkGiver_RemoveExcessFromKanban:JobOnThing"] = 0x6513C113A9741404,
 			["KanbanStockpileContinue.KanbanStockpileAPI:InvokeExcessRemoved"] = 0xDEEB48913A6ABFF4,
+			["KanbanStockpileContinue.StorageSettings_CopyFrom_Patch:CopyFrom"] = 0x03124597F110B0CD,         // 2026-11-22 (ownerless storage settings no longer share one Kanban slot)
+			["KanbanStockpileContinue.StorageSettings_ExposeData_Patch:Postfix"] = 0x1C02896D5C8FB951,
 			["UIRethemed.Ideology.StyleTip+Content:get_Width"] = 0x5F8988FF18236D28,                          // UI Rethemed - Ideology 1.7, 2026-11-11 11:53
 			["UIRethemed.Ideology.StyleTip+Content:Height"] = 0x011A611C99D36B61,
 			["UIRethemed.Ideology.StyleTip+Content:CellWidth"] = 0x72A4DC3661404FC9,
@@ -7811,6 +7814,60 @@ namespace Harmony3StrictCompat
 		{
 			foreach (var pawn in gravship.Pawns)
 				if (pawn.Faction == Faction.OfPlayer && !settlers.Contains(pawn)) settlers.Add(pawn);
+		}
+	}
+
+	// ---- Kanban Stockpile Continue: storage settings without an owner no longer share one Kanban slot -----------
+	// Kanban keeps its three numbers (refill threshold, similar stack limit, max stack size) per owner key, and
+	// every StorageSettings object that has no owner falls back to the single key "___clipboard": the real
+	// copy/paste clipboard, but also every def's default storage settings, a frame's settings, an auto-rebuild
+	// blueprint's settings and a flying gravship's stockpiles and storage groups. A new storage blueprint copies
+	// from its def's defaults, so it read that slot: after one Copy (or one frame built from a configured
+	// blueprint) every storage built afterwards started with those numbers, e.g. 1 stack / 500 (seen 2026-11-22,
+	// together with sarcophagi, biosculpter pods and mortars carrying Kanban numbers nobody set). The slot also
+	// went into every ownerless settings node of the save, so it survived a reload, and gravship stockpiles all
+	// took the numbers of the one copied last. Each ownerless object now gets a key of its own in both places
+	// Kanban uses the fallback (its CopyFrom hook and its ExposeData postfix): def defaults carry no Kanban
+	// numbers, and clipboard, frame and gravship copies each carry only what was copied into them.
+	// Ceiling: Kanban's table keeps the entry of an ownerless object that is gone (a finished frame) until the next
+	// game load; a few ints each. Give the key object a finalizer queue if that ever matters.
+	static class KanbanOwnerlessSettings
+	{
+		static readonly System.Runtime.CompilerServices.ConditionalWeakTable<StorageSettings, string> keys = new();
+		static int next;
+
+		internal static void Init(Harmony harmony)
+		{
+			foreach (string name in new[] { "KanbanStockpileContinue.StorageSettings_CopyFrom_Patch:CopyFrom", "KanbanStockpileContinue.StorageSettings_ExposeData_Patch:Postfix" })
+				if (Harmony3StrictCompatMod.Target(name) is { } method)
+					harmony.Patch(method, transpiler: new HarmonyMethod(typeof(KanbanOwnerlessSettings), nameof(OwnKeyPerObject)));
+		}
+
+		internal static string Key(StorageSettings settings) =>
+			settings == null ? "___clipboard" : keys.GetValue(settings, _ => "___ownerless" + ++next);
+
+		// Kanban writes: OwnerKey(settings?.owner) ?? "___clipboard". The string load becomes Key(settings), with
+		// the same argument load that fed the owner read just before it.
+		static IEnumerable<CodeInstruction> OwnKeyPerObject(IEnumerable<CodeInstruction> instructions, MethodBase original)
+		{
+			var codes = instructions.ToList();
+			var owner = AccessTools.Field(typeof(StorageSettings), "owner");
+			int load = -1, done = 0;
+			for (int i = 0; i < codes.Count; i++)
+			{
+				if (codes[i].LoadsField(owner)) load = i - 1;
+				else if (codes[i].opcode == OpCodes.Ldstr && codes[i].operand as string == "___clipboard" && load >= 0 && codes[load].IsLdarg())
+				{
+					codes[i].opcode = codes[load].opcode;
+					codes[i].operand = codes[load].operand;
+					codes.Insert(++i, new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(KanbanOwnerlessSettings), nameof(Key))));
+					done++;
+				}
+			}
+			int expected = original.Name == "CopyFrom" ? 2 : 1;
+			if (done != expected)
+				Log.Error($"[Harmony3StrictCompat] Kanban {original.DeclaringType?.Name}.{original.Name} shape changed ({done} clipboard key fallbacks, expected {expected}): ownerless storage settings still share one Kanban slot");
+			return codes;
 		}
 	}
 }

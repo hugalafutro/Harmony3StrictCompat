@@ -894,6 +894,7 @@ namespace Harmony3StrictCompat
 			MssHoloNoBodyNeeds.Init(harmony);
 			IpCanUseStyleNoLists.Init(harmony);
 			CatalogButtonsInUir.Init(harmony);
+			NewSettlementWantForSettlers.Init(harmony);
 		}
 
 		// ---- UI Rethemed - Architect + Vanilla Plants Expanded: Tilled soil among the orders ----
@@ -4328,6 +4329,8 @@ namespace Harmony3StrictCompat
 			["SatelliteMinimap.MinimapWindow:OpenLayersMenu"] = 0xE47E83E43EE95A27,
 			["SatelliteMinimap.MinimapWindow:Toggle"] = 0x2C37E6475E92163E,
 			["SatelliteMinimap.MinimapSettings:ExposeData"] = 0x75F6660846866D5A,
+			["RimWorld.Planet.SettleUtility:AddNewHome"] = 0x69C44B511913CADB,                       // game 1.7.5014, 2026-11-22 ("live in a new settlement" want goes to the settlers)
+			["WantsAndQuirks.SettleUtility_AddNewHome_Patch:Postfix"] = 0x8F77A64C6D0DB00F,          // Character Development, DLL of 2026-11-13
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an
@@ -7737,6 +7740,77 @@ namespace Harmony3StrictCompat
 			var slot = new Rect(titleRoom.xMax - 24f, Mathf.Round(titleRoom.center.y - 12f), 24f, 24f);
 			titleRoom.xMax = slot.x - 4f;
 			return slot;
+		}
+	}
+
+	// ---- Character Development: "live in a new settlement" is fulfilled for the pawns who settle ----------------
+	// Its postfix on SettleUtility.AddNewHome completes the want for every player pawn spawned on any map and in
+	// any caravan, wherever the new settlement is. A gravship landing on an empty tile calls AddNewHome while the
+	// crew is still held inside the Gravship object (on no map, in no caravan), so the crew got nothing and the
+	// pawns left on a kept map got the want (seen 2026-11-22: a child on the home map, which Vanilla Gravship
+	// Expanded keeps after takeoff; any second colony does the same). The want now goes to the player pawns at
+	// the new settlement's tile: on its map, in a caravan standing on it, or aboard a gravship landing on it.
+	static class NewSettlementWantForSettlers
+	{
+		static Func<Pawn, bool> canHaveWants;
+		static MethodInfo checkWants;
+		static object newSettlement;
+
+		internal static void Init(Harmony harmony)
+		{
+			var utility = AccessTools.TypeByName("WantsAndQuirks.WantsAndQuirksUtility");
+			var context = AccessTools.TypeByName("WantsAndQuirks.WantWorkerContext");
+			var trigger = AccessTools.TypeByName("WantsAndQuirks.WantTriggerType");
+			if (utility == null || context == null || trigger == null) return;
+			var canHave = AccessTools.Method(utility, "CanHaveWants", [typeof(Pawn)]);
+			checkWants = AccessTools.Method(utility, "CheckWants", [typeof(Pawn), context]);
+			var triggerType = AccessTools.Field(context, "triggerType");
+			if (canHave == null || checkWants == null || triggerType == null || !Enum.IsDefined(trigger, "NewSettlement"))
+			{
+				Log.Error("[Harmony3StrictCompat] Character Development's want API changed: redo the new settlement want fix");
+				return;
+			}
+			if (Harmony3StrictCompatMod.Target("WantsAndQuirks.SettleUtility_AddNewHome_Patch:Postfix") is not { } theirs
+				|| Harmony3StrictCompatMod.Target("RimWorld.Planet.SettleUtility:AddNewHome") is not { } addNewHome) return;
+			canHaveWants = (Func<Pawn, bool>)canHave.CreateDelegate(typeof(Func<Pawn, bool>));
+			newSettlement = Activator.CreateInstance(context);
+			triggerType.SetValue(newSettlement, Enum.Parse(trigger, "NewSettlement"));
+			harmony.Patch(theirs, prefix: new HarmonyMethod(typeof(NewSettlementWantForSettlers), nameof(Skip)));
+			harmony.Patch(addNewHome, postfix: new HarmonyMethod(typeof(NewSettlementWantForSettlers), nameof(Settled)));
+		}
+
+		static bool Skip() => false;
+
+		static void Settled(PlanetTile tile, Faction faction)
+		{
+			if (faction != Faction.OfPlayer) return;
+			foreach (var pawn in Settlers(tile))
+				if (canHaveWants(pawn)) checkWants.Invoke(null, [pawn, newSettlement]);
+		}
+
+		// A list, not a lazy sequence: completing a want can spawn or change things.
+		internal static List<Pawn> Settlers(PlanetTile tile)
+		{
+			var settlers = new List<Pawn>();
+			foreach (var map in Find.Maps)
+				if (map.Tile == tile) settlers.AddRange(map.mapPawns.SpawnedPawnsInFaction(Faction.OfPlayer));
+			foreach (var worldObject in Find.WorldObjects.AllWorldObjects)
+			{
+				if (worldObject is Caravan caravan && caravan.Faction == Faction.OfPlayer && caravan.Tile == tile)
+					settlers.AddRange(caravan.PawnsListForReading);
+				else if (worldObject is Gravship flying && flying.destinationTile == tile)
+					AddCrew(settlers, flying);
+			}
+			// A gravship that lands through the landing designator is no world object at that point.
+			if (Current.Game.Gravship is { } gravship && gravship.destinationTile == tile)
+				AddCrew(settlers, gravship);
+			return settlers;
+		}
+
+		static void AddCrew(List<Pawn> settlers, Gravship gravship)
+		{
+			foreach (var pawn in gravship.Pawns)
+				if (pawn.Faction == Faction.OfPlayer && !settlers.Contains(pawn)) settlers.Add(pawn);
 		}
 	}
 }

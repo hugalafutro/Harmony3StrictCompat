@@ -30,6 +30,7 @@
 - Biosculpter Pod and Neural Supercharger Resize + Vanilla Textures Expanded: a resized biosculpter pod shows its resized icon (not VTE's squeezed 3x2 one) on blueprints and the architect button.
 - Busywork + LTO Colony Groups: "Upper" job icons show on Colony Groups portraits (Busywork only hooked the vanilla colonist bar).
 - Catalog Tab + UI Rethemed: the "C" catalog button sits with the other header buttons in the themed inspect pane and info card, and its click works on the info card.
+- Character Development: the "live in a new settlement" want is fulfilled for the pawns who settle (gravship crew, the settling caravan), not for pawns left on other maps.
 - Sensible Bed Ownership: OwnedBed answers cached per pawn until bed ownership changes (was rescanning every bed hundreds of thousands of times a minute); spot-checked against SBO; also used by the parallel render threads, and SBO's bed list scan is locked (sleeping animals in animal beds halved FPS, render jobs threw "Collection was modified").
 - Hauler's Dream: bulk-hauled loads reach their higher-priority storage instead of going straight back where they came from (no more "bulk-hauled 6 times ... net-zero" loops, food no longer left outside the fridge).
 - Hauler's Dream + Compositable Loadouts: loadout items are kept during surplus unload again (CL's items now list several defs; HD only knew Item.Def).

@@ -4101,6 +4101,8 @@ namespace Harmony3StrictCompat
 			["KanbanStockpileContinue.KSUtil:BuildSslExcessSet"] = 0x3D125057D3A69CBC,
 			["KanbanStockpileContinue.KSUtil:CanStackIntoExistingAt"] = 0xF87B869A158931DE,                   // Kanban Stockpile Continue, 2026-11-22 (no top-up while over the similar stack limit)
 			["KanbanStockpileContinue.StoreUtility_NoStorageBlockersIn_Patch:Postfix"] = 0x7FD096833D7C8C63,
+			["KanbanStockpileContinue.KSUtil:TryGetStackRefillThresholdDesired"] = 0x69314DD6A97896DF,        // Kanban Stockpile Continue, 2026-11-22 (top-up beside a stack at its stack size)
+			["KanbanStockpileContinue.ThingUtility_TryAbsorbStackNumToTake_Patch:Prefix"] = 0xF7BD60C3EE8443FA,
 			["KanbanStockpileContinue.WorkGiver_RemoveExcessFromKanban:HasJobOnThing"] = 0x2F571A215357C57E,   // 2026-11-18 (remove-excess checks in sync)
 			["KanbanStockpileContinue.WorkGiver_RemoveExcessFromKanban:JobOnThing"] = 0x6513C113A9741404,
 			["KanbanStockpileContinue.KanbanStockpileAPI:InvokeExcessRemoved"] = 0xDEEB48913A6ABFF4,
@@ -7182,7 +7184,7 @@ namespace Harmony3StrictCompat
 	static class KanbanSimilarStackCount
 	{
 		static readonly HdKanbanStackCap.KanbanGet settings;
-		static bool reported;
+		static bool reported, toppedUp;
 
 		static KanbanSimilarStackCount()
 		{
@@ -7198,6 +7200,38 @@ namespace Harmony3StrictCompat
 			if (topUp == null || get == null) return;
 			settings = (HdKanbanStackCap.KanbanGet)get.CreateDelegate(typeof(HdKanbanStackCap.KanbanGet));
 			harmony.Patch(topUp, postfix: new HarmonyMethod(typeof(KanbanSimilarStackCount), nameof(NoTopUpOverLimit)));
+			// The absorb prefix is only fingerprinted: it is why a stack at its Kanban size can be left out below.
+			if (Harmony3StrictCompatMod.Target("KanbanStockpileContinue.KSUtil:TryGetStackRefillThresholdDesired") is { } wish
+				&& Harmony3StrictCompatMod.Target("KanbanStockpileContinue.ThingUtility_TryAbsorbStackNumToTake_Patch:Prefix") != null)
+				harmony.Patch(wish, postfix: new HarmonyMethod(typeof(KanbanSimilarStackCount), nameof(TopUpBesideFullStack)));
+		}
+
+		// Two or more stacks allowed with a stack size below the item's own stack limit (2026-11-22: steel, limit
+		// 750, shelf set to 2 stacks of 500, stuck at 500 + 240 and 500 + 205). Kanban's top-up wish for a cell is
+		// the smallest wish of every stack of that kind below the item's stack limit, because it cannot choose
+		// which stack absorbs the delivery. A stack sitting at the Kanban size is below the item's limit, wishes 0
+		// and wins, so the cell wants nothing and the later stacks keep only their first delivery. Kanban's own
+		// absorb patch refuses to add to a stack at its size, so such a stack has no say: when the wish came out
+		// as 0, it is taken again over the stacks still below their Kanban size. Refill threshold as in Kanban.
+		static void TopUpBesideFullStack(IntVec3 cell, SlotGroup slotGroup, Map map, Thing thing, ref int numDesired, bool __result)
+		{
+			if (!__result || numDesired > 0 || slotGroup == null
+				|| !settings(slotGroup.Settings.owner, out int srt, out _, out int mss) || mss <= 0 || mss >= thing.def.stackLimit) return;
+			int wish = int.MaxValue;
+			var things = map.thingGrid.ThingsListAt(cell);
+			for (int i = 0; i < things.Count; i++)
+			{
+				var t = things[i];
+				if (!t.def.EverStorable(false) || !t.CanStackWith(thing)) continue;
+				int size = Math.Min(t.def.stackLimit, mss);
+				if (t.stackCount >= size) continue;
+				wish = Math.Min(wish, t.stackCount * 100L > (long)size * srt ? 0 : size - t.stackCount);
+			}
+			if (wish == int.MaxValue || wish <= 0) return;
+			numDesired = wish;
+			if (toppedUp) return;
+			toppedUp = true;
+			Log.Message($"[Harmony3StrictCompat] Kanban: {slotGroup.parent} may take {wish} more {thing.def.defName} into a partial stack beside one already at its stack size of {mss}");
 		}
 
 		static void NoTopUpOverLimit(IntVec3 c, Map map, Thing thing, ref bool __result)

@@ -40,6 +40,7 @@
 - AdaptiveMealBill + Hauler's Dream: batch-cooked adaptive meals come out veg-only, meat-only or mixed by their ingredients, no "Could not recover the meal recipe" error.
 - Kanban Stockpile Continue: the similar stack limit counts every stack of the same def when accepting, like its remove-excess job does (no more pawns shuttling unmergeable meals between a capped fridge and the next storage).
 - Kanban Stockpile Continue: a storage holding more stacks than its similar stack limit takes nothing more of that kind until the surplus is hauled out (no more topping up the stack that remove-excess is carrying away).
+- Kanban Stockpile Continue: with several stacks allowed and a stack size below the item's own stack limit, the later stacks fill up too (a stack already at its size no longer blocks topping up the others).
 - Kanban Stockpile Continue: remove-excess only offers a job when it can really build one (no "provided target but yielded no actual job" when the destination is already at its own max stack size).
 - Useful Marks: selected items and buildings show one info card button, not two.
 - Vanilla Ideology + Alpha Memes (heart extraction): sacrificing an innocent prisoner in a ritual no longer counts as executing an innocent or as a prisoner death through neglect (no opinion / mood penalties for the ideoligion's own ritual).

@@ -874,6 +874,7 @@ namespace Harmony3StrictCompat
 			WppFightTargetCheapValidatorMethod.Init(harmony);
 			ReachFloodMemo.Init(harmony);
 			ModWorkGiverScans.Init(harmony);
+			VanillaWorkSearchScans.Init(harmony);
 			TickHotPaths.Init(harmony);
 			TickTrace.Init(harmony, content.RootDir);
 			GravcoreSubquestTick.Init(harmony);
@@ -4246,7 +4247,12 @@ namespace Harmony3StrictCompat
 			["MSSFP.AICore.WorkGiver_HaulToAICore:ShouldSkip"] = 0x0350B7DEC7D6189E,                 // MSS Tweaks and Fun 1.7 DLL, 2026-11-22 (work givers walking every building)
 			["HospitalityCasino.VendingMachineJobHelper:GetActiveVendingMachines"] = 0xDBFC4DAEA453A8BB, // Hospitality: Casino 1.7, 2026-11-22
 			["VendingMachines.VendingMachineJobHelper:GetActiveVendingMachines"] = 0xE1112F0CE73AFE00,   // Vending Machines 1.7, 2026-11-22
-			["Verse.GenTypes:IsSealedWithCache"] = 0x809310C4C09A3747,                            // game 1.7.5014, 2026-11-20 (tick hot paths)
+			["Verse.AI.HaulAIUtility:FindFixedIngredientCount"] = 0xDCBB4E72DB147D94,                // game 1.7.5014, 2026-11-22 (ingredient search with nothing on the map)
+			["RimWorld.WorkGiver_Scanner:PotentialWorkThingsGlobal"] = 0x085B7607B50E566B,           // game 1.7.5014, 2026-11-22 (bill work givers search their own benches)
+			["RimWorld.WorkGiver_DoBill:JobOnThing"] = 0xB0F3DD23EFC7C7D4,
+			["RimWorld.JobGiver_Work:TryIssueJobPackage"] = 0x821C69E177FA6B60,
+			["Verse.GenClosest:ClosestThingReachable"] = 0x7CD995008E1FDFFD,
+			["Verse.GenTypes:IsSealedWithCache"] = 0x809310C4C09A3747,                           // game 1.7.5014, 2026-11-20 (tick hot paths)
 			["Verse.ReachabilityCache:ClearForHostile"] = 0x5BED8EFCC91F582A,
 			["Verse.TickManager:TickManagerUpdate"] = 0xBD63B2C8DA3F0F13,
 			["RimWorld.PregnancyUtility:IsUsableBedFor"] = 0xB20AF11F5CB7A925,                         // game 1.7.5014, 2026-11-20 (no birth in an Altered Carbon sleeve casket)
@@ -5910,6 +5916,7 @@ namespace Harmony3StrictCompat
 	// regions opened per flood. After every 3600 ticks, three times per session, one log entry lists the 25
 	// costliest. State is per thread, totals are merged under a lock, in case a work search runs off the main
 	// thread. Each CanReach call inside a work search costs about 60 ns extra while the probe is on.
+	// Each report ends with one line on the stacks HaulMerge searches (see MergeList).
 	static class ReachProbe
 	{
 		sealed class Stat
@@ -6027,9 +6034,41 @@ namespace Harmony3StrictCompat
 				Array.Clear(searches, 0, 2);
 				Array.Clear(searchTicks, 0, 2);
 			}
+			MergeList(sb, ms);
 			Log.Message(sb.ToString());
 			ticksSeen = 0;
 			reportsLeft--;
+		}
+
+		// What HaulMerge searches at this moment: the game's list of stacks in storage below their def's stack
+		// limit, split by the tests of WorkGiver_Merge.JobOnThing that do not depend on the pawn.
+		static void MergeList(StringBuilder sb, double ms)
+		{
+			int listed = 0, wrongStorage = 0, alone = 0, refused = 0, mergeable = 0;
+			long start = System.Diagnostics.Stopwatch.GetTimestamp();
+			foreach (var map in Find.Maps)
+			{
+				var list = map.listerMergeables.ThingsPotentiallyNeedingMerging();
+				listed += list.Count;
+				for (int i = 0; i < list.Count; i++)
+				{
+					var t = list[i];
+					ISlotGroup group = t.GetSlotGroup();
+					if (group == null || !t.IsInValidStorage()) { wrongStorage++; continue; }
+					ISlotGroup linked = group.StorageGroup;
+					bool partner = false, accepted = false;
+					foreach (var held in (linked ?? group).HeldThings)
+					{
+						if (held == t || !held.CanStackWith(t) || held.stackCount < t.stackCount || held.stackCount >= held.def.stackLimit) continue;
+						partner = true;
+						if (held.Position.IsValidStorageFor(map, t)) { accepted = true; break; }
+					}
+					if (accepted) mergeable++;
+					else if (partner) refused++;
+					else alone++;
+				}
+			}
+			sb.Append($"\n  merge list now: {listed} stacks below their stack limit in storage; {wrongStorage} in storage that does not accept them, {alone} with no bigger-or-equal partial stack of their kind in their storage group, {refused} whose partner's cell takes no more (storage cap), {mergeable} mergeable; this walk took {(System.Diagnostics.Stopwatch.GetTimestamp() - start) * ms:F2} ms");
 		}
 	}
 
@@ -6368,6 +6407,76 @@ namespace Harmony3StrictCompat
 			}
 			__result = machines;
 			return false;
+		}
+	}
+
+	// ---- Vanilla: two work searches that look at the whole map before the cheap test (personal tweak) ---------
+	// Reach probe 2026-11-22, with the reach flood memo active.
+	// HaulAIUtility.FindFixedIngredientCount: walks every reachable region and every haulable thing in it until
+	// it has found the wanted count of one def. Vanilla Recycling Expanded's alloy splitter asks it on every
+	// work turn for each splitter that is at most half full; with no loose alloypack on the map (the save had 4
+	// splitters holding 5, 5, 7 and 8 of 10, and none outside them) each call walks the map for an empty list:
+	// 0.9 ms per turn, 50-70 ms per 3600 ticks. Prefix: when no thing of that def is spawned on the map the
+	// answer is the empty list the walk would return; otherwise the original runs.
+	// WorkGiver_DoBill with more than one bench def (DoBillsCook, ButcherFlesh, Smelter, ...): the game only
+	// narrows the candidate list when the work giver names exactly one def, so its global search gets every
+	// thing whose def has recipes (251 on that map: about 190 pawns, animals included, plus every bench) and
+	// GenClosest asks Reachability.CanReach for each before the work giver's own JobOnThing looks at the def.
+	// JobGiver_Work passes a non-null PotentialWorkThingsGlobal as the global search set, so a postfix on
+	// that (the scanner base returns null) hands back the things that pass the work giver's own
+	// ThingIsUsableBillGiver, in the game's list order. JobOnThing refuses everything else on its first line,
+	// so the same thing wins. Only for the exact class WorkGiver_DoBill: a subclass may accept other things.
+	// A mod patch on JobOnThing that hands out a job for a thing ThingIsUsableBillGiver refuses would no
+	// longer be reached by the global search (the nearby region search is untouched).
+	static class VanillaWorkSearchScans
+	{
+		static int ingredientCalls, ingredientSkips, benchTurns, benchListed;
+		static bool ingredientReported, benchReported;
+
+		internal static void Init(Harmony harmony)
+		{
+			var me = typeof(VanillaWorkSearchScans);
+			if (Harmony3StrictCompatMod.Target("Verse.AI.HaulAIUtility:FindFixedIngredientCount") is { } find)
+				harmony.Patch(find, prefix: new HarmonyMethod(me, nameof(NoneOnMap)));
+			// The bench list rests on how these three use it; a changed fingerprint on any of them is the cue to re-read.
+			var things = Harmony3StrictCompatMod.Target("RimWorld.WorkGiver_Scanner:PotentialWorkThingsGlobal");
+			if (things == null || Harmony3StrictCompatMod.Target("RimWorld.WorkGiver_DoBill:JobOnThing") == null
+				|| Harmony3StrictCompatMod.Target("RimWorld.JobGiver_Work:TryIssueJobPackage") == null
+				|| Harmony3StrictCompatMod.Target("Verse.GenClosest:ClosestThingReachable") == null) return;
+			harmony.Patch(things, postfix: new HarmonyMethod(me, nameof(OwnBenchesOnly)));
+		}
+
+		static bool NoneOnMap(Pawn pawn, ThingDef def, ref List<Thing> __result)
+		{
+			bool none = pawn.Map.listerThings.ThingsOfDef(def).Count == 0;
+			ingredientCalls++;
+			if (none) ingredientSkips++;
+			if (!ingredientReported && ingredientCalls >= 300)
+			{
+				ingredientReported = true;
+				Log.Message($"[Harmony3StrictCompat] Ingredient search: {ingredientSkips} of {ingredientCalls} searches answered without walking the map (nothing of that def on it)");
+			}
+			if (!none) return true;
+			__result = new List<Thing>();
+			return false;
+		}
+
+		static void OwnBenchesOnly(WorkGiver_Scanner __instance, Pawn pawn, ref IEnumerable<Thing> __result)
+		{
+			if (__result != null || __instance.GetType() != typeof(WorkGiver_DoBill)) return;
+			var giver = (WorkGiver_DoBill)__instance;
+			if (giver.def.fixedBillGiverDefs is { Count: 1 }) return;   // the game already asks for that one def
+			var all = pawn.Map.listerThings.ThingsInGroup(ThingRequestGroup.PotentialBillGiver);
+			var own = new List<Thing>();
+			for (int i = 0; i < all.Count; i++)
+				if (giver.ThingIsUsableBillGiver(all[i])) own.Add(all[i]);
+			__result = own;
+			benchListed += own.Count;
+			if (!benchReported && ++benchTurns >= 300)
+			{
+				benchReported = true;
+				Log.Message($"[Harmony3StrictCompat] Bill bench listing: {benchTurns} work turns searched {benchListed} bill givers of their own instead of all {all.Count} on the map each");
+			}
 		}
 	}
 

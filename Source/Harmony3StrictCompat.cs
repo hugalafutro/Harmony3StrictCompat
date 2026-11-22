@@ -870,6 +870,7 @@ namespace Harmony3StrictCompat
 					typeof(Material).MakeByRefType()]) is { } thingIcon)
 				harmony.Patch(thingIcon, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FloorGraphicIconScale)));
 			BillCountCache.Init(harmony);
+			VgeWarcomputerOnlyForGaussGuns.Init(harmony);
 			TickHotPaths.Init(harmony);
 			TickTrace.Init(harmony, content.RootDir);
 			GravcoreSubquestTick.Init(harmony);
@@ -4232,7 +4233,9 @@ namespace Harmony3StrictCompat
 			["PipeSystem.CompResourceTrader:CompInspectStringExtra"] = 0x8799CC4254BA7002,           // VEF PipeSystem 1.7, DLL of 2026-11-20 12:28
 			["Hospitality.JoyGiver_BuyStuff:CanEat"] = 0x304D1E10604FFCD2,                           // Hospitality 1.7
 			["RimWorld.Bill_Production:ShouldDoNow"] = 0x91426C66CA668FA7,                           // game 1.7.5014, 2026-11-20 (bill count cache)
-			["Verse.GenTypes:IsSealedWithCache"] = 0x809310C4C09A3747,                               // game 1.7.5014, 2026-11-20 (tick hot paths)
+			["Inventory.BillUtility:Satisfied"] = 0xAC4273F963D8D1D6,                                // Loadout Compositing 1.7, 2026-11-22 (bill count cache, per-tag bills)
+			["VanillaGravshipExpanded2.WarcomputerHelper:ApplyForcedMissRadiusBuffs"] = 0x7C5E4AA83043349A, // Vanilla Gravship Expanded - Chapter 2 1.7, 2026-11-22
+			["Verse.GenTypes:IsSealedWithCache"] = 0x809310C4C09A3747,                              // game 1.7.5014, 2026-11-20 (tick hot paths)
 			["Verse.ReachabilityCache:ClearForHostile"] = 0x5BED8EFCC91F582A,
 			["Verse.TickManager:TickManagerUpdate"] = 0xBD63B2C8DA3F0F13,
 			["RimWorld.PregnancyUtility:IsUsableBedFor"] = 0xB20AF11F5CB7A925,                         // game 1.7.5014, 2026-11-20 (no birth in an Altered Carbon sleeve casket)
@@ -5436,6 +5439,10 @@ namespace Harmony3StrictCompat
 	// map, and a change of the bill's own count options. Bills that count through BWM's extra product filter can
 	// make one item too many when a different bill made the counted item. The bill row ("3/5") and the unpause
 	// check do not go through ShouldDoNow and stay live. A one-time line reports hits/misses.
+	// Loadout Compositing's per-tag bills never reach that call: its ShouldDoNow prefix answers for them through
+	// BillUtility.Satisfied, which counts on its own (sampling profile 2026-11-22: 1.8 s of a 91 s tick, all of it
+	// the real count). The same call swap in Satisfied sends them through the same cache, with the same lateness;
+	// the prefix is Satisfied's only caller. The report line counts those lookups apart.
 	// Applied from the mod constructor like the other game-method fixes, not from a static constructor: read at
 	// [StaticConstructorOnStartup] time (after other mods patched ShouldDoNow) the fingerprint came out as
 	// 0xACA7CD6390EDB9E3 instead of the DLL's 0x91426C66CA668FA7 (2026-11-20; why is not established).
@@ -5450,7 +5457,7 @@ namespace Harmony3StrictCompat
 		}
 
 		static readonly System.Collections.Concurrent.ConcurrentDictionary<Bill_Production, Entry> cache = new();
-		static int hits, misses;
+		static int hits, misses, perTag;
 		static bool reported;
 
 		internal static void Init(Harmony harmony)
@@ -5458,25 +5465,34 @@ namespace Harmony3StrictCompat
 			var shouldDoNow = Harmony3StrictCompatMod.Target("RimWorld.Bill_Production:ShouldDoNow");
 			if (shouldDoNow == null) return;
 			harmony.Patch(shouldDoNow, transpiler: new HarmonyMethod(typeof(BillCountCache), nameof(UseCache)));
+			if (Harmony3StrictCompatMod.Target("Inventory.BillUtility:Satisfied") is { } satisfied)
+				harmony.Patch(satisfied, transpiler: new HarmonyMethod(typeof(BillCountCache), nameof(UseCache)));
 			harmony.Patch(AccessTools.Method(typeof(Bill_Production), nameof(Bill_Production.Notify_IterationCompleted)),
 				postfix: new HarmonyMethod(typeof(BillCountCache), nameof(ProductMade)));
 			harmony.Patch(AccessTools.Method(typeof(MemoryUtility), nameof(MemoryUtility.ClearAllMapsAndWorld)),
 				postfix: new HarmonyMethod(typeof(BillCountCache), nameof(Reset)));
 		}
 
-		static IEnumerable<CodeInstruction> UseCache(IEnumerable<CodeInstruction> instructions)
+		static IEnumerable<CodeInstruction> UseCache(IEnumerable<CodeInstruction> instructions, MethodBase original)
 		{
 			var codes = instructions.ToList();
 			var live = AccessTools.Method(typeof(RecipeWorkerCounter), nameof(RecipeWorkerCounter.CountProducts));
 			var calls = codes.Where(c => c.Calls(live)).ToList();
 			if (calls.Count != 1)
 			{
-				Log.Error($"[Harmony3StrictCompat] Bill_Production.ShouldDoNow counts products {calls.Count} times instead of once, bill count cache not applied");
+				Log.Error($"[Harmony3StrictCompat] {original.DeclaringType?.Name}.{original.Name} counts products {calls.Count} times instead of once, bill count cache not applied");
 				return codes;
 			}
 			calls[0].opcode = OpCodes.Call;
-			calls[0].operand = AccessTools.Method(typeof(BillCountCache), nameof(Count));
+			calls[0].operand = AccessTools.Method(typeof(BillCountCache),
+				original.DeclaringType == typeof(Bill_Production) ? nameof(Count) : nameof(CountPerTag));
 			return codes;
+		}
+
+		static int CountPerTag(RecipeWorkerCounter counter, Bill_Production bill)
+		{
+			perTag++;
+			return Count(counter, bill);
 		}
 
 		// Same stack shape as the call it replaces: (counter, bill) -> count.
@@ -5495,7 +5511,7 @@ namespace Harmony3StrictCompat
 			if (!reported && hits + misses >= 5000)
 			{
 				reported = true;
-				Log.Message($"[Harmony3StrictCompat] Bill count cache: {hits} hits, {misses} real counts, {cache.Count} bills");
+				Log.Message($"[Harmony3StrictCompat] Bill count cache: {hits} hits, {misses} real counts, {cache.Count} bills, {perTag} lookups from Loadout Compositing per-tag bills");
 			}
 			return count;
 		}
@@ -5511,6 +5527,57 @@ namespace Harmony3StrictCompat
 		}
 
 		static void Reset() => cache.Clear();
+	}
+
+	// ---- Vanilla Gravship Expanded - Chapter 2: warcomputer search for every turret, every tick ----------------
+	// Its Building_TurretGun.Tick postfix calls WarcomputerHelper.ApplyForcedMissRadiusBuffs for every turret on
+	// every tick. The method first walks the colony's building list for an active warcomputer and only then looks
+	// at the turret: the answer is used for the gauss gun and the gauss howitzer and for nothing else. Sampling
+	// profile 2026-11-22: 1.1 s of 5.1 s turret tick time in 3 minutes.
+	// Prefix: every other turret skips the call, which for it did nothing but compute the unused answer. The two
+	// gauss turrets run the original unchanged. A one-time line reports how many calls were skipped.
+	static class VgeWarcomputerOnlyForGaussGuns
+	{
+		static FieldInfo gunField, howitzerField;
+		static ThingDef gun, howitzer;
+		static bool resolved, reported;
+		static int calls, skipped;
+
+		internal static void Init(Harmony harmony)
+		{
+			if (Harmony3StrictCompatMod.Target("VanillaGravshipExpanded2.WarcomputerHelper:ApplyForcedMissRadiusBuffs") is not { } apply) return;
+			var defOf = AccessTools.TypeByName("VanillaGravshipExpanded2.InternalDefOf");
+			gunField = defOf == null ? null : AccessTools.Field(defOf, "VGE_GaussGun");
+			howitzerField = defOf == null ? null : AccessTools.Field(defOf, "VGE_GaussHowitzer");
+			if (gunField == null || howitzerField == null)
+			{
+				Log.Error("[Harmony3StrictCompat] VanillaGravshipExpanded2.InternalDefOf no longer has VGE_GaussGun and VGE_GaussHowitzer: its mod updated, remove or redo this fix");
+				return;
+			}
+			harmony.Patch(apply, prefix: new HarmonyMethod(typeof(VgeWarcomputerOnlyForGaussGuns), nameof(OnlyGaussGuns)));
+		}
+
+		static bool OnlyGaussGuns(Building_TurretGun turret)
+		{
+			if (!resolved)
+			{
+				// The mod's own def fields, the same objects the original compares against. Filled long before
+				// the first turret ticks.
+				gun = (ThingDef)gunField.GetValue(null);
+				howitzer = (ThingDef)howitzerField.GetValue(null);
+				resolved = true;
+			}
+			var def = turret?.def;
+			bool run = def == null || def == gun || def == howitzer;
+			calls++;
+			if (!run) skipped++;
+			if (!reported && calls >= 50000)
+			{
+				reported = true;
+				Log.Message($"[Harmony3StrictCompat] Warcomputer check: skipped for {skipped} of {calls} turret ticks (only gauss turrets use it)");
+			}
+			return run;
+		}
 	}
 
 	// ---- Vanilla: two hot paths in the tick, and tick pacing (personal tweak) ------------------------------------

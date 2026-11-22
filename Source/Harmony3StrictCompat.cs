@@ -5529,11 +5529,12 @@ namespace Harmony3StrictCompat
 		static void Reset() => cache.Clear();
 	}
 
-	// ---- Vanilla Gravship Expanded - Chapter 2: warcomputer search for every turret, every tick ----------------
-	// Its Building_TurretGun.Tick postfix calls WarcomputerHelper.ApplyForcedMissRadiusBuffs for every turret on
-	// every tick. The method first walks the colony's building list for an active warcomputer and only then looks
-	// at the turret: the answer is used for the gauss gun and the gauss howitzer and for nothing else. Sampling
-	// profile 2026-11-22: 1.1 s of 5.1 s turret tick time in 3 minutes.
+	// ---- Vanilla Gravship Expanded - Chapter 2: warcomputer search for every player turret ---------------------
+	// Its Building_TurretGun.Tick postfix calls WarcomputerHelper.ApplyForcedMissRadiusBuffs for every player
+	// turret once every 250 ticks. The method first walks the colony's building list for an active warcomputer and
+	// only then looks at the turret: the answer is used for the gauss gun and the gauss howitzer and for nothing
+	// else. Sampling profile 2026-11-22: 1.1 s of 5.1 s turret tick time in 3 minutes; 0 s in the next session
+	// with this prefix.
 	// Prefix: every other turret skips the call, which for it did nothing but compute the unused answer. The two
 	// gauss turrets run the original unchanged. A one-time line reports how many calls were skipped.
 	static class VgeWarcomputerOnlyForGaussGuns
@@ -5571,10 +5572,10 @@ namespace Harmony3StrictCompat
 			bool run = def == null || def == gun || def == howitzer;
 			calls++;
 			if (!run) skipped++;
-			if (!reported && calls >= 50000)
+			if (!reported && calls >= 2000)
 			{
 				reported = true;
-				Log.Message($"[Harmony3StrictCompat] Warcomputer check: skipped for {skipped} of {calls} turret ticks (only gauss turrets use it)");
+				Log.Message($"[Harmony3StrictCompat] Warcomputer check: skipped for {skipped} of {calls} turret calls (only gauss turrets use it)");
 			}
 			return run;
 		}

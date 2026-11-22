@@ -144,7 +144,7 @@
 - Vanilla Gravship Expanded - Chapter 2: the warcomputer search (every 250 ticks per player turret) no longer runs for every turret, only for the gauss gun and gauss howitzer that use its answer.
 - Vanilla (personal tweak): two tick hot paths made cheap: the "is this comp type sealed" lookup no longer takes a lock, and doors ask "is this pawn hostile" once per pawn per tick instead of once per reachability cache entry.
 - Vanilla (personal tweak): up to 12 ticks per frame at 3x speed instead of 6, so a slow frame no longer costs ticks (frame rate is traded for tick rate).
-- Diagnostic (off unless a file ticktrace.on is in the mod folder): logs exact time per phase of the pawn tick.
+- Diagnostic (off unless a file ticktrace.on is in the mod folder): logs exact time per phase of the pawn tick, or (file contains "reach") work search time and reachability checks per work giver.
 - Vanilla Odyssey (personal tweak): the gravcore subquest generator no longer walks every quest on every tick; same odds, cheap tests first.
 - TD Enhancement Pack: the "urgent refill" work scan is skipped while no storage is marked for urgent refill (it searched storage for every haulable item on the map regardless).
 - TD Enhancement Pack + Altered Carbon 2: the "Empty Workbench" alert skips benches no recipe uses (the neural editor, run from its gizmos).

@@ -5813,10 +5813,17 @@ namespace Harmony3StrictCompat
 		{
 			var flag = Path.Combine(modRoot, "ticktrace.on");
 			if (!File.Exists(flag)) return;
+			string mode = File.ReadAllText(flag);
+			// "reach" = the work search probe below instead of the tick timing.
+			if (mode.Contains("reach"))
+			{
+				ReachProbe.Init(harmony);
+				return;
+			}
 			var doSingleTick = AccessTools.Method(typeof(TickManager), nameof(TickManager.DoSingleTick));
 			// The file's text picks whose direct callees are timed: "stages" = the tick's stages (few calls a
 			// tick, next to no overhead), anything else = the two pawn tick methods.
-			MethodBase[] scan = File.ReadAllText(flag).Contains("stages")
+			MethodBase[] scan = mode.Contains("stages")
 				? new MethodBase[] { doSingleTick, AccessTools.Method(typeof(Map), nameof(Map.MapPreTick)),
 					AccessTools.Method(typeof(Map), nameof(Map.MapPostTick)), AccessTools.Method(typeof(World), nameof(World.WorldTick)) }
 				: new MethodBase[] { AccessTools.Method(typeof(Pawn), "Tick"), AccessTools.Method(typeof(Pawn), "TickInterval") };
@@ -5879,6 +5886,140 @@ namespace Harmony3StrictCompat
 			Log.Message(sb.ToString());
 			Array.Clear(time, 0, time.Length);
 			Array.Clear(calls, 0, calls.Length);
+			ticksSeen = 0;
+			reportsLeft--;
+		}
+	}
+
+	// ---- Diagnostic: which work givers pay for the work search and its reachability checks ---------------------
+	// Off unless "ticktrace.on" in the mod folder contains the word "reach" at startup (it then replaces the tick
+	// timing above). Sampling profile 2026-11-22: JobGiver_Work is 12 s of 3 minutes and 8 s of that is
+	// Reachability.CanReach, but a sample cannot say for which work giver: the scanner is not on the stack while
+	// GenClosest asks CanReach for each candidate.
+	// JobGiver_Work asks PawnCanUseWorkGiver once at the start of every work giver's turn, so that call marks
+	// whose turn it is. Counted per work giver, colonists and mechs apart: turns, stopwatch time of the whole
+	// turn, CanReach calls and their time, region floods (CheckRegionBasedReachability, i.e. cache misses) and
+	// regions opened per flood. After every 3600 ticks, three times per session, one log entry lists the 25
+	// costliest. State is per thread, totals are merged under a lock, in case a work search runs off the main
+	// thread. Each CanReach call inside a work search costs about 60 ns extra while the probe is on.
+	static class ReachProbe
+	{
+		sealed class Stat
+		{
+			public long ticks, reachTicks, regions;
+			public int turns, reachCalls, floods;
+		}
+
+		static readonly Dictionary<(WorkGiverDef, bool), Stat> stats = new();
+		static readonly long[] searchTicks = new long[2];
+		static readonly int[] searches = new int[2];
+		static readonly AccessTools.FieldRef<Reachability, int> regionsOpened = AccessTools.FieldRefAccess<Reachability, int>("numRegionsOpened");
+		static int ticksSeen, reportsLeft = 3;
+
+		[ThreadStatic] static bool inWork, mech;
+		[ThreadStatic] static WorkGiverDef giver;
+		[ThreadStatic] static long searchStart, turnStart, reachTicks, regions;
+		[ThreadStatic] static int depth, reachCalls, floods;
+
+		internal static void Init(Harmony harmony)
+		{
+			var me = typeof(ReachProbe);
+			harmony.Patch(AccessTools.Method(typeof(JobGiver_Work), nameof(JobGiver_Work.TryIssueJobPackage)),
+				prefix: new HarmonyMethod(me, nameof(Begin)), finalizer: new HarmonyMethod(me, nameof(End)));
+			harmony.Patch(AccessTools.Method(typeof(JobGiver_Work), "PawnCanUseWorkGiver"), prefix: new HarmonyMethod(me, nameof(Turn)));
+			harmony.Patch(AccessTools.Method(typeof(Reachability), nameof(Reachability.CanReach),
+					[typeof(IntVec3), typeof(LocalTargetInfo), typeof(PathEndMode), typeof(TraverseParms)]),
+				prefix: new HarmonyMethod(me, nameof(ReachIn)), postfix: new HarmonyMethod(me, nameof(ReachOut)));
+			harmony.Patch(AccessTools.Method(typeof(Reachability), "CheckRegionBasedReachability"), postfix: new HarmonyMethod(me, nameof(Flood)));
+			harmony.Patch(AccessTools.Method(typeof(TickManager), nameof(TickManager.DoSingleTick)), postfix: new HarmonyMethod(me, nameof(Report)));
+			Log.Message("[Harmony3StrictCompat] reach probe on: work search counted per work giver (remove ticktrace.on from the mod folder to turn off)");
+		}
+
+		static void Begin(Pawn pawn)
+		{
+			if (inWork || reportsLeft <= 0) return;
+			inWork = true;
+			mech = pawn.RaceProps.IsMechanoid;
+			giver = null;
+			depth = 0;
+			searchStart = turnStart = System.Diagnostics.Stopwatch.GetTimestamp();
+		}
+
+		static void Turn(WorkGiver giver)
+		{
+			if (!inWork) return;
+			CloseTurn();
+			ReachProbe.giver = giver.def;
+		}
+
+		static void End()
+		{
+			if (!inWork) return;
+			CloseTurn();
+			inWork = false;
+			lock (stats)
+			{
+				searches[mech ? 1 : 0]++;
+				searchTicks[mech ? 1 : 0] += System.Diagnostics.Stopwatch.GetTimestamp() - searchStart;
+			}
+		}
+
+		// Books the turn that just ended (giver null = the part of the search before the first work giver).
+		static void CloseTurn()
+		{
+			long now = System.Diagnostics.Stopwatch.GetTimestamp();
+			lock (stats)
+			{
+				if (!stats.TryGetValue((giver, mech), out var s)) stats[(giver, mech)] = s = new Stat();
+				s.turns++;
+				s.ticks += now - turnStart;
+				s.reachCalls += reachCalls;
+				s.reachTicks += reachTicks;
+				s.floods += floods;
+				s.regions += regions;
+			}
+			turnStart = now;
+			reachCalls = floods = 0;
+			reachTicks = regions = 0;
+		}
+
+		// CanReach calls itself for the "pass destroyable things" modes: only the outermost call is timed.
+		static void ReachIn(out long __state) => __state = inWork && depth++ == 0 ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+
+		static void ReachOut(long __state)
+		{
+			if (!inWork || depth == 0) return;
+			if (--depth != 0 || __state == 0) return;
+			reachTicks += System.Diagnostics.Stopwatch.GetTimestamp() - __state;
+			reachCalls++;
+		}
+
+		static void Flood(Reachability __instance)
+		{
+			if (!inWork) return;
+			floods++;
+			regions += regionsOpened(__instance);
+		}
+
+		static void Report()
+		{
+			if (reportsLeft <= 0 || ++ticksSeen < 3600) return;
+			double ms = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+			var sb = new StringBuilder();
+			lock (stats)
+			{
+				sb.Append($"[Harmony3StrictCompat] reach probe over {ticksSeen} ticks: colonist work searches {searches[0]} ({searchTicks[0] * ms:F0} ms), mech work searches {searches[1]} ({searchTicks[1] * ms:F0} ms)");
+				sb.Append("\n   turn ms    turns  reach calls  reach ms   floods  regions/flood  who       work giver");
+				foreach (var kv in stats.OrderByDescending(kv => kv.Value.ticks).Take(25))
+				{
+					var s = kv.Value;
+					sb.Append($"\n  {s.ticks * ms,8:F1} {s.turns,8} {s.reachCalls,12} {s.reachTicks * ms,9:F1} {s.floods,8} {(s.floods > 0 ? (double)s.regions / s.floods : 0),14:F0}  {(kv.Key.Item2 ? "mech    " : "colonist")}  {kv.Key.Item1?.defName ?? "(before the first work giver)"}");
+				}
+				stats.Clear();
+				Array.Clear(searches, 0, 2);
+				Array.Clear(searchTicks, 0, 2);
+			}
+			Log.Message(sb.ToString());
 			ticksSeen = 0;
 			reportsLeft--;
 		}

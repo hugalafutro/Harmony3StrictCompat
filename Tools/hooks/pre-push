@@ -1,0 +1,14 @@
+#!/bin/sh
+# Refreshes the README "Active mod list" before every push of this repo (replaces the hourly scheduled task).
+# Called by the pre-push hook in the user's global hooks folder (core.hooksPath), which runs it for this repo only.
+# modlist.py commits README.md when the list changed. A commit made here is not part of the push that is already
+# under way, so that push is stopped once and has to be repeated. A failing list update never blocks a push.
+top=$(git rev-parse --show-toplevel) || exit 0
+before=$(git -C "$top" rev-parse HEAD)
+if ! python "$top/Tools/modlist.py" --no-push; then
+    echo "pre-push: README mod list update failed, pushing without it" >&2
+    exit 0
+fi
+[ "$(git -C "$top" rev-parse HEAD)" = "$before" ] && exit 0
+echo "pre-push: README mod list updated and committed ($(git -C "$top" log -1 --format=%s)). Push again to include it." >&2
+exit 1

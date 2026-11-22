@@ -1,7 +1,8 @@
 """Regenerate the active mod list in README.md from ModsConfig.xml; commit and push when it changed.
 
 Run: python Tools/modlist.py [--no-push]
-Runs hourly from the Windows scheduled task "RimWorld modlist README" (pythonw, hidden).
+Runs with --no-push from Tools/hooks/pre-push before every push of this repo, and from sync_g15.sh list.
+(Until 2026-11-22 it ran hourly from the Windows scheduled task "RimWorld modlist README", now disabled.)
 """
 import os, re, subprocess, sys
 import xml.etree.ElementTree as ET

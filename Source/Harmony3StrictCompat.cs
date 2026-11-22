@@ -4099,6 +4099,8 @@ namespace Harmony3StrictCompat
 			["KanbanStockpileContinue.KSUtil:CountStoredSimilarStacks"] = 0x0D6509A3EE0A8A5F,
 			["KanbanStockpileContinue.KSUtil:IsSimilarStack"] = 0xA9EA56B4765CDEAF,
 			["KanbanStockpileContinue.KSUtil:BuildSslExcessSet"] = 0x3D125057D3A69CBC,
+			["KanbanStockpileContinue.KSUtil:CanStackIntoExistingAt"] = 0xF87B869A158931DE,                   // Kanban Stockpile Continue, 2026-11-22 (no top-up while over the similar stack limit)
+			["KanbanStockpileContinue.StoreUtility_NoStorageBlockersIn_Patch:Postfix"] = 0x7FD096833D7C8C63,
 			["KanbanStockpileContinue.WorkGiver_RemoveExcessFromKanban:HasJobOnThing"] = 0x2F571A215357C57E,   // 2026-11-18 (remove-excess checks in sync)
 			["KanbanStockpileContinue.WorkGiver_RemoveExcessFromKanban:JobOnThing"] = 0x6513C113A9741404,
 			["KanbanStockpileContinue.KanbanStockpileAPI:InvokeExcessRemoved"] = 0xDEEB48913A6ABFF4,
@@ -7166,17 +7168,61 @@ namespace Harmony3StrictCompat
 	// back: a pawn runs the same meals between the capped fridge and the next storage. The accept check now counts
 	// like the removal does: every other stack of the same def and stuff. Topping up a stack that can absorb the
 	// item is a separate Kanban path and still works.
+	// That top-up path had its own hole (2026-11-22, a steel shelf set to 1 stack holding 750 + 698): once a
+	// storage holds more stacks than its limit, remove-excess hauls the surplus stack out one carry load at a
+	// time, which leaves it partial, and the accept check lets any partial stack in the cell be topped up without
+	// asking the limit. One pawn carries 75 out, the next brings 75 back: 71 deliveries to one shelf in 12
+	// minutes, with free-space readings of 75, 73 and 52. Kanban's accept check and its haul count clamp both ask
+	// KSUtil.CanStackIntoExistingAt first; that now answers "no" while the storage already holds more stacks of
+	// the item's def and stuff than its limit, which sends the accept check to its similar stack count, where it
+	// refuses. Remove-excess then drains the surplus and the storage settles. A thing that already lies in that
+	// storage is exempt: moving or merging inside it adds no stack. How an extra stack gets in (two haulers
+	// approved for the same partial stack) is not closed here; it is carried out once instead of forever.
 	[StaticConstructorOnStartup]
 	static class KanbanSimilarStackCount
 	{
+		static readonly HdKanbanStackCap.KanbanGet settings;
+		static bool reported;
+
 		static KanbanSimilarStackCount()
 		{
 			var count = Harmony3StrictCompatMod.Target("KanbanStockpileContinue.KSUtil:CountStoredSimilarStacks");
 			Harmony3StrictCompatMod.Target("KanbanStockpileContinue.KSUtil:IsSimilarStack");    // fingerprint only: the two rules that disagree
 			Harmony3StrictCompatMod.Target("KanbanStockpileContinue.KSUtil:BuildSslExcessSet");
 			if (count == null) return;
-			new Harmony("sammael.harmony3strictcompat").Patch(count,
-				postfix: new HarmonyMethod(typeof(KanbanSimilarStackCount), nameof(CountSameDef)));
+			var harmony = new Harmony("sammael.harmony3strictcompat");
+			harmony.Patch(count, postfix: new HarmonyMethod(typeof(KanbanSimilarStackCount), nameof(CountSameDef)));
+			var topUp = Harmony3StrictCompatMod.Target("KanbanStockpileContinue.KSUtil:CanStackIntoExistingAt");
+			var get = Harmony3StrictCompatMod.Target("KanbanStockpileContinue.KanbanStockpileAPI:TryGetSettings");
+			Harmony3StrictCompatMod.Target("KanbanStockpileContinue.StoreUtility_NoStorageBlockersIn_Patch:Postfix");   // fingerprint only: the accept check that asks topUp first
+			if (topUp == null || get == null) return;
+			settings = (HdKanbanStackCap.KanbanGet)get.CreateDelegate(typeof(HdKanbanStackCap.KanbanGet));
+			harmony.Patch(topUp, postfix: new HarmonyMethod(typeof(KanbanSimilarStackCount), nameof(NoTopUpOverLimit)));
+		}
+
+		static void NoTopUpOverLimit(IntVec3 c, Map map, Thing thing, ref bool __result)
+		{
+			if (!__result || map.haulDestinationManager.SlotGroupAt(c) is not { } group
+				|| !settings(group.Settings.owner, out _, out int ssl, out _) || ssl <= 0) return;
+			if (thing.Spawned && thing.Map == map && map.haulDestinationManager.SlotGroupAt(thing.Position) == group) return;
+			int stacks = 0;
+			var cells = group.CellsList;
+			for (int i = 0; i < cells.Count; i++)
+			{
+				var things = map.thingGrid.ThingsListAt(cells[i]);
+				for (int j = 0; j < things.Count; j++)
+				{
+					var t = things[j];
+					if (t == thing || t.def != thing.def || t.Stuff != thing.Stuff || ++stacks <= ssl) continue;
+					__result = false;
+					if (!reported)
+					{
+						reported = true;
+						Log.Message($"[Harmony3StrictCompat] Kanban: {group.parent} holds more than its {ssl} allowed stack(s) of {thing.def.defName}; nothing is added until the surplus is hauled out");
+					}
+					return;
+				}
+			}
 		}
 
 		static void CountSameDef(SlotGroup slotGroup, Map map, Thing thing, int max, ref int __result)

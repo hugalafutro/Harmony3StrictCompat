@@ -4255,6 +4255,8 @@ namespace Harmony3StrictCompat
 			["RimWorld.WorkGiver_DoBill:JobOnThing"] = 0xB0F3DD23EFC7C7D4,
 			["RimWorld.JobGiver_Work:TryIssueJobPackage"] = 0x821C69E177FA6B60,
 			["Verse.GenClosest:ClosestThingReachable"] = 0x7CD995008E1FDFFD,
+			["RimWorld.WorkGiver_Merge:PotentialWorkThingsGlobal"] = 0x5AC841F79E5E990F,             // game 1.7.5014, 2026-11-22 (merge search: only stacks with a possible partner)
+			["RimWorld.WorkGiver_Merge:JobOnThing"] = 0xD4A1FFB8CB803F0F,
 			["Verse.GenTypes:IsSealedWithCache"] = 0x809310C4C09A3747,                           // game 1.7.5014, 2026-11-20 (tick hot paths)
 			["Verse.ReachabilityCache:ClearForHostile"] = 0x5BED8EFCC91F582A,
 			["Verse.TickManager:TickManagerUpdate"] = 0xBD63B2C8DA3F0F13,
@@ -6414,7 +6416,7 @@ namespace Harmony3StrictCompat
 		}
 	}
 
-	// ---- Vanilla: two work searches that look at the whole map before the cheap test (personal tweak) ---------
+	// ---- Vanilla: three work searches that look at everything before the cheap test (personal tweak) ----------
 	// Reach probe 2026-11-22, with the reach flood memo active.
 	// HaulAIUtility.FindFixedIngredientCount: walks every reachable region and every haulable thing in it until
 	// it has found the wanted count of one def. Vanilla Recycling Expanded's alloy splitter asks it on every
@@ -6432,16 +6434,31 @@ namespace Harmony3StrictCompat
 	// so the same thing wins. Only for the exact class WorkGiver_DoBill: a subclass may accept other things.
 	// A mod patch on JobOnThing that hands out a job for a thing ThingIsUsableBillGiver refuses would no
 	// longer be reached by the global search (the nearby region search is untouched).
+	// WorkGiver_Merge: searches every stack in storage that is below its def's stack limit (362-368 on that
+	// map), each reach-checked and then run through JobOnThing, on every turn of every hauler. The probe's
+	// merge line: 329-332 of them have no partial stack of their kind in their storage group, 29-30 have one
+	// whose cell takes no more (a storage cap), 1-9 can merge. Postfix on its PotentialWorkThingsGlobal: only
+	// the stacks for which JobOnThing's partner tests that do not depend on the pawn can pass (another stack in
+	// the same storage group that stacks with it, is at least as big, below the limit, in a cell that is valid
+	// storage for it). Worked out anew on every turn, so nothing is stale; every pawn test stays with the game.
+	// A right-click order (FloatMenuMakerMap.makingFor set) gets the game's full list: forced merging drops
+	// the "at least as big" rule.
 	static class VanillaWorkSearchScans
 	{
-		static int ingredientCalls, ingredientSkips, benchTurns, benchListed;
-		static bool ingredientReported, benchReported;
+		static int ingredientCalls, ingredientSkips, benchTurns, benchListed, mergeTurns, mergeListed, mergeKept;
+		static bool ingredientReported, benchReported, mergeReported;
+		[ThreadStatic] static Dictionary<(ISlotGroup, ThingDef), List<Thing>> partialStacks;
+		[ThreadStatic] static HashSet<ISlotGroup> groupsSeen;
 
 		internal static void Init(Harmony harmony)
 		{
 			var me = typeof(VanillaWorkSearchScans);
 			if (Harmony3StrictCompatMod.Target("Verse.AI.HaulAIUtility:FindFixedIngredientCount") is { } find)
 				harmony.Patch(find, prefix: new HarmonyMethod(me, nameof(NoneOnMap)));
+			// JobOnThing is only fingerprinted: the partner tests below are copied from it.
+			if (Harmony3StrictCompatMod.Target("RimWorld.WorkGiver_Merge:PotentialWorkThingsGlobal") is { } mergeables
+				&& Harmony3StrictCompatMod.Target("RimWorld.WorkGiver_Merge:JobOnThing") != null)
+				harmony.Patch(mergeables, postfix: new HarmonyMethod(me, nameof(MergeablesWithPartner)));
 			// The bench list rests on how these three use it; a changed fingerprint on any of them is the cue to re-read.
 			var things = Harmony3StrictCompatMod.Target("RimWorld.WorkGiver_Scanner:PotentialWorkThingsGlobal");
 			if (things == null || Harmony3StrictCompatMod.doBillJobOnThing == null
@@ -6480,6 +6497,54 @@ namespace Harmony3StrictCompat
 			{
 				benchReported = true;
 				Log.Message($"[Harmony3StrictCompat] Bill bench listing: {benchTurns} work turns searched {benchListed} bill givers of their own instead of all {all.Count} on the map each");
+			}
+		}
+
+		// ponytail: the partial stacks of every storage group are bucketed anew on each turn (one pass over the
+		// things held in storage). If the probe shows that pass matters, keep the result per map for some ticks
+		// and drop entries that left storage before handing it out (JobOnThing assumes a spawned thing in a
+		// slot group).
+		static void MergeablesWithPartner(Pawn pawn, ref IEnumerable<Thing> __result)
+		{
+			if (FloatMenuMakerMap.makingFor != null || __result is not List<Thing> listed) return;
+			var map = pawn.Map;
+			var partials = partialStacks ??= new();
+			var seen = groupsSeen ??= new();
+			partials.Clear();
+			seen.Clear();
+			var kept = new List<Thing>();
+			for (int i = 0; i < listed.Count; i++)
+			{
+				var t = listed[i];
+				ISlotGroup group = t.GetSlotGroup();
+				if (group == null) { kept.Add(t); continue; }   // not what the game's list promises: left to the game
+				ISlotGroup linked = group.StorageGroup;
+				group = linked ?? group;
+				if (seen.Add(group))
+					foreach (var held in group.HeldThings)
+					{
+						if (held.stackCount >= held.def.stackLimit) continue;
+						if (!partials.TryGetValue((group, held.def), out var stacks)) partials[(group, held.def)] = stacks = new List<Thing>();
+						stacks.Add(held);
+					}
+				if (!partials.TryGetValue((group, t.def), out var same)) continue;
+				for (int j = 0; j < same.Count; j++)
+				{
+					var other = same[j];
+					if (other == t || other.stackCount < t.stackCount || !other.CanStackWith(t) || !other.Position.IsValidStorageFor(map, t)) continue;
+					kept.Add(t);
+					break;
+				}
+			}
+			partials.Clear();
+			seen.Clear();
+			__result = kept;
+			mergeListed += listed.Count;
+			mergeKept += kept.Count;
+			if (!mergeReported && ++mergeTurns >= 100)
+			{
+				mergeReported = true;
+				Log.Message($"[Harmony3StrictCompat] Merge search: {mergeTurns} work turns searched {mergeKept} stacks that have a possible partner instead of {mergeListed} listed");
 			}
 		}
 	}

@@ -149,6 +149,7 @@
 - Diagnostic (off unless a file ticktrace.on is in the mod folder): logs exact time per phase of the pawn tick, or (file contains "reach") work search time and reachability checks per work giver, plus what the merge work giver searches.
 - Vanilla + Vanilla Recycling Expanded (personal tweak): the fixed-ingredient search (alloy splitter, trash compactor) no longer walks the whole map when nothing of the wanted kind is on it.
 - Vanilla (personal tweak): bill work givers with several bench types (cooking, butchering, smelting) search only their own benches instead of reach-checking every pawn, animal and bench on the map.
+- Vanilla (personal tweak): the merge work giver searches only stacks that have a possible partner stack in their storage group instead of every partial stack in storage.
 - Vanilla (personal tweak): a reachability cache miss floods the region map once per pawn and room instead of once per destination room; the first 5000 answers of a session are checked against the game's own flood.
 - Vanilla Odyssey (personal tweak): the gravcore subquest generator no longer walks every quest on every tick; same odds, cheap tests first.
 - TD Enhancement Pack: the "urgent refill" work scan is skipped while no storage is marked for urgent refill (it searched storage for every haulable item on the map regardless).

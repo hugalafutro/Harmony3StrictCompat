@@ -106,6 +106,13 @@ namespace Harmony3StrictCompat
 				// Priority.Last: must run after Alpha Books' own postfix, which swaps in its filtered copy.
 				harmony.Patch(policyGlobalFilter, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AbRuinedBooksInReadingPolicy)) { priority = Priority.Last });
 			}
+			if (AccessTools.TypeByName("AlphaBooks.StaticCollections") is { } abCollectionsPick
+				&& Target("AlphaBooks.ReadingOutcomeDoer_Text:DoesProvidesOutcome") != null
+				&& Target("Verse.BookUtility:TryGetRandomBookToRead") is { } randomBook)
+			{
+				abRuinedBooks ??= AccessTools.Field(abCollectionsPick, "ruinedBooks");
+				harmony.Patch(randomBook, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AbRuinedBooksInRandomPoolTranspiler)));
+			}
 			foreach (var readStart in new[] { Target("RimWorld.JobDriver_Reading:Notify_Starting"), Target("AlphaBooks.JobDriver_ReadAlphaBook:Notify_Starting") })
 				if (readStart != null)
 					harmony.Patch(readStart, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(OrderedReadUnforbidsBook)));
@@ -3615,6 +3622,35 @@ namespace Harmony3StrictCompat
 				__result.SetAllow(def, true);
 		}
 
+		// ---- Alpha Books: ruined and burned books share the random pick with novels ------------------------------
+		// BookUtility.TryGetRandomBookToRead picks at random among the valid books that "provide an outcome" for the
+		// reader and only falls back to the others when there are none. A novel always provides one; the ruined books'
+		// doer (ReadingOutcomeDoer_Text) never does, so one readable novel on the map kept every ruined book unread.
+		// The picker's only ProvidesOutcome call is swapped for one that also counts a book in Alpha Books' ruinedBooks
+		// set. Reading policy, quality range and forbidden checks still apply (IsValidBook runs first).
+		static IEnumerable<CodeInstruction> AbRuinedBooksInRandomPoolTranspiler(IEnumerable<CodeInstruction> instructions)
+		{
+			var providesOutcome = AccessTools.Method(typeof(Book), nameof(Book.ProvidesOutcome));
+			int replaced = 0;
+			foreach (var code in instructions)
+			{
+				if (code.Calls(providesOutcome))
+				{
+					code.opcode = OpCodes.Call;
+					code.operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(ProvidesOutcomeOrRuined));
+					replaced++;
+				}
+				yield return code;
+			}
+			if (replaced != 1)
+				Log.Error($"[Harmony3StrictCompat] BookUtility.TryGetRandomBookToRead calls Book.ProvidesOutcome {replaced} times, expected 1: the game updated, redo the ruined book pick fix");
+		}
+
+		static bool ProvidesOutcomeOrRuined(Book book, Pawn reader)
+		{
+			return book.ProvidesOutcome(reader) || (abRuinedBooks.GetValue(null) is HashSet<ThingDef> ruined && ruined.Contains(book.def));
+		}
+
 		// ---- Vanilla: "Read now" is dropped at once on a forbidden book or outside recreation time ----------------
 		// The pawn picks the book up, carries it to a seat, and the read toil ends the job within a few ticks, so the
 		// book is dropped (seen 2026-11-15 on Alpha Books' ruined library site):
@@ -4227,6 +4263,8 @@ namespace Harmony3StrictCompat
 			["AlphaBooks.JobDriver_ReadAlphaBook:Notify_Starting"] = 0x8C0A0B7B7171326B,                          // Alpha Books 1.6 DLL of 2026-07-22
 			["AlphaBooks.AlphaBooks_Dialog_ManageReadingPolicies_PolicyGlobalFilter_Patch:ModifyPolicyFilter"] = 0xE16A4D675CCAD785, // Alpha Books 1.6 DLL of 2026-07-22
 			["RimWorld.Dialog_ManageReadingPolicies:get_PolicyGlobalFilter"] = 0x5BC2C5FC5225313D,                // game 1.7.5014, 2026-11-23
+			["AlphaBooks.ReadingOutcomeDoer_Text:DoesProvidesOutcome"] = 0x246DB32A470C6230,                      // Alpha Books 1.6 DLL of 2026-07-22
+			["Verse.BookUtility:TryGetRandomBookToRead"] = 0x208E2B58F339F9BE,                                    // game 1.7.5014, 2026-11-23
 			["SmartMedicine.FindBestMedicine:Find"] = 0x5C207A8C7B0E5F6A,                                        // Smart Medicine - Continued 1.7, 2026-11-12
 			["SmartMedicine.StockUpUtility:StockingUpOn"] = 0xE47440ED851F08C2,                                   // (Pawn, Thing) overload, Smart Medicine 1.7, 2026-11-09
 			["Unburned.Pretty_Patch:Prefix"] = 0xE153E3D01BE0AC50,                                                // Unburned 1.7, 2026-11-09

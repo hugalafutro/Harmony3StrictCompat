@@ -817,11 +817,11 @@ Build: `Tools/build.ps1` (compiles `Source/*.cs` against the game's DLLs into `1
 | 607 | [Show Me Your Hands · In Style!](https://steamcommunity.com/sharedfiles/filedetails/?id=3840308859) | `rhajiit.smyh.stylepositions` |
 | 608 | [Rimsenal - Plants Pack](https://steamcommunity.com/sharedfiles/filedetails/?id=3842797428) | `rimsenal.plants` |
 | 609 | [Catalog Tab - Test Fire, Compare & Craft](https://steamcommunity.com/sharedfiles/filedetails/?id=3840815505) | `doorajp.gearcatalog` |
-| 610 | [Info Card Plus](https://steamcommunity.com/sharedfiles/filedetails/?id=3776660810) | `kaamalauppias.infocardplus` |
-| 611 | [Auto links](https://steamcommunity.com/sharedfiles/filedetails/?id=2059389912) | `automatic.autolinks` |
-| 612 | [RimBridgeServer](https://steamcommunity.com/sharedfiles/filedetails/?id=3727949765) | `brrainz.rimbridgeserver` |
-| 613 | [Endless Horizon](https://steamcommunity.com/sharedfiles/filedetails/?id=3842486043) | `jongsh.endlesshorizon` |
-| 614 | [[LFS] UI Rethemed - Work](https://steamcommunity.com/sharedfiles/filedetails/?id=3835296643) | `lazyfridaystudio.uirethemed.work` |
+| 610 | [Auto links](https://steamcommunity.com/sharedfiles/filedetails/?id=2059389912) | `automatic.autolinks` |
+| 611 | [RimBridgeServer](https://steamcommunity.com/sharedfiles/filedetails/?id=3727949765) | `brrainz.rimbridgeserver` |
+| 612 | [Endless Horizon](https://steamcommunity.com/sharedfiles/filedetails/?id=3842486043) | `jongsh.endlesshorizon` |
+| 613 | [[LFS] UI Rethemed - Work](https://steamcommunity.com/sharedfiles/filedetails/?id=3835296643) | `lazyfridaystudio.uirethemed.work` |
+| 614 | [[LFS] UI Rethemed - Info Card](https://steamcommunity.com/sharedfiles/filedetails/?id=3843294270) | `lazyfridaystudio.uirethemed.infocard` |
 | 615 | [Hospitality + Ideology Patch](https://steamcommunity.com/sharedfiles/filedetails/?id=3789536584) | `fumblesneeze.guestbedgizmo` |
 | 616 | [VV - New Harvest: Compatibility Patches](https://steamcommunity.com/sharedfiles/filedetails/?id=3570411438) | `octodecoy.vvnewharvest.compatpatches` |
 | 617 | [[WYD] Better Campsites](https://steamcommunity.com/sharedfiles/filedetails/?id=3546818262) | `wyr3d.bettercampsites` |

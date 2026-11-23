@@ -169,6 +169,7 @@
 - Vanilla colonist bar + LTO Colony Groups (personal tweak): no grey frame behind colonist-bar groups.
 - Vanilla Plants Expanded - Mushrooms + Biomes! Caverns (personal tweak): redcap, zapcap, foampuffer, toxpuff, lullabloom, glowcap and thermoregulus can be planted in fungiponics basins too.
 - WOWGAG's Performance Patch: its turret/pawn target reuse no longer asks the runtime for the validator's method on every search (about half of all turret tick time); a small table gives the same answer.
+- Alpha Books: ruined and burned books show in the reading policy dialog again, so a policy can allow them and colonists read them for recreation (Alpha Books hid them together with its single-use books).
 - (tooling): the previous run's Player.log and Hauler's Dream debug log are copied to Logs/Archive at startup (newest 30 kept).
 - (tooling, temporary): a job that restarts ten times a tick logs what it points at (job-loop probe).</description>
 </ModMetaData>

@@ -98,6 +98,14 @@ namespace Harmony3StrictCompat
 				Fingerprint("LivingBonds.JobDriver_FamilyReading:MakeNewToils/MoveNext", AccessTools.EnumeratorMoveNext(familyReading));
 				harmony.Patch(familyReading, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AbFamilyReadBookCrumbles)));
 			}
+			if (AccessTools.TypeByName("AlphaBooks.StaticCollections") is { } abCollectionsPolicy
+				&& Target("AlphaBooks.AlphaBooks_Dialog_ManageReadingPolicies_PolicyGlobalFilter_Patch:ModifyPolicyFilter") != null
+				&& Target("RimWorld.Dialog_ManageReadingPolicies:get_PolicyGlobalFilter") is { } policyGlobalFilter)
+			{
+				abRuinedBooks ??= AccessTools.Field(abCollectionsPolicy, "ruinedBooks");
+				// Priority.Last: must run after Alpha Books' own postfix, which swaps in its filtered copy.
+				harmony.Patch(policyGlobalFilter, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(AbRuinedBooksInReadingPolicy)) { priority = Priority.Last });
+			}
 			foreach (var readStart in new[] { Target("RimWorld.JobDriver_Reading:Notify_Starting"), Target("AlphaBooks.JobDriver_ReadAlphaBook:Notify_Starting") })
 				if (readStart != null)
 					harmony.Patch(readStart, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(OrderedReadUnforbidsBook)));
@@ -3592,6 +3600,21 @@ namespace Harmony3StrictCompat
 			});
 		}
 
+		// ---- Alpha Books: ruined and burned books can be ticked in reading policies -----------------------------
+		// Alpha Books hides every ABooks_* def from the reading policy dialog (its postfix on PolicyGlobalFilter), which
+		// is right for its single-use books: they are Book_NotAutoReadable and never read on their own. Ruined and
+		// burned books are plain Book that colonists are meant to read for recreation, and vanilla only picks a book
+		// its reader's policy allows (BookUtility.IsValidBook). A policy that lost those two defs ("Allow all" only
+		// restores what the dialog shows; a save older than the mod never had them) could not get them back, so the
+		// books sat on the shelves unread. The two defs are added back to the list the dialog shows.
+		static void AbRuinedBooksInReadingPolicy(ThingFilter __result)
+		{
+			if (__result == null || !(abRuinedBooks.GetValue(null) is HashSet<ThingDef> ruined))
+				return;
+			foreach (var def in ruined)
+				__result.SetAllow(def, true);
+		}
+
 		// ---- Vanilla: "Read now" is dropped at once on a forbidden book or outside recreation time ----------------
 		// The pawn picks the book up, carries it to a seat, and the read toil ends the job within a few ticks, so the
 		// book is dropped (seen 2026-11-15 on Alpha Books' ruined library site):
@@ -4202,6 +4225,8 @@ namespace Harmony3StrictCompat
 			["LivingBonds.JobDriver_FamilyReading:MakeNewToils/MoveNext"] = 0xEDCA9D7D5DC3432B,                 // Living Bonds 1.7
 			["RimWorld.JobDriver_Reading:Notify_Starting"] = 0x22429B5AB43DB060,                                  // game 1.7.5011, 2026-11-16
 			["AlphaBooks.JobDriver_ReadAlphaBook:Notify_Starting"] = 0x8C0A0B7B7171326B,                          // Alpha Books 1.6 DLL of 2026-07-22
+			["AlphaBooks.AlphaBooks_Dialog_ManageReadingPolicies_PolicyGlobalFilter_Patch:ModifyPolicyFilter"] = 0xE16A4D675CCAD785, // Alpha Books 1.6 DLL of 2026-07-22
+			["RimWorld.Dialog_ManageReadingPolicies:get_PolicyGlobalFilter"] = 0x5BC2C5FC5225313D,                // game 1.7.5014, 2026-11-23
 			["SmartMedicine.FindBestMedicine:Find"] = 0x5C207A8C7B0E5F6A,                                        // Smart Medicine - Continued 1.7, 2026-11-12
 			["SmartMedicine.StockUpUtility:StockingUpOn"] = 0xE47440ED851F08C2,                                   // (Pawn, Thing) overload, Smart Medicine 1.7, 2026-11-09
 			["Unburned.Pretty_Patch:Prefix"] = 0xE153E3D01BE0AC50,                                                // Unburned 1.7, 2026-11-09

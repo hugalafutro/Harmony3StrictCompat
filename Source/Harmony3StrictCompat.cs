@@ -6709,7 +6709,10 @@ namespace Harmony3StrictCompat
 	// Hospitality guest stood 1.5 days without food or sleep, 72 pemmican in her pack; her lost group then cost
 	// -10 goodwill). The job now ends as soon as no grav engine on the pawn's map lists it. Engines are found per
 	// def whose class is Building_GravEngine (vanilla plus Vanilla Gravship Expanded's), every one of them, as
-	// Gravship Fleet does. The condition runs on the pawn's tick only while it has this job.
+	// Gravship Fleet does. The condition runs on the pawn's tick only while it has this job. Pawns in a ritual lord
+	// are left alone: the launch ritual sends its own participants with GotoShip (JobGiver_GoToValidSubstructure)
+	// without listing them, and the first build (bb89b53) ended those jobs at once, so colonists looped 10 jobs a
+	// tick and could not board (2026-11-23 18:1x).
 	static class GravshipStaleBoardOrLeave
 	{
 		static List<ThingDef> engineDefs;
@@ -6731,6 +6734,9 @@ namespace Harmony3StrictCompat
 		{
 			var map = driver.pawn.MapHeld;
 			if (map == null || driver.job == null) return true;
+			// The launch ritual's own participants get GotoShip from JobGiver_GoToValidSubstructure (their ritual
+			// duty), not from an engine list; the ritual ends those jobs itself. Only jobs outside a ritual are checked.
+			if (driver.pawn.GetLord()?.LordJob is LordJob_Ritual) return true;
 			engineDefs ??= DefDatabase<ThingDef>.AllDefsListForReading
 				.Where(d => d.thingClass != null && typeof(Building_GravEngine).IsAssignableFrom(d.thingClass)).ToList();
 			bool boarding = driver.job.def.boardingGravship;

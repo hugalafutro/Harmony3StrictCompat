@@ -902,6 +902,7 @@ namespace Harmony3StrictCompat
 			TickHotPaths.Init(harmony);
 			TickTrace.Init(harmony, content.RootDir);
 			GravcoreSubquestTick.Init(harmony);
+			GravshipStaleBoardOrLeave.Init(harmony);
 			UirArchitectTwoLineNames.Init(harmony);
 			AdaptedTextOncePerSecond.Init(harmony);
 			NoZeroSeverityDamageHediffs.Init(harmony);
@@ -4381,6 +4382,7 @@ namespace Harmony3StrictCompat
 			["Verse.Pawn_HealthTracker:PostApplyDamage"] = 0x7279655035C5644A,                        // game 1.7.5014, 2026-11-21 (no zero-severity damage hediffs)
 			["RimWorld.QuestPart_SubquestGenerator_Gravcores:QuestPartTick"] = 0x57A1138EAA085FF4,     // game 1.7.5014, 2026-11-20 (cheap tests first)
 			["RimWorld.QuestPart_SubquestGenerator_Gravcores:get_CanGenerateSubquest"] = 0xD22781A31626AD88,
+			["RimWorld.JobDriver_BoardOrLeaveGravship:GetGotoToil"] = 0x47A90334C2BA15AE,               // game 1.7.5014, 2026-11-23 (stale leave/board ship job ends)
 			["Verse.CellInspectorDrawer:OnGUI"] = 0x61C79C22E0809E53,                                  // game 1.7.5014, 2026-11-22 (wider Alt cell inspector)
 			["Verse.CellInspectorDrawer:DrawRow"] = 0xA3DBA1BA87FFE7BE,
 			["Verse.CellInspectorDrawer:DrawThingRow"] = 0x2A68EEF385EC54DF,
@@ -6695,6 +6697,55 @@ namespace Harmony3StrictCompat
 				|| stockpiles.GetValue(comp) is not HashSet<Zone_Stockpile> { Count: 0 }) return true;
 			__result = Enumerable.Empty<Thing>();
 			return false;
+		}
+	}
+
+	// ---- Vanilla (Odyssey): a stale "leave ship" / "board ship" job ends once no engine asks for it -----------
+	// The gravship launch ritual puts visitors into Building_GravEngine.pawnsToLeave (colony animals and mechs into
+	// pawnsToBoard), and JobGiver_BoardOrLeaveGravship (replaced by Gravship Fleet's prefix, same jobs) then gives
+	// LeaveShip / GotoShip. Both run JobDriver_BoardOrLeaveGravship, a JobDriver_StandAndBeSociallyActive: walk to
+	// the spot, then stand with no end. The ritual's Cleanup nulls both lists and ends only the current job, so a
+	// copy still in the job queue starts afterwards and the pawn stands until it collapses (seen 2026-11-23: a
+	// Hospitality guest stood 1.5 days without food or sleep, 72 pemmican in her pack; her lost group then cost
+	// -10 goodwill). The job now ends as soon as no grav engine on the pawn's map lists it. Engines are found per
+	// def whose class is Building_GravEngine (vanilla plus Vanilla Gravship Expanded's), every one of them, as
+	// Gravship Fleet does. The condition runs on the pawn's tick only while it has this job.
+	static class GravshipStaleBoardOrLeave
+	{
+		static List<ThingDef> engineDefs;
+
+		internal static void Init(Harmony harmony)
+		{
+			if (Harmony3StrictCompatMod.Target("RimWorld.JobDriver_BoardOrLeaveGravship:GetGotoToil") is { } gotoToil)
+				harmony.Patch(gotoToil, postfix: new HarmonyMethod(typeof(GravshipStaleBoardOrLeave), nameof(AddEndCondition)));
+		}
+
+		// GetGotoToil is called once per job while the driver builds its toils.
+		static void AddEndCondition(JobDriver __instance)
+		{
+			var driver = __instance;
+			driver.AddEndCondition(() => StillListed(driver) ? JobCondition.Ongoing : Ended(driver));
+		}
+
+		static bool StillListed(JobDriver driver)
+		{
+			var map = driver.pawn.MapHeld;
+			if (map == null || driver.job == null) return true;
+			engineDefs ??= DefDatabase<ThingDef>.AllDefsListForReading
+				.Where(d => d.thingClass != null && typeof(Building_GravEngine).IsAssignableFrom(d.thingClass)).ToList();
+			bool boarding = driver.job.def.boardingGravship;
+			foreach (var def in engineDefs)
+				foreach (var thing in map.listerThings.ThingsOfDef(def))
+					if (thing is Building_GravEngine engine && (boarding ? engine.pawnsToBoard : engine.pawnsToLeave) is { } listed
+						&& listed.Contains(driver.pawn))
+						return true;
+			return false;
+		}
+
+		static JobCondition Ended(JobDriver driver)
+		{
+			Log.Message($"[Harmony3StrictCompat] Gravship: {driver.pawn.LabelShort} stopped a stale {driver.job.def.defName} job; no grav engine on its map lists it any more");
+			return JobCondition.Incompletable;
 		}
 	}
 

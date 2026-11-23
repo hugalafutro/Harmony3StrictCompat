@@ -159,6 +159,7 @@
 - Vanilla (personal tweak): the merge work giver searches only stacks that have a possible partner stack in their storage group instead of every partial stack in storage.
 - Vanilla (personal tweak): a reachability cache miss floods the region map once per pawn and room instead of once per destination room; the first 5000 answers of a session are checked against the game's own flood.
 - Vanilla Odyssey (personal tweak): the gravcore subquest generator no longer walks every quest on every tick; same odds, cheap tests first.
+- Vanilla Odyssey (+ Gravship Fleet): a leftover "leave ship" / "board ship" job ends once no grav engine lists the pawn, so visitors no longer stand without food or sleep after a gravship launch ritual.
 - TD Enhancement Pack: the "urgent refill" work scan is skipped while no storage is marked for urgent refill (it searched storage for every haulable item on the map regardless).
 - TD Enhancement Pack + Altered Carbon 2: the "Empty Workbench" alert skips benches no recipe uses (the neural editor, run from its gizmos).
 - Altered Carbon 2: the childbirth ritual no longer picks a sleeve casket as the bed for the mother.

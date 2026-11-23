@@ -903,6 +903,7 @@ namespace Harmony3StrictCompat
 			TickTrace.Init(harmony, content.RootDir);
 			GravcoreSubquestTick.Init(harmony);
 			GravshipStaleBoardOrLeave.Init(harmony);
+			BbRequestOnStockedMap.Init(harmony);
 			UirArchitectTwoLineNames.Init(harmony);
 			AdaptedTextOncePerSecond.Init(harmony);
 			NoZeroSeverityDamageHediffs.Init(harmony);
@@ -4383,6 +4384,11 @@ namespace Harmony3StrictCompat
 			["RimWorld.QuestPart_SubquestGenerator_Gravcores:QuestPartTick"] = 0x57A1138EAA085FF4,     // game 1.7.5014, 2026-11-20 (cheap tests first)
 			["RimWorld.QuestPart_SubquestGenerator_Gravcores:get_CanGenerateSubquest"] = 0xD22781A31626AD88,
 			["RimWorld.JobDriver_BoardOrLeaveGravship:GetGotoToil"] = 0x47A90334C2BA15AE,               // game 1.7.5014, 2026-11-23 (stale leave/board ship job ends)
+			["RimWorld.QuestGen.QuestGen_Get:GetMap"] = 0x6C6254498E3B236E,                             // game 1.7.5014, 2026-11-23 (Better Beggars: request on a stocked map)
+			["BetterBeggars.QuestNode_Root_Beggars_WantThing_Vanilla:RunInt"] = 0x1471BE01935A9CDF,     // Better Beggars 1.7 DLL, 2026-11-23
+			["BetterBeggars.QuestNode_Root_Beggars_WantThing_Vanilla:TestRunInt"] = 0x592895DAD3977993,
+			["BetterBeggars.QuestNode_Root_Beggars_WantThing_Drugs:RunInt"] = 0x7D0E5489F47A7DD6,
+			["BetterBeggars.QuestNode_Root_Beggars_WantThing_Drugs:TestRunInt"] = 0x55E5DD90B712052D,
 			["Verse.CellInspectorDrawer:OnGUI"] = 0x61C79C22E0809E53,                                  // game 1.7.5014, 2026-11-22 (wider Alt cell inspector)
 			["Verse.CellInspectorDrawer:DrawRow"] = 0xA3DBA1BA87FFE7BE,
 			["Verse.CellInspectorDrawer:DrawThingRow"] = 0x2A68EEF385EC54DF,
@@ -6697,6 +6703,63 @@ namespace Harmony3StrictCompat
 				|| stockpiles.GetValue(comp) is not HashSet<Zone_Stockpile> { Count: 0 }) return true;
 			__result = Enumerable.Empty<Thing>();
 			return false;
+		}
+	}
+
+	// ---- Better Beggars: a beggar quest with nothing to ask for (seen 2026-11-23, colony split by a gravship) ----
+	// Its "want thing" quests (items, drugs) choose the request on QuestGen_Get.GetMap(), which picks a random player
+	// home map with a free colonist, and RunInt calls it again instead of reusing TestRunInt's map. With two such maps
+	// (the old home and the gravship site) the can-fire test passed on the stocked home while RunInt landed on the
+	// bare site: no item was found, RunInt went on anyway, the beggars arrived with an empty request ("ERR" in the
+	// quest text), LordJob_BegForItems counted nothing asked as already given, and they left at once with the quest
+	// marked a success. RunInt now first runs the node's own TestRunInt on each candidate map (random order) and is
+	// built on the first one that passes; GetMap returns that map until RunInt ends. When no map passes, the test
+	// already kept the quest from firing.
+	// ponytail: the test uses 0.85 x points like Better Beggars' own TestRunInt; a request multiplier set above 0.85
+	// can still find nothing in RunInt. Check the real value too if someone raises it.
+	static class BbRequestOnStockedMap
+	{
+		static Map pinned;
+
+		internal static void Init(Harmony harmony)
+		{
+			var getMap = Harmony3StrictCompatMod.Target("RimWorld.QuestGen.QuestGen_Get:GetMap");
+			if (getMap == null) return;
+			bool any = false;
+			foreach (var node in new[] { "BetterBeggars.QuestNode_Root_Beggars_WantThing_Vanilla", "BetterBeggars.QuestNode_Root_Beggars_WantThing_Drugs" })
+			{
+				var run = Harmony3StrictCompatMod.Target(node + ":RunInt", optional: true);
+				if (run == null || Harmony3StrictCompatMod.Target(node + ":TestRunInt", optional: true) == null) continue;
+				harmony.Patch(run, prefix: new HarmonyMethod(typeof(BbRequestOnStockedMap), nameof(PinStockedMap)),
+					finalizer: new HarmonyMethod(typeof(BbRequestOnStockedMap), nameof(Unpin)));
+				any = true;
+			}
+			if (any) harmony.Patch(getMap, postfix: new HarmonyMethod(typeof(BbRequestOnStockedMap), nameof(PinnedMap)));
+		}
+
+		static void PinStockedMap(RimWorld.QuestGen.QuestNode __instance)
+		{
+			pinned = null;
+			var test = AccessTools.Method(__instance.GetType(), "TestRunInt");
+			var slate = RimWorld.QuestGen.QuestGen.slate;
+			// Same candidates as vanilla GetMap(false, null, false): player homes off space layers with a free colonist.
+			foreach (var map in Find.Maps.Where(m => m.IsPlayerHome && !m.Tile.LayerDef.isSpace && m.mapPawns.FreeColonists.Any()).InRandomOrder().ToList())
+			{
+				pinned = map;
+				if (test != null && (bool)test.Invoke(__instance, [slate])) return;
+			}
+			pinned = null;
+		}
+
+		static Exception Unpin(Exception __exception)
+		{
+			pinned = null;
+			return __exception;
+		}
+
+		static void PinnedMap(ref Map __result)
+		{
+			if (pinned != null) __result = pinned;
 		}
 	}
 

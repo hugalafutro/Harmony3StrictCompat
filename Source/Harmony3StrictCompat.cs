@@ -4145,11 +4145,11 @@ namespace Harmony3StrictCompat
 			["KanbanStockpileContinue.KanbanStockpileAPI:InvokeExcessRemoved"] = 0xDEEB48913A6ABFF4,
 			["KanbanStockpileContinue.StorageSettings_CopyFrom_Patch:CopyFrom"] = 0x03124597F110B0CD,         // 2026-11-22 (ownerless storage settings no longer share one Kanban slot)
 			["KanbanStockpileContinue.StorageSettings_ExposeData_Patch:Postfix"] = 0x1C02896D5C8FB951,
-			["UIRethemed.Ideology.StyleTip+Content:get_Width"] = 0x5F8988FF18236D28,                          // UI Rethemed - Ideology 1.7, 2026-11-11 11:53 (rest: DLL of 2026-11-23 10:30)
-			["UIRethemed.Ideology.StyleTip+Content:Height"] = 0x4F69F27221B679AD,
-			["UIRethemed.Ideology.StyleTip+Content:CellWidth"] = 0xC9792080251813D8,
-			["UIRethemed.Ideology.StyleTip+Content:SectionHeight"] = 0x10175432DD9E1558,
-			["UIRethemed.Ideology.StyleTip+Content:Draw"] = 0xB1801B0CCD2900A2,
+			["UIRethemed.Ideology.StyleTip+Content:get_Width"] = 0x5F8988FF18236D28,                          // UI Rethemed - Ideology 1.7, 2026-11-11 11:53 (rest: DLL of 2026-11-23 11:15)
+			["UIRethemed.Ideology.StyleTip+Content:Height"] = 0xE355FF3E32750D41,
+			["UIRethemed.Ideology.StyleTip+Content:CellWidth"] = 0x43C267056C65FF5A,
+			["UIRethemed.Ideology.StyleTip+Content:SectionHeight"] = 0x3DD868E15EC87627,
+			["UIRethemed.Ideology.StyleTip+Content:Draw"] = 0x0D3A57AEE905D2F2,
 			["TooManyMods.Compat_MerchantGuild_TradeArrivalOption:.cctor"] = 0x8DD5B3B38F9ACDDF,              // TMM VFEM2_VF.dll, 2026-01-24 (built for Vehicle Framework 1.6)
 			["RimPacts.WorldComponent_RimPacts:ApplyProtectionFailure"] = 0xB370425BA8483DE8,                  // RimPacts 1.7, 2026-11-17 (no route check)
 			["RimPacts.WorldComponent_RimPacts:IsProtectedByTradePact"] = 0x786746778135B518,
@@ -4290,8 +4290,8 @@ namespace Harmony3StrictCompat
 			["RimWorld.Bill_Production:ShouldDoNow"] = 0x91426C66CA668FA7,                           // game 1.7.5014, 2026-11-20 (bill count cache)
 			["Inventory.BillUtility:Satisfied"] = 0xAC4273F963D8D1D6,                                // Loadout Compositing 1.7, 2026-11-22 (bill count cache, per-tag bills)
 			["VanillaGravshipExpanded2.WarcomputerHelper:ApplyForcedMissRadiusBuffs"] = 0x7C5E4AA83043349A, // Vanilla Gravship Expanded - Chapter 2 1.7, 2026-11-22
-			["GUIPerformancePatch.GppFightTarget:Pre"] = 0xAF4C93966FEC285C,                         // WOWGAG's Performance Patch 1.7, DLL of 2026-11-22 13:07 (validator method lookup)
-			["GUIPerformancePatch.GppFightTarget:Post"] = 0x5AE7AB06B9684842,
+			["GUIPerformancePatch.GppFightTarget:Pre"] = 0x2AA1758347F26214,                         // WOWGAG's Performance Patch 1.7, DLL of 2026-11-23 11:15 (validator method lookup)
+			["GUIPerformancePatch.GppFightTarget:Post"] = 0x3377BB6DFB5BE370,
 			["Verse.Reachability:CheckRegionBasedReachability"] = 0x0AE52A32FAF5BA8D,                // game 1.7.5014, 2026-11-22 (reach flood memo)
 			["Verse.Reachability:QueueNewOpenRegion"] = 0xAA67D4BF0BC72D97,
 			["Verse.Reachability:CanReach"] = 0x22585B275FCEF578,

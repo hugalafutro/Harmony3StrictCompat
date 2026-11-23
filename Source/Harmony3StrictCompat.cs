@@ -4355,6 +4355,7 @@ namespace Harmony3StrictCompat
 			["Hospitality.JoyGiver_BuyStuff:CanEat"] = 0x304D1E10604FFCD2,                           // Hospitality 1.7
 			["RimWorld.Bill_Production:ShouldDoNow"] = 0x91426C66CA668FA7,                           // game 1.7.5014, 2026-11-20 (bill count cache)
 			["Inventory.BillUtility:Satisfied"] = 0xAC4273F963D8D1D6,                                // Loadout Compositing 1.7, 2026-11-22 (bill count cache, per-tag bills)
+			["Verse.Pawn:SpawnSetup"] = 0xEBD14AA4AA28AC29,                                           // game 1.7.5014, 2026-11-23 (bill count cache dropped when colonists arrive)
 			["VanillaGravshipExpanded2.WarcomputerHelper:ApplyForcedMissRadiusBuffs"] = 0x7C5E4AA83043349A, // Vanilla Gravship Expanded - Chapter 2 1.7, 2026-11-22
 			["GUIPerformancePatch.GppFightTarget:Pre"] = 0x2AA1758347F26214,                         // WOWGAG's Performance Patch 1.7, DLL of 2026-11-23 11:15 (validator method lookup)
 			["GUIPerformancePatch.GppFightTarget:Post"] = 0x3377BB6DFB5BE370,
@@ -5615,9 +5616,16 @@ namespace Harmony3StrictCompat
 			if (shouldDoNow == null) return;
 			harmony.Patch(shouldDoNow, transpiler: new HarmonyMethod(typeof(BillCountCache), nameof(UseCache)));
 			if (Harmony3StrictCompatMod.Target("Inventory.BillUtility:Satisfied") is { } satisfied)
-				harmony.Patch(satisfied, transpiler: new HarmonyMethod(typeof(BillCountCache), nameof(UseCache)));
+			{
+				harmony.Patch(satisfied, transpiler: new HarmonyMethod(typeof(BillCountCache), nameof(UseCache)),
+					postfix: new HarmonyMethod(typeof(BillCountCache), nameof(ProbePerTagWanted)));
+				pawnsFor = AccessTools.Method("Inventory.LoadoutManager:PawnsFor");
+				desiredTarget = AccessTools.Method("Inventory.BillUtility:DesiredTargetCount");
+			}
 			harmony.Patch(AccessTools.Method(typeof(Bill_Production), nameof(Bill_Production.Notify_IterationCompleted)),
 				postfix: new HarmonyMethod(typeof(BillCountCache), nameof(ProductMade)));
+			if (Harmony3StrictCompatMod.Target("Verse.Pawn:SpawnSetup") is { } spawnSetup)
+				harmony.Patch(spawnSetup, postfix: new HarmonyMethod(typeof(BillCountCache), nameof(ColonistArrived)));
 			harmony.Patch(AccessTools.Method(typeof(MemoryUtility), nameof(MemoryUtility.ClearAllMapsAndWorld)),
 				postfix: new HarmonyMethod(typeof(BillCountCache), nameof(Reset)));
 		}
@@ -5673,9 +5681,61 @@ namespace Harmony3StrictCompat
 			foreach (var kv in cache)
 				if (product == null || kv.Value.product == product)
 					cache.TryRemove(kv.Key, out _);
+			ProbePerTagMade(__instance);
 		}
 
 		static void Reset() => cache.Clear();
+
+		// A colonist (or colony mech) arriving on a map changes what the bills there should count: a gravship crew or
+		// a caravan back home brings its worn gear, and a Loadout Compositing per-tag bill's target grows with every
+		// tagged pawn on the map at once. Every cached count is dropped so the next look counts live; without this a
+		// count up to 600 ticks old could start a craft the returning pawns' own gear already covers (2026-11-23).
+		static void ColonistArrived(Pawn __instance, bool respawningAfterLoad)
+		{
+			if (respawningAfterLoad || cache.IsEmpty || __instance.Faction is not { IsPlayer: true }) return;
+			if (!__instance.IsColonist && !__instance.IsColonyMech) return;
+			cache.Clear();
+		}
+
+		// ---- TEMPORARY probe (2026-11-23): per-tag bills overcrafted by 2-3 after a gravship trip ------------------
+		// Logs, for a Loadout Compositing per-tag bill, every time it decides to craft (Satisfied false) with numbers
+		// that differ from its last line, and every finished craft: the target, the count the bill used (through the
+		// cache), the live count, and the tagged pawns on the bill's map. Remove (source, README row, About bullet)
+		// once the overcraft is explained.
+		static MethodInfo pawnsFor, desiredTarget;
+		static readonly Dictionary<Bill_Production, string> probeLast = new();
+
+		static bool IsPerTag(Bill_Production bill) => bill.repeatMode?.defName == "W_PerTag";
+
+		static string ProbeState(Bill_Production bill)
+		{
+			int target = desiredTarget != null ? (int)desiredTarget.Invoke(null, [bill]) : -1;
+			int live = bill.recipe.WorkerCounter.CountProducts(bill);
+			string cached = cache.TryGetValue(bill, out var e) ? $"{e.count} ({Find.TickManager.TicksGame - e.tick} ticks old)" : "none";
+			var pawns = pawnsFor?.Invoke(null, [bill]) is IEnumerable<Pawn> ps ? string.Join(", ", ps.Select(p => p.LabelShort)) : "?";
+			return $"target {target}, cached count {cached}, live count {live}, tagged pawns on map [{pawns}]";
+		}
+
+		static readonly Dictionary<Bill_Production, int> probeTick = new();
+
+		static void ProbePerTagWanted(Bill_Production productionBill, bool __result)
+		{
+			if (__result || productionBill.suspended || !IsPerTag(productionBill)) return;
+			int now = Find.TickManager.TicksGame;
+			if (probeTick.TryGetValue(productionBill, out int at) && (uint)(now - at) < 250) return; // the live count is the expensive part
+			probeTick[productionBill] = now;
+			string state = ProbeState(productionBill);
+			if (probeLast.TryGetValue(productionBill, out var last) && last == state) return;
+			probeLast[productionBill] = state;
+			Log.Message($"[Harmony3StrictCompat] per-tag bill probe: {productionBill.recipe.defName} at {productionBill.billStack?.billGiver} wants to craft: {state}");
+		}
+
+		static void ProbePerTagMade(Bill_Production bill)
+		{
+			if (!IsPerTag(bill)) return;
+			probeLast.Remove(bill);
+			Log.Message($"[Harmony3StrictCompat] per-tag bill probe: {bill.recipe.defName} at {bill.billStack?.billGiver} finished one: {ProbeState(bill)}");
+		}
 	}
 
 	// ---- Vanilla Gravship Expanded - Chapter 2: warcomputer search for every player turret ---------------------

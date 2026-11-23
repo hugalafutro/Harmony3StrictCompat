@@ -151,7 +151,7 @@
 - Vanilla: a failing sibling relation no longer aborts a whole raid group (a RimPacts defend wave froze the game retrying it).
 - Vanilla (personal tweak): install and implant-removal operations get the implant item as their menu icon instead of a grey square.
 - Vanilla (personal tweak): clicking a plant pot or hydroponics basin selects the grower first, the plant on a second click.
-- Vanilla + Better Workbench Management (personal tweak): "do until you have X" bills count their products once per bill every 600 ticks instead of on every work scan; finishing an item refreshes the count at once. Loadout Compositing's per-tag bills use the same cache.
+- Vanilla + Better Workbench Management (personal tweak): "do until you have X" bills count their products once per bill every 600 ticks instead of on every work scan; finishing an item refreshes the count at once. Loadout Compositing's per-tag bills use the same cache. Colonists arriving on a map refresh every count at once.
 - Vanilla Gravship Expanded - Chapter 2: the warcomputer search (every 250 ticks per player turret) no longer runs for every turret, only for the gauss gun and gauss howitzer that use its answer.
 - Vanilla (personal tweak): two tick hot paths made cheap: the "is this comp type sealed" lookup no longer takes a lock, and doors ask "is this pawn hostile" once per pawn per tick instead of once per reachability cache entry.
 - Vanilla (personal tweak): up to 12 ticks per frame at 3x speed instead of 6, so a slow frame no longer costs ticks (frame rate is traded for tick rate).
@@ -175,5 +175,6 @@
 - Alpha Books: ruined and burned books show in the reading policy dialog again, so a policy can allow them and colonists read them for recreation (Alpha Books hid them together with its single-use books).
 - Alpha Books: colonists pick ruined and burned books at random together with novels, instead of only when no novel or useful textbook is left.
 - (tooling): the previous run's Player.log and Hauler's Dream debug log are copied to Logs/Archive at startup (newest 30 kept).
-- (tooling, temporary): a job that restarts ten times a tick logs what it points at (job-loop probe).</description>
+- (tooling, temporary): a job that restarts ten times a tick logs what it points at (job-loop probe).
+- (tooling, temporary): Loadout Compositing per-tag bills log their target, cached and live count and tagged pawns when they decide to craft and when they finish (per-tag bill probe).</description>
 </ModMetaData>

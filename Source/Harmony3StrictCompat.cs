@@ -896,6 +896,7 @@ namespace Harmony3StrictCompat
 			CatalogButtonsInUir.Init(harmony);
 			NewSettlementWantForSettlers.Init(harmony);
 			KanbanOwnerlessSettings.Init(harmony);
+			ImpactFloorByFireRate.Init(harmony, content.RootDir);
 		}
 
 		// ---- UI Rethemed - Architect + Vanilla Plants Expanded: Tilled soil among the orders ----
@@ -4064,8 +4065,8 @@ namespace Harmony3StrictCompat
 			["DressForTheWeather.IncidentWorker_NeutralGroup_SpawnPawns:Postfix"] = 0xB1048B0DC4E3B6FC,
 			["Impact.ArmorDeflection:Prefix"] = 0x31A4B4B031D77B6E,                                         // IMPACT - Combat Overhaul 1.7, DLL of 2026-10-29
 			["RimWorld.IncidentWorker_Raid:TryGenerateRaidInfo"] = 0x09B77A52A9B691B2,                          // game 1.7.5013, 2026-11-18 (pawns are spawned by the time it returns)
-			["EventImagePopup.Patch_WindowStackAdd:Prefix"] = 0x841F5AE3B7F05107,                              // Event Image Popup, 2026-11-18 (only Dialog_NodeTree inside a letter or incident scope)
-			["EventImagePopup.ImageResolver:ResolveForIncident"] = 0x3CA76DBAC6CD2A1C,
+			["EventImagePopup.Patch_WindowStackAdd:Prefix"] = 0xE2868FDECD3D475D,                              // Event Image Popup, DLL of 2026-11-23 (only Dialog_NodeTree inside a letter or incident scope)
+			["EventImagePopup.ImageResolver:ResolveForIncident"] = 0xB0C8AE510BAB01F1,
 			["RimWorld.CompShuttle:CompTick"] = 0x807AD3141AD4D8A6,
 			["RimWorld.Selector:SelectUnderMouse"] = 0x59EF35E3AE5B2B41,                                    // game 1.7.5013, 2026-11-18
 			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,
@@ -4334,6 +4335,10 @@ namespace Harmony3StrictCompat
 			["SatelliteMinimap.MinimapSettings:ExposeData"] = 0x75F6660846866D5A,
 			["RimWorld.Planet.SettleUtility:AddNewHome"] = 0x69C44B511913CADB,                       // game 1.7.5014, 2026-11-22 ("live in a new settlement" want goes to the settlers)
 			["WantsAndQuirks.SettleUtility_AddNewHome_Patch:Postfix"] = 0x8F77A64C6D0DB00F,          // Character Development, DLL of 2026-11-13
+			["Impact.WeaponEqualizer:Run"] = 0xFC3B14BF7DB2BCE2,                                   // IMPACT - Combat Overhaul 1.0.1, 2026-11-23 (damage floor scaled by rate of fire)
+			["Impact.WeaponEqualizer:Equalize"] = 0xEF0B66E9178B4A5A,
+			["Impact.WeaponEqualizer:GetClamps"] = 0x55A423DD45A86ED9,
+			["Impact.WeaponEqualizer:ShouldEqualize"] = 0xB7CD4110FA07356C,
 		};
 
 		// "Namespace.Type:Method". Null and silent when the type (i.e. the mod) is absent. A missing method is an
@@ -7868,6 +7873,163 @@ namespace Harmony3StrictCompat
 			if (done != expected)
 				Log.Error($"[Harmony3StrictCompat] Kanban {original.DeclaringType?.Name}.{original.Name} shape changed ({done} clipboard key fallbacks, expected {expected}): ownerless storage settings still share one Kanban slot");
 			return codes;
+		}
+	}
+
+	// ---- IMPACT - Combat Overhaul: the per-shot damage floor is scaled by rate of fire ----------------------------
+	// IMPACT's weapon equalization clamps every ranged weapon's damage per projectile onto a band per tech tier
+	// (spacer 20 to 36) and looks at neither burst size nor cycle time. A weapon balanced as many weak hits is
+	// lifted to the floor on every hit: Sparkling Worlds' Bulletstorm (3 damage, ten shots a second) became 20
+	// damage and 200 damage per second; Apex Mechanoids' Beam Witherer (1 damage, 15-shot burst) became 20 x 15
+	// and took a fully armored colonist to 1 torso hit point in one burst (seen 2026-11-23). The floor now stands
+	// for damage per second of fire: a weapon firing more than ReferenceShotsPerSecond gets the floor divided by
+	// its rate, never below the damage its own mod gave it. Weapons at or below that rate, the upper clamp, armor
+	// penetration, range and projectile speed stay as IMPACT set them. Turret guns are skipped (IMPACT leaves
+	// their damage alone). A projectile shared by several weapons takes the fastest of them.
+	// A weapon whose own mod gave it a third of the tier floor or less is not lifted at all: damage is not what it
+	// is for. That covers the non-lethal and utility guns (VWE Non-Lethal's dart gun 3, a tranquilizer blowgun 3,
+	// Sparkling Worlds' pain gun 1, EMP and toxin dart guns, Eltex psycaster guns 6), which IMPACT turned into
+	// 12 to 26 damage weapons, and the many-weak-hits designs above (Beam Witherer back to 1 per hit).
+	// Rate = burst / (warmup + cooldown + time between burst shots), from the def; the shooter's aiming and
+	// cooldown factors are not in it.
+	// A file named "weaponsurvey.on" in the mod folder writes every equalized weapon to Logs/impact_weapons.tsv.
+	static class ImpactFloorByFireRate
+	{
+		const float ReferenceShotsPerSecond = 1f;
+		const int TokenDamageDivisor = 3;
+		static readonly Dictionary<ProjectileProperties, int> original = new();
+		static readonly AccessTools.FieldRef<ProjectileProperties, int> damageBase = AccessTools.FieldRefAccess<ProjectileProperties, int>("damageAmountBase");
+		static MethodInfo shouldEqualize, getClamps, tierOf;
+		static string modRoot;
+
+		internal static void Init(Harmony harmony, string root)
+		{
+			if (Harmony3StrictCompatMod.Target("Impact.WeaponEqualizer:Run") is not { } run) return;
+			Harmony3StrictCompatMod.Target("Impact.WeaponEqualizer:Equalize");
+			shouldEqualize = Harmony3StrictCompatMod.Target("Impact.WeaponEqualizer:ShouldEqualize");
+			getClamps = Harmony3StrictCompatMod.Target("Impact.WeaponEqualizer:GetClamps");
+			tierOf = AccessTools.Method(run.DeclaringType, "TierOf");
+			if (shouldEqualize == null || getClamps == null || tierOf == null || getClamps.GetParameters().Length != 7)
+			{
+				Log.Error("[Harmony3StrictCompat] IMPACT's weapon equalizer changed: redo the rate of fire floor");
+				return;
+			}
+			modRoot = root;
+			harmony.Patch(run, prefix: new HarmonyMethod(typeof(ImpactFloorByFireRate), nameof(Before)),
+				postfix: new HarmonyMethod(typeof(ImpactFloorByFireRate), nameof(After)));
+		}
+
+		static IEnumerable<(ThingDef def, VerbProperties verb, ProjectileProperties projectile)> Weapons()
+		{
+			foreach (var def in DefDatabase<ThingDef>.AllDefsListForReading)
+			{
+				if (!def.IsRangedWeapon || def.Verbs.NullOrEmpty()) continue;
+				var verb = def.Verbs.Find(v => v.isPrimary) ?? def.Verbs[0];
+				if (verb.defaultProjectile?.projectile is { } projectile) yield return (def, verb, projectile);
+			}
+		}
+
+		internal static float ShotsPerSecond(int burst, float warmup, float cooldown, int ticksBetweenBurstShots)
+		{
+			burst = Math.Max(burst, 1);
+			return burst / Math.Max(warmup + cooldown + (burst - 1) * ticksBetweenBurstShots / 60f, 0.01f);
+		}
+
+		// The floor a weapon firing this fast gets; the result never drops below the weapon's own damage.
+		internal static int ScaledFloor(int ownDamage, int floor, float shotsPerSecond) =>
+			ownDamage * TokenDamageDivisor <= floor ? ownDamage
+			: shotsPerSecond <= ReferenceShotsPerSecond ? Math.Max(ownDamage, floor)
+			: Math.Max(ownDamage, Mathf.RoundToInt(floor * ReferenceShotsPerSecond / shotsPerSecond));
+
+		static void Before()
+		{
+			original.Clear();
+			foreach (var (_, _, projectile) in Weapons())
+				if (!original.ContainsKey(projectile)) original[projectile] = projectile.GetDamageAmount(1f, null);
+		}
+
+		static void After()
+		{
+			try
+			{
+				Apply();
+			}
+			catch (Exception e)
+			{
+				Log.Error("[Harmony3StrictCompat] IMPACT rate of fire floor failed; weapons keep IMPACT's values: " + e);
+			}
+			original.Clear();
+		}
+
+		static void Apply()
+		{
+			// Cases as their mods ship them: fail loudly if the rule stops giving these.
+			// Bulletstorm, Beam Witherer, dart gun (kept), a slow 9 damage spacer gun (lifted), a 12 damage 4 shots a second one.
+			if (ScaledFloor(3, 20, ShotsPerSecond(1, 0.05f, 0.05f, 0)) != 3 || ScaledFloor(1, 20, ShotsPerSecond(15, 2f, 3f, 10)) != 1
+				|| ScaledFloor(3, 12, ShotsPerSecond(1, 3f, 4.5f, 0)) != 3 || ScaledFloor(9, 20, ShotsPerSecond(1, 1f, 1.5f, 0)) != 20
+				|| ScaledFloor(12, 20, 4f) != 12 || ScaledFloor(8, 20, 2f) != 10)
+				throw new InvalidOperationException("rate of fire floor self-check failed");
+			// Per projectile: floor of the first weapon using it (the one IMPACT clamped it for), fastest rate of all.
+			var floors = new Dictionary<ProjectileProperties, int>();
+			var rates = new Dictionary<ProjectileProperties, float>();
+			var rows = new List<(ThingDef def, VerbProperties verb, ProjectileProperties projectile, object tier, float rate, int equalized)>();
+			foreach (var (def, verb, projectile) in Weapons())
+			{
+				if (!(bool)shouldEqualize.Invoke(null, [verb]) || !original.ContainsKey(projectile)) continue;
+				if (def.weaponTags != null && def.weaponTags.Contains("TurretGun")) continue;
+				object tier = tierOf.Invoke(null, [def]);
+				float rate = ShotsPerSecond(verb.burstShotCount, verb.warmupTime, def.GetStatValueAbstract(StatDefOf.RangedWeapon_Cooldown), verb.ticksBetweenBurstShots);
+				if (!floors.ContainsKey(projectile))
+				{
+					object[] clamps = [tier, 0, 0, 0f, 0f, 0f, 0f];
+					getClamps.Invoke(null, clamps);
+					floors[projectile] = (int)clamps[1];
+				}
+				rates[projectile] = rates.TryGetValue(projectile, out float fastest) ? Math.Max(fastest, rate) : rate;
+				rows.Add((def, verb, projectile, tier, rate, projectile.GetDamageAmount(1f, null)));
+			}
+			int raised = 0, scaled = 0, token = 0;
+			string worst = null;
+			float worstFactor = 1f;
+			foreach (var pair in floors)
+			{
+				var projectile = pair.Key;
+				int own = original[projectile], now = projectile.GetDamageAmount(1f, null);
+				if (now <= own) continue;
+				raised++;
+				int wanted = ScaledFloor(own, pair.Value, rates[projectile]);
+				if (wanted >= now) continue;
+				damageBase(projectile) = wanted;
+				if (own * TokenDamageDivisor <= pair.Value) token++;
+				else scaled++;
+				if ((float)now / wanted > worstFactor)
+				{
+					worstFactor = (float)now / wanted;
+					var row = rows.Find(r => r.projectile == projectile);
+					worst = $"{row.def.label}: {own} of its own, IMPACT {now}, now {wanted} at {rates[projectile]:0.#} shots a second";
+				}
+			}
+			Log.Message($"[Harmony3StrictCompat] IMPACT weapon floor: {raised} projectiles were lifted to their tier's damage floor, {token} with a third of the floor or less of their own keep their own damage, {scaled} fire faster than {ReferenceShotsPerSecond:0.#} shot a second and got the floor divided by their rate"
+				+ (worst == null ? "" : $" (largest change: {worst})"));
+			if (File.Exists(Path.Combine(modRoot, "weaponsurvey.on"))) WriteSurvey(rows);
+		}
+
+		static void WriteSurvey(List<(ThingDef def, VerbProperties verb, ProjectileProperties projectile, object tier, float rate, int equalized)> rows)
+		{
+			var text = new StringBuilder("defName\tlabel\tmod\ttier\tburst\twarmup\tcooldown\tticksBetween\tshotsPerSecond\townDamage\timpactDamage\tfinalDamage\townDps\timpactDps\tfinalDps\tpenetration\trange\n");
+			var culture = System.Globalization.CultureInfo.InvariantCulture;
+			foreach (var r in rows)
+			{
+				int own = original[r.projectile], final = r.projectile.GetDamageAmount(1f, null);
+				text.Append(string.Join("\t", r.def.defName, r.def.label, r.def.modContentPack?.Name, r.tier, r.verb.burstShotCount,
+					r.verb.warmupTime.ToString("0.##", culture), r.def.GetStatValueAbstract(StatDefOf.RangedWeapon_Cooldown).ToString("0.##", culture),
+					r.verb.ticksBetweenBurstShots, r.rate.ToString("0.##", culture), own, r.equalized, final,
+					(own * r.rate).ToString("0.#", culture), (r.equalized * r.rate).ToString("0.#", culture), (final * r.rate).ToString("0.#", culture),
+					r.projectile.GetArmorPenetration().ToString("0.##", culture), r.verb.range.ToString("0.#", culture))).Append('\n');
+			}
+			string path = Path.Combine(GenFilePaths.SaveDataFolderPath, "Logs", "impact_weapons.tsv");
+			File.WriteAllText(path, text.ToString());
+			Log.Message($"[Harmony3StrictCompat] IMPACT weapon survey: {rows.Count} weapons written to {path} (remove weaponsurvey.on from the mod folder to turn off)");
 		}
 	}
 }

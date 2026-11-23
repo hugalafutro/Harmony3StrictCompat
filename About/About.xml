@@ -40,6 +40,7 @@
 - Hauler's Dream: "Cannot unload inventory" no longer lists downed (anesthetized) or deathresting pawns.
 - Unique Melee Weapons: an ended warband quest no longer keeps its unspawned raiders in the save (no more "Could not resolve reference ... Ideo_N" warnings on load).
 - AdaptiveMealBill + Hauler's Dream: batch-cooked adaptive meals come out veg-only, meat-only or mixed by their ingredients, no "Could not recover the meal recipe" error.
+- IMPACT - Combat Overhaul: its per-shot damage floor is divided by rate of fire for weapons firing more than one shot a second, so rapid-fire weapons (Bulletstorm, miniguns) no longer come out several times above their design; weapons with a third of the tier floor or less of their own (non-lethal dart and tranquilizer guns, pain gun, Beam Witherer) keep their own damage.
 - Kanban Stockpile Continue: the similar stack limit counts every stack of the same def when accepting, like its remove-excess job does (no more pawns shuttling unmergeable meals between a capped fridge and the next storage).
 - Kanban Stockpile Continue: a storage holding more stacks than its similar stack limit takes nothing more of that kind until the surplus is hauled out (no more topping up the stack that remove-excess is carrying away).
 - Kanban Stockpile Continue: with several stacks allowed and a stack size below the item's own stack limit, the later stacks fill up too (a stack already at its size no longer blocks topping up the others).

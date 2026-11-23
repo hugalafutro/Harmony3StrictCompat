@@ -13,3 +13,6 @@ ticktrace.on
 # delegate table check build output
 Tools/dlgtest/bin/
 Tools/dlgtest/obj/
+
+# IMPACT weapon survey switch
+weaponsurvey.on

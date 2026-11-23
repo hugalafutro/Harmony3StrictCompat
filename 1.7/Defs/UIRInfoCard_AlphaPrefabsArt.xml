@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  UI Rethemed - Info Card + Alpha Prefabs: the prefab box picture.
+
+  Alpha Prefabs draws a prefab's floor-plan picture (PrefabDef.detailedImage) from a prefix on
+  Dialog_InfoCard.FillCard, at a fixed spot on the game's own card. The themed card draws its own
+  page, so that picture never shows. UI Rethemed - Info Card reads card pictures from other mods
+  through CardArtDef: with no extension it reads the member path on the shown thing, and the root
+  type check skips every thing that is not a Thing_Prefab. The picture shows in the details while
+  the description is selected, like the Vanilla Expanded animal art.
+
+  MayRequire keeps the def out when UI Rethemed - Info Card is off (its class would be unknown);
+  <mod> keeps it idle when Alpha Prefabs is off. A rename on either side is an XML fix here.
+-->
+<Defs>
+
+  <UIRethemed.InfoCard.CardArtDef MayRequire="LazyFridayStudio.UIRethemed.InfoCard">
+    <defName>Harmony3StrictCompat_AlphaPrefabs_PrefabArt</defName>
+    <mod>Sarg.AlphaPrefabs</mod>
+    <image>AlphaPrefabs.Thing_Prefab.prefab.detailedImage</image>
+  </UIRethemed.InfoCard.CardArtDef>
+
+</Defs>

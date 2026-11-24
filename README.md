@@ -215,7 +215,7 @@ Build: `Tools/build.ps1` (compiles `Source/*.cs` against the game's DLLs into `1
 <!-- MODLIST:START -->
 ## Active mod list
 
-768 mods in load order, RimWorld 1.7.5014 rev1195. Generated from ModsConfig.xml by `Tools/modlist.py`.
+769 mods in load order, RimWorld 1.7.5014 rev1195. Generated from ModsConfig.xml by `Tools/modlist.py`.
 
 | # | Mod | Package ID |
 |---:|---|---|
@@ -979,12 +979,13 @@ Build: `Tools/build.ps1` (compiles `Source/*.cs` against the game's DLLs into `1
 | 758 | [Visual Progression: Van's Organ Jars](https://steamcommunity.com/sharedfiles/filedetails/?id=3838085030) | `groovy.visualprogression.vansorganjars` |
 | 759 | [Toymaker's Additional Outposts Retextured](https://steamcommunity.com/sharedfiles/filedetails/?id=3020739638) | `toymaker.voe.ao.retextured` |
 | 760 | [[sbz] Retexture Pack](https://steamcommunity.com/sharedfiles/filedetails/?id=2848805038) | `jgh.retexturepack` |
-| 761 | [Pacing Manager](https://steamcommunity.com/sharedfiles/filedetails/?id=3613142246) | `ferny.pacingmanager` |
-| 762 | [Float Menu Performance Optimizer](https://steamcommunity.com/sharedfiles/filedetails/?id=3784467506) | `vorsel.floatmenuperformanceoptimizer` |
-| 763 | [Save Your Storage and Tick Every Minute](https://steamcommunity.com/sharedfiles/filedetails/?id=3795549633) | `nanaloveyuki.saveyourstorageandtickeveryminute` |
-| 764 | [Architect Menu Optimizer](https://steamcommunity.com/sharedfiles/filedetails/?id=3697920753) | `mrk.architectmenuoptimizer` |
-| 765 | [Facial Animation Performance Patch](https://steamcommunity.com/sharedfiles/filedetails/?id=3790129900) | `astryl.facialanimationperformancepatch` |
-| 766 | [Dubs Performance Analyzer](https://steamcommunity.com/sharedfiles/filedetails/?id=2038874626) | `dubwise.dubsperformanceanalyzer.steam` |
-| 767 | [Consistent Text](https://steamcommunity.com/sharedfiles/filedetails/?id=3578462306) | `ferny.consistenttext` |
-| 768 | [Local Tweaks (sammael)](https://github.com/hugalafutro/LocalTweaks) | `sammael.localtweaks` |
+| 761 | [Clean Textures](https://steamcommunity.com/sharedfiles/filedetails/?id=2865361569) | `ih.clean.textures` |
+| 762 | [Pacing Manager](https://steamcommunity.com/sharedfiles/filedetails/?id=3613142246) | `ferny.pacingmanager` |
+| 763 | [Float Menu Performance Optimizer](https://steamcommunity.com/sharedfiles/filedetails/?id=3784467506) | `vorsel.floatmenuperformanceoptimizer` |
+| 764 | [Save Your Storage and Tick Every Minute](https://steamcommunity.com/sharedfiles/filedetails/?id=3795549633) | `nanaloveyuki.saveyourstorageandtickeveryminute` |
+| 765 | [Architect Menu Optimizer](https://steamcommunity.com/sharedfiles/filedetails/?id=3697920753) | `mrk.architectmenuoptimizer` |
+| 766 | [Facial Animation Performance Patch](https://steamcommunity.com/sharedfiles/filedetails/?id=3790129900) | `astryl.facialanimationperformancepatch` |
+| 767 | [Dubs Performance Analyzer](https://steamcommunity.com/sharedfiles/filedetails/?id=2038874626) | `dubwise.dubsperformanceanalyzer.steam` |
+| 768 | [Consistent Text](https://steamcommunity.com/sharedfiles/filedetails/?id=3578462306) | `ferny.consistenttext` |
+| 769 | [Local Tweaks (sammael)](https://github.com/hugalafutro/LocalTweaks) | `sammael.localtweaks` |
 <!-- MODLIST:END -->

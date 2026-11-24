@@ -5802,6 +5802,7 @@ namespace Harmony3StrictCompat
 	// asleep in bed still gets the full check. A one-time line reports how many room checks were left out.
 	static class QuietWondersSleepDimRooms
 	{
+		static FieldInfo asleepField, awakeField, sleepField, roomRefField;
 		static HashSet<int> asleepRooms, awakeIds, sleepIds;
 		static Dictionary<int, Room> roomRef;
 		static Func<bool> floorsOn;
@@ -5809,18 +5810,21 @@ namespace Harmony3StrictCompat
 		static int scans, checks, pawnsSeen;
 		static bool reported;
 
+		// Only FieldInfos here: reading QWLife's static fields runs its static constructor, which creates
+		// Materials and throws this early in startup (and then breaks QWLife for the whole session).
 		internal static void Init(Harmony harmony)
 		{
 			if (Harmony3StrictCompatMod.Target("QuietWonders.QWLife:FindAsleepRooms") is not { } find) return;
 			var life = find.DeclaringType;
-			asleepRooms = AccessTools.Field(life, "asleepRooms")?.GetValue(null) as HashSet<int>;
-			awakeIds = AccessTools.Field(life, "awakeIds")?.GetValue(null) as HashSet<int>;
-			sleepIds = AccessTools.Field(life, "sleepIds")?.GetValue(null) as HashSet<int>;
-			roomRef = AccessTools.Field(life, "roomRef")?.GetValue(null) as Dictionary<int, Room>;
+			asleepField = AccessTools.Field(life, "asleepRooms");
+			awakeField = AccessTools.Field(life, "awakeIds");
+			sleepField = AccessTools.Field(life, "sleepIds");
+			roomRefField = AccessTools.Field(life, "roomRef");
 			var floors = AccessTools.TypeByName("QuietWonders.QWLogicalFloors");
 			var on = floors == null ? null : AccessTools.PropertyGetter(floors, "On");
 			var of = floors == null ? null : AccessTools.Method(floors, "FloorOf", [typeof(Thing)]);
-			if (asleepRooms == null || awakeIds == null || sleepIds == null || roomRef == null || on == null || of == null)
+			if (asleepField?.FieldType != typeof(HashSet<int>) || awakeField?.FieldType != typeof(HashSet<int>)
+				|| sleepField?.FieldType != typeof(HashSet<int>) || roomRefField?.FieldType != typeof(Dictionary<int, Room>) || on == null || of == null)
 			{
 				Log.Error("[Harmony3StrictCompat] Quiet Wonders QWLife room sets or QWLogicalFloors.On/FloorOf no longer exist: its mod updated, remove or redo this fix");
 				return;
@@ -5833,6 +5837,14 @@ namespace Harmony3StrictCompat
 		// Same steps as the original, in the same order, except that the room checks run for sleepers only.
 		static bool FindAsleepRooms(Map map)
 		{
+			if (roomRef == null)
+			{
+				// QWLife is initialized by now: this runs inside a call to its own static method.
+				asleepRooms = (HashSet<int>)asleepField.GetValue(null);
+				awakeIds = (HashSet<int>)awakeField.GetValue(null);
+				sleepIds = (HashSet<int>)sleepField.GetValue(null);
+				roomRef = (Dictionary<int, Room>)roomRefField.GetValue(null);
+			}
 			asleepRooms.Clear();
 			awakeIds.Clear();
 			sleepIds.Clear();

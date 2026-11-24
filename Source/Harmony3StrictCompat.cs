@@ -353,6 +353,7 @@ namespace Harmony3StrictCompat
 				harmony.Patch(gizmoGrid, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GizmoHeightCoversShrunkRows)));
 			// Vanilla: CompShuttle evicts quest escorts whose last despawn is years old; fingerprinted so a vanilla change gets re-checked.
 			Target("RimWorld.CompShuttle:CompTick");
+			RechargeBarInside.Init(harmony);
 			harmony.Patch(AccessTools.Method(typeof(CompTransporter), nameof(CompTransporter.Notify_ThingAdded)),
 				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ShuttleClockStartsAtBoarding)));
 			foreach (var csClean in new[] { "CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__0", "CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__1" })
@@ -4149,6 +4150,7 @@ namespace Harmony3StrictCompat
 			["EventImagePopup.Patch_WindowStackAdd:Prefix"] = 0xE2868FDECD3D475D,                              // Event Image Popup, DLL of 2026-11-23 (only Dialog_NodeTree inside a letter or incident scope)
 			["EventImagePopup.ImageResolver:ResolveForIncident"] = 0xB0C8AE510BAB01F1,
 			["RimWorld.CompShuttle:CompTick"] = 0x807AD3141AD4D8A6,
+			["RimWorld.CompRechargeable:CompTick"] = 0x60A381C5B22A28EF,                                     // game 1.7.5014, 2026-11-24 (recharge bar inside a one-tile-tall machine)
 			["RimWorld.Selector:SelectUnderMouse"] = 0x59EF35E3AE5B2B41,                                    // game 1.7.5013, 2026-11-18
 			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,
 			["Verse.GizmoGridDrawer:DrawGizmoGrid"] = 0x01194CA4A1ED54CD,
@@ -5146,6 +5148,27 @@ namespace Harmony3StrictCompat
 			if (pod?.graphicData?.texPath == null || !pod.graphicData.texPath.StartsWith("BiosculpterPod/BiosculpterPod_") || pod.graphic == null)
 				return;
 			pod.uiIcon = (Texture2D)pod.graphic.MatSouth.mainTexture;
+		}
+	}
+
+	// ---- Neural supercharger recharge bar below a one-tile-tall machine -------------------------------------------
+	// CompRechargeable.CompTick puts the recharge progress bar mote 0.5 below the building's centre, which is on the
+	// machine for the vanilla 1x3 supercharger. The resizer's 1x2 (or 1x1) supercharger turned east or west is only one
+	// tile tall on screen, so the bar sat on its bottom edge, half outside. When the rotated footprint is one tile tall,
+	// raise the bar to 0.3 below centre, inside the machine. Taller footprints keep vanilla's spot.
+	static class RechargeBarInside
+	{
+		internal static void Init(Harmony harmony)
+		{
+			if (Harmony3StrictCompatMod.Target("RimWorld.CompRechargeable:CompTick") is { } tick)
+				harmony.Patch(tick, postfix: new HarmonyMethod(typeof(RechargeBarInside), nameof(Raise)));
+		}
+
+		static void Raise(CompRechargeable __instance, Effecter ___progressBar)
+		{
+			if (___progressBar?.children is { Count: > 0 } children && children[0] is SubEffecter_ProgressBar { mote: { } mote }
+				&& __instance.parent.RotatedSize.z == 1)
+				mote.offsetZ = -0.3f;
 		}
 	}
 

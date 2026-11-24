@@ -124,6 +124,7 @@
 - Vanilla gatherings: the host of any party stays through its own work or sleep schedule until the party ends, and every gathering's called-off message names the reason.
 - Smarter Visitors + Event Image Popup: the "visitors are about to leave" question shows the visitor-group picture.
 - Hospitality + Smarter Visitors + Stylish Dialogs: with Notice letters set not to open by themselves, the "afraid to come / afraid to leave" visitor questions arrive as letters instead of pausing the game.
+- Biosculpter Pod and Neural Supercharger Resize: a resized supercharger turned sideways draws its recharge bar on the machine, not below it.
 - Vanilla friendly raids: reinforcements arrive dressed for extreme cold (warmest non-armor apparel their faction can make).
 - Ritual Size Attenuation + VFE Empire: art exhibit, grand ball and parade no longer crash in the outcome (an art exhibit stuck forever, guests starving).
 - VEF (MVCF): multi-verb weapons use the weapon's own accuracy/cooldown when the verb sets none; duplicate stat rows hidden; Range row fixed.

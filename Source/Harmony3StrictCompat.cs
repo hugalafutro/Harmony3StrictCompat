@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -6115,6 +6115,12 @@ namespace Harmony3StrictCompat
 				ReachProbe.Init(harmony);
 				return;
 			}
+			// "haul" = the haulables list probe below instead of the tick timing.
+			if (mode.Contains("haul"))
+			{
+				HaulListProbe.Init(harmony);
+				return;
+			}
 			var doSingleTick = AccessTools.Method(typeof(TickManager), nameof(TickManager.DoSingleTick));
 			// The file's text picks whose direct callees are timed: "stages" = the tick's stages (few calls a
 			// tick, next to no overhead), anything else = the two pawn tick methods.
@@ -6183,6 +6189,103 @@ namespace Harmony3StrictCompat
 			Array.Clear(calls, 0, calls.Length);
 			ticksSeen = 0;
 			reportsLeft--;
+		}
+	}
+
+	// ---- Diagnostic: what sits in the haulables list and why a hauler gets no job on it ------------------------
+	// Off unless "ticktrace.on" in the mod folder contains the word "haul" at startup (it then replaces the tick
+	// timing above). DPA counts 2026-11-24: a WorkGiver_HaulGeneral turn ran the store search on 800-1,100 listed
+	// things and nearly all failed, 20-37 ms per turn; which things and why was not visible.
+	// 600 and 4200 ticks after startup, one log entry per player home map: the list grouped by def, with for each
+	// thing whether it lies outside storage or in storage that refuses it, whether a destination exists without a
+	// pawn (the test that put it on the list), whether a higher-priority storage accepts its kind at all, and what
+	// the game's own checks answer for up to three colonists with hauling enabled (table = the first of them).
+	// It calls HaulAIUtility.HaulToStorageJob like a work search does, so it costs about one failed haul search per
+	// colonist per report and nothing in between.
+	static class HaulListProbe
+	{
+		sealed class Row
+		{
+			public int count, loose, ownRefuses, job, noJob, cannotHaul, noDestNoPawn, higherAccepts, findFails, killedAfterFind, nonSlotDest;
+			public string sample;
+		}
+
+		static int ticksSeen;
+
+		internal static void Init(Harmony harmony)
+		{
+			harmony.Patch(AccessTools.Method(typeof(TickManager), nameof(TickManager.DoSingleTick)), postfix: new HarmonyMethod(typeof(HaulListProbe), nameof(Tick)));
+			Log.Message("[Harmony3StrictCompat] haul list probe on: reports 600 and 4200 ticks after startup (remove ticktrace.on from the mod folder to turn off)");
+		}
+
+		static void Tick()
+		{
+			int n = ++ticksSeen;
+			if (n != 600 && n != 4200) return;
+			try
+			{
+				foreach (var map in Find.Maps)
+					if (map.IsPlayerHome) Report(map);
+			}
+			catch (Exception e) { Log.Warning($"[Harmony3StrictCompat] haul list probe failed: {e}"); }
+		}
+
+		static string Name(IHaulDestination dest) =>
+			dest == null ? "none" : dest is ISlotGroupParent parent ? $"{parent.SlotYielderLabel()} [{dest.GetStoreSettings()?.Priority}]" : $"{dest} (no cells)";
+
+		static void Report(Map map)
+		{
+			long start = System.Diagnostics.Stopwatch.GetTimestamp();
+			var things = map.listerHaulables.ThingsPotentiallyNeedingHauling().ToList();
+			var haulers = map.mapPawns.FreeColonistsSpawned
+				.Where(p => !p.Downed && p.workSettings != null && p.workSettings.WorkIsActive(WorkTypeDefOf.Hauling)).Take(3).ToList();
+			var groups = map.haulDestinationManager.AllGroupsListInPriorityOrder;
+			var rows = new Dictionary<ThingDef, Row>();
+			var perPawn = new int[haulers.Count, 3]; // job, no job, cannot haul
+			foreach (var t in things)
+			{
+				if (!rows.TryGetValue(t.def, out var r)) rows[t.def] = r = new Row();
+				r.count++;
+				var own = t.GetSlotGroup();
+				if (own == null) r.loose++;
+				else if (!own.parent.Accepts(t)) r.ownRefuses++;
+				var cur = StoreUtility.CurrentStoragePriorityOf(t);
+				// The test that keeps the thing on the list: a better place exists when no pawn is asked.
+				bool free = StoreUtility.TryFindBestBetterStorageFor(t, null, map, cur, Faction.OfPlayer, out var freeCell, out var freeDest, false);
+				if (!free) r.noDestNoPawn++;
+				else if (freeDest is not ISlotGroupParent) r.nonSlotDest++;
+				foreach (var g in groups)
+					if (g.Settings.Priority > cur && g.parent.Accepts(t)) { r.higherAccepts++; break; }
+				for (int i = 0; i < haulers.Count; i++)
+				{
+					int outcome = !HaulAIUtility.PawnCanAutomaticallyHaulFast(haulers[i], t, false) ? 2
+						: HaulAIUtility.HaulToStorageJob(haulers[i], t, false) != null ? 0 : 1;
+					perPawn[i, outcome]++;
+					if (i != 0) continue;
+					if (outcome == 0) r.job++;
+					else if (outcome == 2) r.cannotHaul++;
+					else
+					{
+						r.noJob++;
+						// Same search the job builder runs, with the pawn: no place found, or found and the job dropped after.
+						bool found = StoreUtility.TryFindBestBetterStorageFor(t, haulers[0], map, cur, Faction.OfPlayer, out var cell, out var dest, true);
+						if (found) r.killedAfterFind++; else r.findFails++;
+						r.sample ??= $"x{t.stackCount} at {t.Position} in {(own == null ? "no storage" : Name(own.parent))}; without pawn: {(free ? $"{Name(freeDest)} {freeCell}" : "none")}; with pawn: {(found ? $"{Name(dest)} {cell}" : "none")}";
+					}
+				}
+			}
+			var sb = new StringBuilder($"[Harmony3StrictCompat] haul list probe, {map}: {things.Count} listed things of {rows.Count} kinds, {groups.Count} storage groups");
+			for (int i = 0; i < haulers.Count; i++)
+				sb.Append($"\n  {haulers[i].LabelShort}: job on {perPawn[i, 0]}, no job on {perPawn[i, 1]}, cannot haul (reserved, unreachable, forbidden) {perPawn[i, 2]}");
+			sb.Append($"\n  no job for {haulers.FirstOrDefault()?.LabelShort}: search with pawn finds no place {rows.Values.Sum(r => r.findFails)}, place found but job dropped afterwards {rows.Values.Sum(r => r.killedAfterFind)}; place without pawn is not a cell storage for {rows.Values.Sum(r => r.nonSlotDest)}");
+			sb.Append("\n  count  loose  ownRefuses  noDestWithoutPawn  higherAccepts  job  noJob  findFails  droppedAfterFind  cannotHaul  def | one no-job example");
+			foreach (var kv in rows.OrderByDescending(kv => kv.Value.noJob + kv.Value.cannotHaul).ThenByDescending(kv => kv.Value.count).Take(30))
+			{
+				var r = kv.Value;
+				sb.Append($"\n  {r.count,5}  {r.loose,5}  {r.ownRefuses,10}  {r.noDestNoPawn,17}  {r.higherAccepts,13}  {r.job,3}  {r.noJob,5}  {r.findFails,9}  {r.killedAfterFind,16}  {r.cannotHaul,10}  {kv.Key.defName} | {r.sample}");
+			}
+			sb.Append($"\n  this walk took {(System.Diagnostics.Stopwatch.GetTimestamp() - start) * 1000.0 / System.Diagnostics.Stopwatch.Frequency:F1} ms");
+			Log.Message(sb.ToString());
 		}
 	}
 

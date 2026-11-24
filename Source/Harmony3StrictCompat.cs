@@ -286,6 +286,8 @@ namespace Harmony3StrictCompat
 			}
 			if (Target("Hospitality.JoyGiver_BuyStuff:CanEat") is { } hospCanEat)
 				harmony.Patch(hospCanEat, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospTitleFood)));
+			if (Target("Hospitality.JoyGiver_BuyStuff:Qualifies") is { } hospQualifies)
+				harmony.Patch(hospQualifies, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospTitleFoodQualifies)));
 			var hospPocket = Target("Hospitality.Utilities.ItemUtility:PocketHeadgear");
 			if (hospPocket != null)
 				harmony.Patch(hospPocket, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospKeepCasketHelmet)));
@@ -1716,6 +1718,17 @@ namespace Harmony3StrictCompat
 		static void HospTitleFood(Thing thing, Pawn pawn, ref bool __result)
 		{
 			if (__result && FoodUtility.InappropriateForTitle(thing.def, pawn, allowIfStarving: true))
+				__result = false;
+		}
+
+		// The pick itself never asks CanEat: both shopping JoyGiverDefs (BuyFood, BuyStuff) run the base
+		// JoyGiver_BuyStuff, whose Qualifies is only the def's requestGroup, and Likey ranks food by FoodOptimality.
+		// With the fix above a dominus carrying only cheese counts as having no food, so he kept buying food he would
+		// not eat until his silver ran out (2026-11-24: 11 legendary cheese and 10 simple meals, 7 silver left,
+		// GuestHasNoFood). Food the title rejects is no candidate at all; starving guests still may buy it.
+		static void HospTitleFoodQualifies(Thing thing, Pawn pawn, ref bool __result)
+		{
+			if (__result && thing.def.IsNutritionGivingIngestible && FoodUtility.InappropriateForTitle(thing.def, pawn, allowIfStarving: true))
 				__result = false;
 		}
 
@@ -4397,6 +4410,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Architect.DesignatorGrid:Card"] = 0xD4150E0907DE465B,
 			["PipeSystem.CompResourceTrader:CompInspectStringExtra"] = 0x8799CC4254BA7002,           // VEF PipeSystem 1.7, DLL of 2026-11-20 12:28
 			["Hospitality.JoyGiver_BuyStuff:CanEat"] = 0x304D1E10604FFCD2,                           // Hospitality 1.7
+			["Hospitality.JoyGiver_BuyStuff:Qualifies"] = 0xB8921C6506227CE6,                        // Hospitality 1.7
 			["RimWorld.Bill_Production:ShouldDoNow"] = 0x91426C66CA668FA7,                           // game 1.7.5014, 2026-11-20 (bill count cache)
 			["Inventory.BillUtility:Satisfied"] = 0xAC4273F963D8D1D6,                                // Loadout Compositing 1.7, 2026-11-22 (bill count cache, per-tag bills)
 			["Verse.Pawn:SpawnSetup"] = 0xEBD14AA4AA28AC29,                                           // game 1.7.5014, 2026-11-23 (bill count cache dropped when colonists arrive)

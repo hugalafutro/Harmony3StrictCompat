@@ -292,7 +292,8 @@ namespace Harmony3StrictCompat
 			var svPrefix = Target("SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix");
 			svStayTimer = AccessTools.TypeByName("Hospitality.Trigger_TicksPassedAndOkayToLeave");
 			if (svPrefix != null && svStayTimer != null)
-				harmony.Patch(svPrefix, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SvOnlyStayTimer)));
+				harmony.Patch(svPrefix, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SvOnlyStayTimer)),
+					finalizer: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SvAskDone)));
 			var mssSave = Target("MSSFP.Utils.PawnGraphicUtils+<>c__DisplayClass4_0:<SaveTextureToFile>b__0");
 			if (mssSave != null)
 				harmony.Patch(mssSave, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(MssFlipHauntPng)));
@@ -440,6 +441,7 @@ namespace Harmony3StrictCompat
 				else
 					Log.Error("[Harmony3StrictCompat] EventImagePopup.Patch_IncidentScope changed: Smarter Visitors' leave dialog shows no picture");
 			}
+			VisitorQuestionLetter.Init(harmony);
 			var hdInit = Target("HaulersDream.CompositableLoadoutsCompat:InitKeepApi");
 			var hdWanted = Target("HaulersDream.CompositableLoadoutsCompat:LoadoutWantedUnits");
 			hdItemDefs = AccessTools.PropertyGetter(AccessTools.TypeByName("Inventory.Item"), "Defs");
@@ -3256,24 +3258,39 @@ namespace Harmony3StrictCompat
 		static object eipFrames;
 		static Type eipFrameType;
 
-		static void SvLeaveDialogWithImage(ref Window window, out bool __state)
+		static bool SvLeaveDialogWithImage(ref Window window, out bool __state)
 		{
 			__state = false;
 			if (window is not Dialog_MessageBox box || box.buttonCText.NullOrEmpty() || !"SV.WaitALittle".CanTranslate()
-				|| box.buttonCText != "SV.WaitALittle".Translate().ToString()) return;
+				|| box.buttonCText != "SV.WaitALittle".Translate().ToString()) return true;
 			var incident = DefDatabase<IncidentDef>.GetNamedSilentFail("VisitorGroup");
-			if (incident == null) return;
+			// Stylish Dialogs' "Notice" letters do not open by themselves: ask through a letter instead, sent with the
+			// visitor incident in scope so Event Image Popup tags it with the visitor picture.
+			if (VisitorQuestionLetter.AsLetter && svAskingLord is { } lord)
+			{
+				if (incident != null) PushEipFrame(incident);
+				try { VisitorQuestionLetter.SendLeaving(box.title, box.text, lord); }
+				finally { if (incident != null) eipFrames.GetType().GetMethod("Pop").Invoke(eipFrames, null); }
+				return false;
+			}
+			if (incident == null) return true;
 			var node = new DiaNode(box.text);
 			foreach (var (label, action) in new[] { (box.buttonBText, box.buttonBAction), (box.buttonCText, box.buttonCAction), (box.buttonAText, box.buttonAAction) })
 				if (!label.NullOrEmpty())
 					node.options.Add(new DiaOption(label) { action = action, resolveTree = true });
-			if (node.options.Count == 0) return;
+			if (node.options.Count == 0) return true;
 			window = new Dialog_NodeTree(node, true, false, box.title);
+			PushEipFrame(incident);
+			__state = true;
+			return true;
+		}
+
+		static void PushEipFrame(IncidentDef incident)
+		{
 			var frame = Activator.CreateInstance(eipFrameType);
 			AccessTools.Field(eipFrameType, "def").SetValue(frame, incident);
 			AccessTools.Field(eipFrameType, "parms")?.SetValue(frame, new IncidentParms());
 			eipFrames.GetType().GetMethod("Push").Invoke(eipFrames, new[] { frame });
-			__state = true;
 		}
 
 		static void SvLeaveDialogDone(bool __state)
@@ -4275,6 +4292,13 @@ namespace Harmony3StrictCompat
 			["Unburned.Pretty_Patch:Prefix"] = 0xE153E3D01BE0AC50,                                                // Unburned 1.7, 2026-11-09
 			["VEF.Weapons.MeleeReachCombatUtility:IsVanillaMeleeAttack"] = 0xBA5177C916BA1BBD,                    // VEF 1.7, 2026-11-16
 			["SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix"] = 0xEA4FA1B085907595,     // Smarter Visitors 1.7.0, 2026-11-08
+			["SmarterVisitors.SmarterVisitors:SetDelayValue"] = 0x08060C0803A87391,                 // Smarter Visitors 1.7.0 (visitor questions as letters)
+			["Hospitality.IncidentWorker_VisitorGroup:AskForSafety"] = 0x892BC7E79158842B,            // Hospitality 1.7, DLL of 2026-11-20 21:09 (visitor questions as letters)
+			["Hospitality.IncidentWorker_VisitorGroup:SpawnGroup"] = 0x7BE71034FF731D80,
+			["Hospitality.IncidentWorker_VisitorGroup:MaybeRevisit"] = 0x23996E30E276751D,
+			["Hospitality.IncidentWorker_VisitorGroup:GetSpawnDirection"] = 0x8A0B1B4B83F5FB7D,
+			["Hospitality.Hospitality_MapComponent:RefuseGuestsUntilWeHaveBeds"] = 0x261DB3C7B0ACC899,
+			["StylishDialogs.CollageSettings:OpensOnArrival"] = 0x058896B2F5255633,                  // Stylish Dialogs 1.7, DLL of 2026-11-19 03:43 (Notice category gates visitor question letters)
 			["UIRethemed.MainBar.MenuWindow:Face"] = 0x7810B929223847DC,                               // UI Rethemed - Main Bar 1.7, 2026-11-19 14:17
 			["UIRethemed.MainBar.BarControls:ReadoutFace"] = 0x128CF933C95699CA,
 			["UIRethemed.MainBar.BarControls:Toggle"] = 0x8B359CF8796161A3,
@@ -4537,14 +4561,30 @@ namespace Harmony3StrictCompat
 		// not leave if needing medical rest" on, one hurt visitor pushes that deadline out by 2500 ticks every time it
 		// comes up, so a group hurt while leaving stands at its defend point eating and sleeping and never exits.
 		// Its prefix handles the stay timer only; every other ticks trigger runs vanilla.
-		static Type svStayTimer;
+		// The same prefix also holds a group whose "afraid to leave" question waits as a letter (VisitorQuestionLetter):
+		// the stay timer reports "not yet" until the letter is answered, dismissed or timed out. svAskingLord names the
+		// group while Smarter Visitors' prefix runs, so the leave question it opens can be turned into that letter.
+		internal static Type svStayTimer;
+		internal static Lord svAskingLord;
 
-		static bool SvOnlyStayTimer(Trigger_TicksPassed __0, ref bool __result)
+		static bool SvOnlyStayTimer(Trigger_TicksPassed __0, Lord __1, ref bool __3, ref bool __result)
 		{
-			if (svStayTimer.IsInstanceOfType(__0)) return true;
-			__result = true; // run Trigger_TicksPassed.ActivateOn unchanged
-			return false;
+			if (!svStayTimer.IsInstanceOfType(__0))
+			{
+				__result = true; // run Trigger_TicksPassed.ActivateOn unchanged
+				return false;
+			}
+			if (VisitorQuestionLetter.Holds(__1))
+			{
+				__3 = false;     // the stay timer has not run out
+				__result = false; // skip Smarter Visitors' prefix and the original
+				return false;
+			}
+			svAskingLord = __1;
+			return true;
 		}
+
+		static void SvAskDone() => svAskingLord = null;
 
 		// ---- Needs check before the world exists ---------------------------------------------------------
 		// Game.LoadGame scribes the quest manager before the world. A pawn deep-saved inside a QuestPart (e.g. the two
@@ -6020,6 +6060,226 @@ namespace Harmony3StrictCompat
 				Log.Message($"[Harmony3StrictCompat] Fight target validator method: {real} real lookups of {lookups}, {known.Count} validators known");
 			}
 			return method;
+		}
+	}
+
+	// ---- Hospitality / Smarter Visitors: visitor questions wait as letters (personal tweak) ----------------------
+	// Two questions open as modal windows that pause the game: Hospitality's "visitors are afraid to come (temperature
+	// ...), let them in?" (IncidentWorker_VisitorGroup.AskForSafety -> ShowAskMayComeDialog, a Dialog_NodeTree) and
+	// Smarter Visitors' "visitors are afraid to leave" (a Dialog_MessageBox from its stay-timer prefix). Stylish
+	// Dialogs' per-category "open on arrival" settings only cover letters, so these ignored them. When Stylish
+	// Dialogs' "Notice" category is set not to open by itself, both are sent as a letter of that category instead
+	// (LetterDef H3SC_VisitorQuestion, classified Notice); clicking it opens the same question with the same buttons.
+	// The game keeps running meanwhile:
+	// - arriving: the group stays off the map until answered; answers call Hospitality's own SpawnGroup / MaybeRevisit
+	//   / RefuseGuestsUntilWeHaveBeds / askForSafety, the same as its dialog's closures. Dismissed or timed out (one
+	//   day): they do not come (no revisit roll).
+	// - leaving: SvOnlyStayTimer holds the stay timer while the letter waits. Allow / Wait a little add 60000 / 2500
+	//   ticks to the timer and to Smarter Visitors' delay record, as its buttons do. Deny (which also drops that
+	//   record), dismiss or timeout end the hold, and the expired timer sends them home on the next tick.
+	// The letter keeps what it needs (incident, parms, map / lord) in the save, so it survives a reload.
+	public class VisitorQuestionLetter : ChoiceLetter
+	{
+		public bool leaving;
+		public IncidentDef incident;
+		public IncidentParms parms;
+		public Map map;
+		public Lord lord;
+
+		static FieldInfo sdSettings;
+		static FieldInfo sdOpenNotice;
+		static MethodInfo spawnGroup, maybeRevisit, refuseUntilBeds, spawnDirection, setDelayValue;
+		static Type guestBedType, hospMapComp;
+		static FieldInfo askForSafety, svDelays;
+		static Type svApproved;
+		static AccessTools.FieldRef<Trigger_TicksPassed, int> duration = AccessTools.FieldRefAccess<Trigger_TicksPassed, int>("duration");
+
+		internal static void Init(Harmony harmony)
+		{
+			var sdMod = AccessTools.TypeByName("StylishDialogs.StylishDialogsMod");
+			if (sdMod == null || Harmony3StrictCompatMod.Target("StylishDialogs.CollageSettings:OpensOnArrival") == null) return;
+			sdOpenNotice = AccessTools.Field(AccessTools.TypeByName("StylishDialogs.CollageSettings"), "openNotice");
+			var settingsField = AccessTools.Field(sdMod, "Settings");
+			if (sdOpenNotice == null || settingsField == null)
+			{
+				Log.Error("[Harmony3StrictCompat] Stylish Dialogs Settings / openNotice changed: visitor questions stay modal windows");
+				return;
+			}
+			sdSettings = settingsField; // read on each check: the mod constructor replaces the instance
+			var ask = Harmony3StrictCompatMod.Target("Hospitality.IncidentWorker_VisitorGroup:AskForSafety");
+			spawnGroup = Harmony3StrictCompatMod.Target("Hospitality.IncidentWorker_VisitorGroup:SpawnGroup");
+			maybeRevisit = Harmony3StrictCompatMod.Target("Hospitality.IncidentWorker_VisitorGroup:MaybeRevisit");
+			spawnDirection = Harmony3StrictCompatMod.Target("Hospitality.IncidentWorker_VisitorGroup:GetSpawnDirection");
+			refuseUntilBeds = Harmony3StrictCompatMod.Target("Hospitality.Hospitality_MapComponent:RefuseGuestsUntilWeHaveBeds");
+			guestBedType = AccessTools.TypeByName("Hospitality.Building_GuestBed");
+			hospMapComp = AccessTools.TypeByName("Hospitality.Hospitality_MapComponent");
+			askForSafety = AccessTools.Field(hospMapComp, "askForSafety");
+			if (ask != null && spawnGroup != null && maybeRevisit != null && spawnDirection != null && refuseUntilBeds != null
+				&& guestBedType != null && askForSafety != null)
+				harmony.Patch(ask, prefix: new HarmonyMethod(typeof(VisitorQuestionLetter), nameof(ArrivalAsLetter)));
+			else if (ask != null)
+				Log.Error("[Harmony3StrictCompat] Hospitality visitor group members changed: the arrival question stays a modal window");
+			setDelayValue = Harmony3StrictCompatMod.Target("SmarterVisitors.SmarterVisitors:SetDelayValue");
+			svApproved = AccessTools.TypeByName("SmarterVisitors.GameComponent_ApprovedLords");
+			svDelays = AccessTools.Field(svApproved, "LordDelaysDictionary");
+		}
+
+		// Stylish Dialogs present and its "Notice" letters set not to open by themselves.
+		internal static bool AsLetter => sdSettings?.GetValue(null) is { } s && !(bool)sdOpenNotice.GetValue(s);
+
+		internal static bool Holds(Lord lord)
+		{
+			var letters = Find.LetterStack.LettersListForReading;
+			for (int i = 0; i < letters.Count; i++)
+				if (letters[i] is VisitorQuestionLetter q && q.leaving && q.lord == lord)
+				{
+					if (!q.TimeoutPassed) return true;
+					Find.LetterStack.RemoveLetter(q);
+					return false;
+				}
+			return false;
+		}
+
+		static bool ArrivalAsLetter(IncidentWorker __instance, IncidentParms parms, Map map, string reasons)
+		{
+			if (!AsLetter) return true;
+			var dir = (Direction8Way)spawnDirection.Invoke(null, new object[] { map, parms.spawnCenter });
+			string title = "VisitorsArrivedTitle".Translate(new NamedArgument(map.Parent, "WORLDOBJECT"), dir.LabelShort(), new NamedArgument(parms.faction, "FACTION"));
+			var letter = Make(title, "VisitorsArrivedDesc".Translate(parms.faction, reasons), parms.faction, new LookTargets(parms.spawnCenter, map));
+			letter.incident = __instance.def;
+			letter.parms = parms;
+			letter.map = map;
+			letter.radioMode = true;
+			Find.LetterStack.ReceiveLetter(letter);
+			return false;
+		}
+
+		internal static void SendLeaving(string title, TaggedString text, Lord lord)
+		{
+			var letter = Make(title, text, lord.faction, new LookTargets(lord.ownedPawns));
+			letter.leaving = true;
+			letter.lord = lord;
+			Find.LetterStack.ReceiveLetter(letter);
+		}
+
+		static VisitorQuestionLetter Make(string title, TaggedString text, Faction faction, LookTargets targets)
+		{
+			var def = DefDatabase<LetterDef>.GetNamed("H3SC_VisitorQuestion");
+			var letter = (VisitorQuestionLetter)LetterMaker.MakeLetter(title, text, def, targets, faction);
+			letter.title = title;
+			letter.StartTimeout(GenDate.TicksPerDay);
+			return letter;
+		}
+
+		// Vanilla opens a timed letter on its last tick; this one just goes away.
+		public override bool ShouldAutomaticallyOpenLetter => false;
+
+		public override IEnumerable<DiaOption> Choices
+		{
+			get
+			{
+				if (ArchivedOnly || TimeoutPassed)
+				{
+					yield return Option_Close;
+					yield break;
+				}
+				if (leaving)
+				{
+					if (lord?.Map == null || !lord.Map.lordManager.lords.Contains(lord))
+					{
+						yield return Option_Close;
+						yield break;
+					}
+					yield return Answer("SV.Deny".Translate(), ForgetDelays);
+					yield return Answer("SV.WaitALittle".Translate(), () => Delay(2500));
+					yield return Answer("SV.Allow".Translate(), () => Delay(60000));
+				}
+				else
+				{
+					if (incident?.Worker == null || parms?.faction == null || map == null || !Find.Maps.Contains(map)
+						|| parms.faction.defeated || parms.faction.HostileTo(Faction.OfPlayer))
+					{
+						yield return Option_Close;
+						yield break;
+					}
+					yield return Answer("VisitorsArrivedAccept".Translate(), Spawn);
+					yield return Answer("VisitorsArrivedRefuse".Translate(), Refuse);
+					if (!map.listerBuildings.allBuildingsColonist.Any(guestBedType.IsInstanceOfType))
+						yield return Answer("VisitorsArrivedRefuseUntilBeds".Translate(), () =>
+						{
+							refuseUntilBeds.Invoke(null, new object[] { map });
+							Refuse();
+						});
+					yield return Answer("VisitorsArrivedDontAskAgain".Translate(), () =>
+					{
+						Spawn();
+						if (map.components.FirstOrDefault(hospMapComp.IsInstanceOfType) is { } comp) askForSafety.SetValue(comp, false);
+					});
+				}
+				yield return Option_Postpone;
+			}
+		}
+
+		DiaOption Answer(string label, Action action) => new DiaOption(label)
+		{
+			action = () =>
+			{
+				try { action?.Invoke(); }
+				finally { Find.LetterStack.RemoveLetter(this); }
+			},
+			resolveTree = true
+		};
+
+		void Spawn() => spawnGroup.Invoke(incident.Worker, new object[] { parms, map });
+
+		void Refuse() => maybeRevisit.Invoke(null, new object[] { parms, map, new FloatRange(2f, 5f) });
+
+		// Smarter Visitors' Deny also drops the group's delay record, or the timer would grow by it again.
+		void ForgetDelays()
+		{
+			if (svDelays != null && Current.Game.components.FirstOrDefault(svApproved.IsInstanceOfType) is { } comp)
+				(svDelays.GetValue(comp) as IDictionary)?.Remove(lord);
+		}
+
+		void Delay(int ticks)
+		{
+			foreach (var transition in lord.Graph.transitions)
+			{
+				if (!transition.sources.Contains(lord.CurLordToil)) continue;
+				foreach (var trigger in transition.triggers)
+					if (Harmony3StrictCompatMod.svStayTimer.IsInstanceOfType(trigger))
+					{
+						duration((Trigger_TicksPassed)trigger) += ticks;
+						setDelayValue?.Invoke(null, new object[] { lord, ticks });
+						return;
+					}
+			}
+		}
+
+		// Answered or expired: the archived copy only offers Close, so drop the references (a lord or map that is gone
+		// later would otherwise log unresolved references on every load).
+		public override void Removed()
+		{
+			base.Removed();
+			Forget();
+		}
+
+		void Forget()
+		{
+			parms = null;
+			map = null;
+			lord = null;
+		}
+
+		public override void ExposeData()
+		{
+			if (Scribe.mode == LoadSaveMode.Saving && TimeoutPassed) Forget();
+			base.ExposeData();
+			Scribe_Values.Look(ref leaving, "leaving");
+			Scribe_Defs.Look(ref incident, "incident");
+			Scribe_Deep.Look(ref parms, "parms");
+			Scribe_References.Look(ref map, "map");
+			Scribe_References.Look(ref lord, "lord");
 		}
 	}
 

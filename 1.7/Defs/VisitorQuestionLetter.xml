@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hospitality / Smarter Visitors: the "afraid to come" and "afraid to leave" visitor questions, sent as a letter
+  when Stylish Dialogs' Notice letters do not open by themselves (VisitorQuestionLetter in the compat DLL).
+  Stylish Dialogs files any letter def it does not know under Notice. Colours as vanilla NeutralEvent.
+-->
+<Defs>
+  <LetterDef>
+    <defName>H3SC_VisitorQuestion</defName>
+    <letterClass>Harmony3StrictCompat.VisitorQuestionLetter</letterClass>
+    <color>(175, 176, 185)</color>
+    <flashColor>(160, 170, 180)</flashColor>
+    <flashInterval>90</flashInterval>
+    <arriveSound>LetterArrive</arriveSound>
+  </LetterDef>
+</Defs>

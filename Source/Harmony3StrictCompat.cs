@@ -354,6 +354,7 @@ namespace Harmony3StrictCompat
 			// Vanilla: CompShuttle evicts quest escorts whose last despawn is years old; fingerprinted so a vanilla change gets re-checked.
 			Target("RimWorld.CompShuttle:CompTick");
 			RechargeBarInside.Init(harmony);
+			GravshipLaunchKeptMapNoWarning.Init(harmony);
 			harmony.Patch(AccessTools.Method(typeof(CompTransporter), nameof(CompTransporter.Notify_ThingAdded)),
 				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ShuttleClockStartsAtBoarding)));
 			foreach (var csClean in new[] { "CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__0", "CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__1" })
@@ -4151,6 +4152,11 @@ namespace Harmony3StrictCompat
 			["EventImagePopup.ImageResolver:ResolveForIncident"] = 0xB0C8AE510BAB01F1,
 			["RimWorld.CompShuttle:CompTick"] = 0x807AD3141AD4D8A6,
 			["RimWorld.CompRechargeable:CompTick"] = 0x60A381C5B22A28EF,                                     // game 1.7.5014, 2026-11-24 (recharge bar inside a one-tile-tall machine)
+			["RimWorld.GravshipUtility:PreLaunchConfirmation"] = 0x5BCE4E3819181DF8,                          // game 1.7.5014, 2026-11-24 (launch warning when VGE keeps the map)
+			["RimWorld.RitualOutcomeEffectWorker_GravshipLaunch:Apply"] = 0x0EF46C19BD6D545A,
+			["VanillaGravshipExpanded.WorldComponent_GravshipController_TakeoffEnded_Patch:Prefix"] = 0x26BB4AA240F19EA4,              // VGE 1.7, DLL of 2026-10-20 17:20 (keeps the map when a colonist stays)
+			["VanillaGravshipExpanded.WorldComponent_GravshipController_TakeoffEnded_Patch:CanEverKeepThisMap"] = 0x479CE351B185A114,
+			["VanillaGravshipExpanded.WorldComponent_GravshipController_TakeoffEnded_Patch:ShouldAlwaysKeepThisMap"] = 0x8AD816C302A0AD78,
 			["RimWorld.Selector:SelectUnderMouse"] = 0x59EF35E3AE5B2B41,                                    // game 1.7.5013, 2026-11-18
 			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,
 			["Verse.GizmoGridDrawer:DrawGizmoGrid"] = 0x01194CA4A1ED54CD,
@@ -5169,6 +5175,118 @@ namespace Harmony3StrictCompat
 			if (___progressBar?.children is { Count: > 0 } children && children[0] is SubEffecter_ProgressBar { mote: { } mote }
 				&& __instance.parent.RotatedSize.z == 1)
 				mote.offsetZ = -0.3f;
+		}
+	}
+
+	// ---- Vanilla Gravship Expanded: launch warning lists pawns that stay safely behind (personal tweak) ----------
+	// GravshipUtility.PreLaunchConfirmation always opens a confirmation and lists every player pawn and animal off the
+	// gravship as "will be left behind". With VGE that loss does not happen when the map is kept: its TakeoffEnded
+	// prefix keeps the map whenever a grav anchor is on it, or (unless the scenario forbids keeping the map) a colonist
+	// stays (MapPawns.AnyPawnBlockingMapRemoval -> ShouldAlwaysKeepThisMap). Animals, prisoners or mechs alone do not
+	// keep it: VGE then asks keep or discard, so their warning stays.
+	// In that kept case the people and animal lists are dropped (the first two List<Pawn>.Count checks read 0), and if
+	// nothing else is left to warn about (kidnapped pawns, buildings off the ship, substructure problems) the launch runs
+	// without the dialog: the launch ritual window was already the confirmation. The only caller is the launch ritual's
+	// RitualOutcomeEffectWorker_GravshipLaunch.Apply; the launch action is held until Apply has returned (after VGE's
+	// postfix fills its ExtendedLaunchInfo), as a click on the dialog would. Called from anywhere else, the dialog shows.
+	static class GravshipLaunchKeptMapNoWarning
+	{
+		static Func<MapParent, bool> canEverKeep;
+		static Map launchMap;
+		static bool hideLists, inRitual;
+		static Action pending;
+
+		internal static void Init(Harmony harmony)
+		{
+			var confirm = Harmony3StrictCompatMod.Target("RimWorld.GravshipUtility:PreLaunchConfirmation");
+			var keep = Harmony3StrictCompatMod.Target("VanillaGravshipExpanded.WorldComponent_GravshipController_TakeoffEnded_Patch:CanEverKeepThisMap");
+			var apply = Harmony3StrictCompatMod.Target("RimWorld.RitualOutcomeEffectWorker_GravshipLaunch:Apply");
+			if (confirm == null || keep == null || apply == null
+				|| Harmony3StrictCompatMod.Target("VanillaGravshipExpanded.WorldComponent_GravshipController_TakeoffEnded_Patch:Prefix") == null
+				|| Harmony3StrictCompatMod.Target("VanillaGravshipExpanded.WorldComponent_GravshipController_TakeoffEnded_Patch:ShouldAlwaysKeepThisMap") == null)
+				return;
+			canEverKeep = (Func<MapParent, bool>)keep.CreateDelegate(typeof(Func<MapParent, bool>));
+			harmony.Patch(confirm,
+				prefix: new HarmonyMethod(typeof(GravshipLaunchKeptMapNoWarning), nameof(Begin)),
+				transpiler: new HarmonyMethod(typeof(GravshipLaunchKeptMapNoWarning), nameof(Rewire)),
+				finalizer: new HarmonyMethod(typeof(GravshipLaunchKeptMapNoWarning), nameof(End)));
+			harmony.Patch(apply,
+				prefix: new HarmonyMethod(typeof(GravshipLaunchKeptMapNoWarning), nameof(RitualBegin)),
+				postfix: new HarmonyMethod(typeof(GravshipLaunchKeptMapNoWarning), nameof(RitualLaunch)) { priority = Priority.Last },
+				finalizer: new HarmonyMethod(typeof(GravshipLaunchKeptMapNoWarning), nameof(RitualEnd)));
+		}
+
+		static void RitualBegin()
+		{
+			inRitual = true;
+			pending = null;
+		}
+
+		static void RitualLaunch()
+		{
+			var launch = pending;
+			pending = null;
+			launch?.Invoke();
+		}
+
+		static void RitualEnd()
+		{
+			inRitual = false;
+			pending = null;
+		}
+
+		static void Begin(Building_GravEngine engine)
+		{
+			launchMap = engine?.Map;
+			hideLists = false;
+		}
+
+		static void End()
+		{
+			launchMap = null;
+			hideLists = false;
+		}
+
+		static IEnumerable<CodeInstruction> Rewire(IEnumerable<CodeInstruction> instructions)
+		{
+			var codes = instructions.ToList();
+			var count = AccessTools.PropertyGetter(typeof(List<Pawn>), nameof(List<Pawn>.Count));
+			var add = AccessTools.Method(typeof(WindowStack), nameof(WindowStack.Add));
+			var counts = codes.Where(c => c.Calls(count)).ToList();
+			var adds = codes.Where(c => c.Calls(add)).ToList();
+			if (counts.Count != 3 || adds.Count != 1)
+			{
+				Log.Error($"[Harmony3StrictCompat] GravshipUtility.PreLaunchConfirmation changed ({counts.Count} pawn list counts, {adds.Count} window adds): launch warning left as it is");
+				return codes;
+			}
+			counts[0].opcode = OpCodes.Call;
+			counts[0].operand = AccessTools.Method(typeof(GravshipLaunchKeptMapNoWarning), nameof(PeopleCount));
+			counts[1].opcode = OpCodes.Call;
+			counts[1].operand = AccessTools.Method(typeof(GravshipLaunchKeptMapNoWarning), nameof(AnimalCount));
+			adds[0].opcode = OpCodes.Call;
+			adds[0].operand = AccessTools.Method(typeof(GravshipLaunchKeptMapNoWarning), nameof(ShowOrLaunch));
+			return codes;
+		}
+
+		// People left behind (player humanlikes off the ship, then prisoners): decides whether the map is kept.
+		static int PeopleCount(List<Pawn> people)
+		{
+			hideLists = launchMap?.Parent != null && (launchMap.listerThings.AnyThingWithDef(ThingDefOf.GravAnchor)
+				|| (canEverKeep(launchMap.Parent) && people.Any(p => p.IsColonist && !p.Dead)));
+			return hideLists ? 0 : people.Count;
+		}
+
+		static int AnimalCount(List<Pawn> animals) => hideLists ? 0 : animals.Count;
+
+		static void ShowOrLaunch(WindowStack stack, Window window)
+		{
+			if (hideLists && inRitual && window is Dialog_MessageBox box && box.buttonAAction != null
+				&& box.text.RawText == "ConfirmGravEngineLaunch".Translate().RawText)
+			{
+				pending = box.buttonAAction;
+				return;
+			}
+			stack.Add(window);
 		}
 	}
 

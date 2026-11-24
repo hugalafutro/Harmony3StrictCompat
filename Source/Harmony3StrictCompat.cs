@@ -895,6 +895,7 @@ namespace Harmony3StrictCompat
 				harmony.Patch(thingIcon, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FloorGraphicIconScale)));
 			BillCountCache.Init(harmony);
 			VgeWarcomputerOnlyForGaussGuns.Init(harmony);
+			QuietWondersSleepDimRooms.Init(harmony);
 			WppFightTargetCheapValidatorMethod.Init(harmony);
 			ReachFloodMemo.Init(harmony);
 			ModWorkGiverScans.Init(harmony);
@@ -4357,6 +4358,7 @@ namespace Harmony3StrictCompat
 			["Inventory.BillUtility:Satisfied"] = 0xAC4273F963D8D1D6,                                // Loadout Compositing 1.7, 2026-11-22 (bill count cache, per-tag bills)
 			["Verse.Pawn:SpawnSetup"] = 0xEBD14AA4AA28AC29,                                           // game 1.7.5014, 2026-11-23 (bill count cache dropped when colonists arrive)
 			["VanillaGravshipExpanded2.WarcomputerHelper:ApplyForcedMissRadiusBuffs"] = 0x7C5E4AA83043349A, // Vanilla Gravship Expanded - Chapter 2 1.7, 2026-11-22
+			["QuietWonders.QWLife:FindAsleepRooms"] = 0x1C199B69873D2271,                                       // Quiet Wonders, 2026-11-24 (room checks for awake pawns)
 			["GUIPerformancePatch.GppFightTarget:Pre"] = 0x2AA1758347F26214,                         // WOWGAG's Performance Patch 1.7, DLL of 2026-11-23 11:15 (validator method lookup)
 			["GUIPerformancePatch.GppFightTarget:Post"] = 0x3377BB6DFB5BE370,
 			["Verse.Reachability:CheckRegionBasedReachability"] = 0x0AE52A32FAF5BA8D,                // game 1.7.5014, 2026-11-22 (reach flood memo)
@@ -5787,6 +5789,81 @@ namespace Harmony3StrictCompat
 				Log.Message($"[Harmony3StrictCompat] Warcomputer check: skipped for {skipped} of {calls} turret calls (only gauss turrets use it)");
 			}
 			return run;
+		}
+	}
+
+	// ---- Quiet Wonders: sleep dim reads the room type of every awake pawn's room -------------------------------
+	// QWLife.FindAsleepRooms (setting sleepDim, every 60 ticks) reads room.Role for the room of every humanlike
+	// pawn on the map, awake or asleep. Role on a dirty room runs Room.UpdateRoomStatsAndRole, and after a fight
+	// the cleanup keeps rooms dirty. Sampling profile 2026-11-24 (262 pawns, hive cleanup): 1.0 s of 28 s main
+	// thread, 4% of every frame, almost all of it in that stat update.
+	// Prefix with the same result: awake pawns only feed awakeIds, and awakeIds is only subtracted from sleepIds,
+	// which holds bedrooms and barracks only. So an awake pawn adds its room ID without the room checks; a pawn
+	// asleep in bed still gets the full check. A one-time line reports how many room checks were left out.
+	static class QuietWondersSleepDimRooms
+	{
+		static HashSet<int> asleepRooms, awakeIds, sleepIds;
+		static Dictionary<int, Room> roomRef;
+		static Func<bool> floorsOn;
+		static Func<Thing, int> floorOf;
+		static int scans, checks, pawnsSeen;
+		static bool reported;
+
+		internal static void Init(Harmony harmony)
+		{
+			if (Harmony3StrictCompatMod.Target("QuietWonders.QWLife:FindAsleepRooms") is not { } find) return;
+			var life = find.DeclaringType;
+			asleepRooms = AccessTools.Field(life, "asleepRooms")?.GetValue(null) as HashSet<int>;
+			awakeIds = AccessTools.Field(life, "awakeIds")?.GetValue(null) as HashSet<int>;
+			sleepIds = AccessTools.Field(life, "sleepIds")?.GetValue(null) as HashSet<int>;
+			roomRef = AccessTools.Field(life, "roomRef")?.GetValue(null) as Dictionary<int, Room>;
+			var floors = AccessTools.TypeByName("QuietWonders.QWLogicalFloors");
+			var on = floors == null ? null : AccessTools.PropertyGetter(floors, "On");
+			var of = floors == null ? null : AccessTools.Method(floors, "FloorOf", [typeof(Thing)]);
+			if (asleepRooms == null || awakeIds == null || sleepIds == null || roomRef == null || on == null || of == null)
+			{
+				Log.Error("[Harmony3StrictCompat] Quiet Wonders QWLife room sets or QWLogicalFloors.On/FloorOf no longer exist: its mod updated, remove or redo this fix");
+				return;
+			}
+			floorsOn = AccessTools.MethodDelegate<Func<bool>>(on);
+			floorOf = AccessTools.MethodDelegate<Func<Thing, int>>(of);
+			harmony.Patch(find, prefix: new HarmonyMethod(typeof(QuietWondersSleepDimRooms), nameof(FindAsleepRooms)));
+		}
+
+		// Same steps as the original, in the same order, except that the room checks run for sleepers only.
+		static bool FindAsleepRooms(Map map)
+		{
+			asleepRooms.Clear();
+			awakeIds.Clear();
+			sleepIds.Clear();
+			var pawns = map.mapPawns.AllPawnsSpawned;
+			for (int i = 0; i < pawns.Count; i++)
+			{
+				var pawn = pawns[i];
+				if (!pawn.RaceProps.Humanlike || (floorsOn() && floorOf(pawn) != 0)) continue;
+				pawnsSeen++;
+				var room = RegionAndRoomQuery.GetRoom(pawn, RegionType.Set_All);
+				if (room == null) continue;
+				if (RestUtility.Awake(pawn) || !RestUtility.InBed(pawn))
+				{
+					awakeIds.Add(room.ID);
+					continue;
+				}
+				checks++;
+				if (!room.PsychologicallyOutdoors && (room.Role == RoomRoleDefOf.Bedroom || room.Role == RoomRoleDefOf.Barracks))
+				{
+					sleepIds.Add(room.ID);
+					roomRef[room.ID] = room;
+				}
+			}
+			foreach (int id in sleepIds)
+				if (!awakeIds.Contains(id)) asleepRooms.Add(id);
+			if (!reported && ++scans >= 300)
+			{
+				reported = true;
+				Log.Message($"[Harmony3StrictCompat] Quiet Wonders sleep dim: {scans} scans checked the room type for {checks} sleeping pawns instead of all {pawnsSeen} humanlike pawns");
+			}
+			return false;
 		}
 	}
 

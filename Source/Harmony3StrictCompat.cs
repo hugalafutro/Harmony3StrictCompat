@@ -896,6 +896,7 @@ namespace Harmony3StrictCompat
 			BillCountCache.Init(harmony);
 			VgeWarcomputerOnlyForGaussGuns.Init(harmony);
 			QuietWondersSleepDimRooms.Init(harmony);
+			VfeFactoryNoInsertHopperNotBetterStorage.Init(harmony);
 			WppFightTargetCheapValidatorMethod.Init(harmony);
 			ReachFloodMemo.Init(harmony);
 			ModWorkGiverScans.Init(harmony);
@@ -4359,6 +4360,7 @@ namespace Harmony3StrictCompat
 			["Verse.Pawn:SpawnSetup"] = 0xEBD14AA4AA28AC29,                                           // game 1.7.5014, 2026-11-23 (bill count cache dropped when colonists arrive)
 			["VanillaGravshipExpanded2.WarcomputerHelper:ApplyForcedMissRadiusBuffs"] = 0x7C5E4AA83043349A, // Vanilla Gravship Expanded - Chapter 2 1.7, 2026-11-22
 			["QuietWonders.QWLife:FindAsleepRooms"] = 0x1C199B69873D2271,                                       // Quiet Wonders, 2026-11-24 (room checks for awake pawns)
+			["VanillaFurnitureExpandedFactory.StoreUtility_IsGoodStoreCell_Patch:Postfix"] = 0xCE7EFB50ACFC94E1, // VFE Factory 1.7, 2026-11-24 (no-insert hopper in the haul list)
 			["GUIPerformancePatch.GppFightTarget:Pre"] = 0x2AA1758347F26214,                         // WOWGAG's Performance Patch 1.7, DLL of 2026-11-23 11:15 (validator method lookup)
 			["GUIPerformancePatch.GppFightTarget:Post"] = 0x3377BB6DFB5BE370,
 			["Verse.Reachability:CheckRegionBasedReachability"] = 0x0AE52A32FAF5BA8D,                // game 1.7.5014, 2026-11-22 (reach flood memo)
@@ -5876,6 +5878,68 @@ namespace Harmony3StrictCompat
 				Log.Message($"[Harmony3StrictCompat] Quiet Wonders sleep dim: {scans} scans checked the room type for {checks} sleeping pawns instead of all {pawnsSeen} humanlike pawns");
 			}
 			return false;
+		}
+	}
+
+	// ---- Vanilla Furniture Expanded - Factory: a hopper with inserting off still counts as a better storage -------
+	// Its postfix on StoreUtility.IsGoodStoreCell refuses the cell of a Building_FactoryHopper with allowInserting
+	// off only when a pawn asks (carrier != null). The haulables list asks without a pawn
+	// (StoreUtility.IsInValidBestStorage), so such a hopper keeps every lower-priority stack its filter accepts on
+	// the list, and no pawn can ever get a job on them. Haul list probe 2026-11-24: two such hoppers at priority
+	// Important kept 982 of 1,007 listed things without a job; every WorkGiver_HaulGeneral turn ran the store
+	// search on all of them, 20-37 ms in one tick.
+	// IsInValidBestStorage marks its own search; a postfix on IsGoodStoreCell (after the mod's) then refuses the
+	// cell of a hopper with inserting off for that search too. Pawn searches and every other pawn-less caller are
+	// untouched. A one-time line reports how many list checks it changed.
+	static class VfeFactoryNoInsertHopperNotBetterStorage
+	{
+		[ThreadStatic] static int listChecks;
+		static Type hopperType;
+		static AccessTools.FieldRef<object, bool> allowInserting;
+		static int refused;
+		static bool reported;
+
+		internal static void Init(Harmony harmony)
+		{
+			if (Harmony3StrictCompatMod.Target("VanillaFurnitureExpandedFactory.StoreUtility_IsGoodStoreCell_Patch:Postfix") == null) return;
+			hopperType = AccessTools.TypeByName("VanillaFurnitureExpandedFactory.Building_FactoryHopper");
+			var field = hopperType == null ? null : AccessTools.Field(hopperType, "allowInserting");
+			if (field == null || field.FieldType != typeof(bool))
+			{
+				Log.Error("[Harmony3StrictCompat] VanillaFurnitureExpandedFactory.Building_FactoryHopper.allowInserting no longer exists: its mod updated, remove or redo this fix");
+				return;
+			}
+			allowInserting = AccessTools.FieldRefAccess<object, bool>(field);
+			var me = typeof(VfeFactoryNoInsertHopperNotBetterStorage);
+			harmony.Patch(AccessTools.Method(typeof(StoreUtility), nameof(StoreUtility.IsInValidBestStorage)),
+				prefix: new HarmonyMethod(me, nameof(EnterListCheck)), finalizer: new HarmonyMethod(me, nameof(LeaveListCheck)));
+			harmony.Patch(AccessTools.Method(typeof(StoreUtility), nameof(StoreUtility.IsGoodStoreCell)),
+				postfix: new HarmonyMethod(me, nameof(NoInsertHopper)) { priority = Priority.Last });
+		}
+
+		// __state pairs the two: the finalizer only undoes a prefix that ran.
+		static void EnterListCheck(out bool __state)
+		{
+			listChecks++;
+			__state = true;
+		}
+
+		static void LeaveListCheck(bool __state)
+		{
+			if (__state) listChecks--;
+		}
+
+		static void NoInsertHopper(IntVec3 c, Map map, Pawn carrier, ref bool __result)
+		{
+			if (!__result || carrier != null || listChecks == 0) return;
+			var parent = map.haulDestinationManager.SlotGroupParentAt(c);
+			if (parent == null || !hopperType.IsInstanceOfType(parent) || allowInserting(parent)) return;
+			__result = false;
+			if (!reported && ++refused >= 200)
+			{
+				reported = true;
+				Log.Message($"[Harmony3StrictCompat] Factory hoppers with inserting off: {refused} haul-list checks no longer count one as a better storage");
+			}
 		}
 	}
 

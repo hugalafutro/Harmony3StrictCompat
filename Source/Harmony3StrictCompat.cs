@@ -355,6 +355,7 @@ namespace Harmony3StrictCompat
 			Target("RimWorld.CompShuttle:CompTick");
 			RechargeBarInside.Init(harmony);
 			GravshipLaunchKeptMapNoWarning.Init(harmony);
+			FleetHoldLetsLeaversGo.Init(harmony);
 			harmony.Patch(AccessTools.Method(typeof(CompTransporter), nameof(CompTransporter.Notify_ThingAdded)),
 				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ShuttleClockStartsAtBoarding)));
 			foreach (var csClean in new[] { "CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__0", "CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__1" })
@@ -4157,6 +4158,7 @@ namespace Harmony3StrictCompat
 			["VanillaGravshipExpanded.WorldComponent_GravshipController_TakeoffEnded_Patch:Prefix"] = 0x26BB4AA240F19EA4,              // VGE 1.7, DLL of 2026-10-20 17:20 (keeps the map when a colonist stays)
 			["VanillaGravshipExpanded.WorldComponent_GravshipController_TakeoffEnded_Patch:CanEverKeepThisMap"] = 0x479CE351B185A114,
 			["VanillaGravshipExpanded.WorldComponent_GravshipController_TakeoffEnded_Patch:ShouldAlwaysKeepThisMap"] = 0x8AD816C302A0AD78,
+			["GravshipFleet.FleetLaunchHold:Hold"] = 0x9D06C470CD36959F,                                     // Gravship Fleet 1.7, DLL of 2026-10-25 21:37 (lets LeaveShip visitors walk off)
 			["RimWorld.Selector:SelectUnderMouse"] = 0x59EF35E3AE5B2B41,                                    // game 1.7.5013, 2026-11-18
 			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,
 			["Verse.GizmoGridDrawer:DrawGizmoGrid"] = 0x01194CA4A1ED54CD,
@@ -5176,6 +5178,24 @@ namespace Harmony3StrictCompat
 				&& __instance.parent.RotatedSize.z == 1)
 				mote.offsetZ = -0.3f;
 		}
+	}
+
+	// ---- Gravship Fleet: launch hold stops visitors the launch told to leave ---------------------------------------
+	// While a launch ritual runs, FleetLaunchHold (every 15 ticks) stops any pawn on the hull walking to a cell off
+	// the ship and puts it on Wait_MaintainPosture; only ritual participants and drafted pawns are exempt. The ritual
+	// itself sends non-hostile visitors off the ship (Building_GravEngine.pawnsToLeave, job LeaveShip), so those still
+	// aboard were stopped a few ticks in; the LeaveShip goto then ended aboard, CheckFailedToBoardOrLeave said "X cannot
+	// exit" and dropped them from the list, and they flew off with the ship. Seen 2026-11-24 with two Itundi caravan
+	// guards (gravleave probe: LeaveShip ended by FleetLaunchHold.Hold at ritual tick 3). Leave LeaveShip alone.
+	static class FleetHoldLetsLeaversGo
+	{
+		internal static void Init(Harmony harmony)
+		{
+			if (Harmony3StrictCompatMod.Target("GravshipFleet.FleetLaunchHold:Hold") is { } hold)
+				harmony.Patch(hold, prefix: new HarmonyMethod(typeof(FleetHoldLetsLeaversGo), nameof(SkipLeaving)));
+		}
+
+		static bool SkipLeaving(Pawn pawn) => pawn?.CurJobDef != JobDefOf.LeaveShip;
 	}
 
 	// ---- Vanilla Gravship Expanded: launch warning lists pawns that stay safely behind (personal tweak) ----------

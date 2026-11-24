@@ -126,6 +126,7 @@
 - Hospitality + Smarter Visitors + Stylish Dialogs: with Notice letters set not to open by themselves, the "afraid to come / afraid to leave" visitor questions arrive as letters instead of pausing the game.
 - Biosculpter Pod and Neural Supercharger Resize: a resized supercharger turned sideways draws its recharge bar on the machine, not below it.
 - Vanilla Gravship Expanded: no "left behind" launch warning for colonists and animals that stay on a map VGE keeps; with nothing else to warn about, the launch ritual launches straight away.
+- Gravship Fleet: visitors inside the ship when a launch ritual starts walk off it instead of being held aboard ("cannot exit").
 - Vanilla friendly raids: reinforcements arrive dressed for extreme cold (warmest non-armor apparel their faction can make).
 - Ritual Size Attenuation + VFE Empire: art exhibit, grand ball and parade no longer crash in the outcome (an art exhibit stuck forever, guests starving).
 - VEF (MVCF): multi-verb weapons use the weapon's own accuracy/cooldown when the verb sets none; duplicate stat rows hidden; Range row fixed.

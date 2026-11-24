@@ -288,6 +288,15 @@ namespace Harmony3StrictCompat
 				harmony.Patch(hospCanEat, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospTitleFood)));
 			if (Target("Hospitality.JoyGiver_BuyStuff:Qualifies") is { } hospQualifies)
 				harmony.Patch(hospQualifies, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospTitleFoodQualifies)));
+			if (AccessTools.TypeByName("NonUnoPinata.Settings") is { } nupSettings
+				&& AccessTools.Field(nupSettings, "player_downed_drop_equipment") is { } nupPlayerField
+				&& AccessTools.Field(nupSettings, "nonplayer_downed_drop_equipment") is { } nupNonplayerField
+				&& Target("Verse.Pawn_HealthTracker:CheckForStateChange") is { } healthStateCheck)
+			{
+				nupPlayerDownedDropEquipment = nupPlayerField;
+				nupNonplayerDownedDropEquipment = nupNonplayerField;
+				harmony.Patch(healthStateCheck, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(NupNoManipulationDropTranspiler)));
+			}
 			var hospPocket = Target("Hospitality.Utilities.ItemUtility:PocketHeadgear");
 			if (hospPocket != null)
 				harmony.Patch(hospPocket, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospKeepCasketHelmet)));
@@ -1730,6 +1739,44 @@ namespace Harmony3StrictCompat
 		{
 			if (__result && thing.def.IsNutritionGivingIngestible && FoodUtility.InappropriateForTitle(thing.def, pawn, allowIfStarving: true))
 				__result = false;
+		}
+
+		// ---- Non Uno Pinata: no weapon drop when a pawn loses manipulation -----------------------------------------
+		// NUP replaces the gear drop in MakeDowned with its own "downed: drop equipment" settings, but vanilla
+		// Pawn_HealthTracker.CheckForStateChange drops the primary weapon on its own whenever a still-standing pawn can
+		// no longer manipulate (toxic buildup on its way to downed, lost arms). A Hospitality guest walking into the
+		// burn room dropped her mace there on 2026-11-24 although both NUP downed options were off. That one drop now
+		// follows the same NUP setting as a downed pawn of that kind (colonist or not); the pawn keeps the weapon
+		// equipped otherwise. Kind-destroys-gear, containers and caravans keep vanilla's handling.
+		static FieldInfo nupPlayerDownedDropEquipment, nupNonplayerDownedDropEquipment;
+
+		static IEnumerable<CodeInstruction> NupNoManipulationDropTranspiler(IEnumerable<CodeInstruction> instructions)
+		{
+			var drop = AccessTools.Method(typeof(Pawn_EquipmentTracker), nameof(Pawn_EquipmentTracker.TryDropEquipment));
+			int replaced = 0;
+			foreach (var code in instructions)
+			{
+				if (code.Calls(drop))
+				{
+					code.opcode = OpCodes.Call;
+					code.operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(NupDropUnlessKept));
+					replaced++;
+				}
+				yield return code;
+			}
+			if (replaced != 1)
+				Log.Error($"[Harmony3StrictCompat] Pawn_HealthTracker.CheckForStateChange has {replaced} TryDropEquipment calls (expected 1): the game updated, redo the Non Uno Pinata weapon drop fix");
+		}
+
+		static bool NupDropUnlessKept(Pawn_EquipmentTracker tracker, ThingWithComps eq, out ThingWithComps resultingEq, IntVec3 pos, bool forbid)
+		{
+			var field = tracker.pawn.IsColonistPlayerControlled ? nupPlayerDownedDropEquipment : nupNonplayerDownedDropEquipment;
+			if (!(bool)field.GetValue(null))
+			{
+				resultingEq = null;
+				return false;
+			}
+			return tracker.TryDropEquipment(eq, out resultingEq, pos, forbid);
 		}
 
 		// ---- ReplaceLib: recipes on different benches treated as duplicates ----
@@ -4411,6 +4458,7 @@ namespace Harmony3StrictCompat
 			["PipeSystem.CompResourceTrader:CompInspectStringExtra"] = 0x8799CC4254BA7002,           // VEF PipeSystem 1.7, DLL of 2026-11-20 12:28
 			["Hospitality.JoyGiver_BuyStuff:CanEat"] = 0x304D1E10604FFCD2,                           // Hospitality 1.7
 			["Hospitality.JoyGiver_BuyStuff:Qualifies"] = 0xB8921C6506227CE6,                        // Hospitality 1.7
+			["Verse.Pawn_HealthTracker:CheckForStateChange"] = 0x11CBE5B3F4E855EF,                    // game 1.7.5014 (Non Uno Pinata manipulation weapon drop)
 			["RimWorld.Bill_Production:ShouldDoNow"] = 0x91426C66CA668FA7,                           // game 1.7.5014, 2026-11-20 (bill count cache)
 			["Inventory.BillUtility:Satisfied"] = 0xAC4273F963D8D1D6,                                // Loadout Compositing 1.7, 2026-11-22 (bill count cache, per-tag bills)
 			["Verse.Pawn:SpawnSetup"] = 0xEBD14AA4AA28AC29,                                           // game 1.7.5014, 2026-11-23 (bill count cache dropped when colonists arrive)

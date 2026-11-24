@@ -356,6 +356,7 @@ namespace Harmony3StrictCompat
 			RechargeBarInside.Init(harmony);
 			GravshipLaunchKeptMapNoWarning.Init(harmony);
 			FleetHoldLetsLeaversGo.Init(harmony);
+			VqeArcComponentFindsComponent.Init(harmony);
 			harmony.Patch(AccessTools.Method(typeof(CompTransporter), nameof(CompTransporter.Notify_ThingAdded)),
 				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ShuttleClockStartsAtBoarding)));
 			foreach (var csClean in new[] { "CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__0", "CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__1" })
@@ -4159,6 +4160,7 @@ namespace Harmony3StrictCompat
 			["VanillaGravshipExpanded.WorldComponent_GravshipController_TakeoffEnded_Patch:CanEverKeepThisMap"] = 0x479CE351B185A114,
 			["VanillaGravshipExpanded.WorldComponent_GravshipController_TakeoffEnded_Patch:ShouldAlwaysKeepThisMap"] = 0x8AD816C302A0AD78,
 			["GravshipFleet.FleetLaunchHold:Hold"] = 0x9D06C470CD36959F,                                     // Gravship Fleet 1.7, DLL of 2026-10-25 21:37 (lets LeaveShip visitors walk off)
+			["VanillaQuestsExpandedTheGenerator.CompAbilityCraftAnARCComponent:Apply"] = 0xA99D1505A77AE8CC, // VQE The Generator 1.6 DLL of 2026-07-08 (finds the component in the cell)
 			["RimWorld.Selector:SelectUnderMouse"] = 0x59EF35E3AE5B2B41,                                    // game 1.7.5013, 2026-11-18
 			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,
 			["Verse.GizmoGridDrawer:DrawGizmoGrid"] = 0x01194CA4A1ED54CD,
@@ -5178,6 +5180,38 @@ namespace Harmony3StrictCompat
 				&& __instance.parent.RotatedSize.z == 1)
 				mote.offsetZ = -0.3f;
 		}
+	}
+
+	// ---- VQE The Generator: "Craft an ARC component" only sees the first thing in the target cell ------------------
+	// CompAbilityCraftAnARCComponent.Apply takes target.Cell.GetThingList(map).FirstOrFallback() and refuses unless
+	// that one thing is an advanced component. A component lying on a shelf or in any storage building, or sharing
+	// its cell with filth or a hidden conduit, comes after that thing in the list, so the cast ended with "needs to
+	// target an advanced component" (seen 2026-11-24 with Seaborgue). Look for the advanced component in the cell
+	// instead; with none there the original refusal still happens.
+	static class VqeArcComponentFindsComponent
+	{
+		internal static void Init(Harmony harmony)
+		{
+			if (Harmony3StrictCompatMod.Target("VanillaQuestsExpandedTheGenerator.CompAbilityCraftAnARCComponent:Apply") is { } apply)
+				harmony.Patch(apply, transpiler: new HarmonyMethod(typeof(VqeArcComponentFindsComponent), nameof(UseComponent)));
+		}
+
+		static IEnumerable<CodeInstruction> UseComponent(IEnumerable<CodeInstruction> instructions)
+		{
+			var codes = instructions.ToList();
+			var first = codes.Where(c => c.opcode == OpCodes.Call && c.operand is MethodInfo m && m.Name == "FirstOrFallback").ToList();
+			if (first.Count != 1)
+			{
+				Log.Error($"[Harmony3StrictCompat] VQE CompAbilityCraftAnARCComponent.Apply changed ({first.Count} FirstOrFallback calls): ARC component cast left as it is");
+				return codes;
+			}
+			first[0].operand = AccessTools.Method(typeof(VqeArcComponentFindsComponent), nameof(ComponentOrFirst));
+			return codes;
+		}
+
+		// Same stack shape as GenCollection.FirstOrFallback<Thing>(IEnumerable<Thing>, Thing).
+		static Thing ComponentOrFirst(IEnumerable<Thing> things, Thing fallback) =>
+			things.FirstOrDefault(t => t.def == ThingDefOf.ComponentSpacer) ?? things.FirstOrFallback(fallback);
 	}
 
 	// ---- Gravship Fleet: launch hold stops visitors the launch told to leave ---------------------------------------

@@ -4402,8 +4402,8 @@ namespace Harmony3StrictCompat
 			["VanillaGravshipExpanded2.WarcomputerHelper:ApplyForcedMissRadiusBuffs"] = 0x7C5E4AA83043349A, // Vanilla Gravship Expanded - Chapter 2 1.7, 2026-11-22
 			["QuietWonders.QWLife:FindAsleepRooms"] = 0x1C199B69873D2271,                                       // Quiet Wonders, 2026-11-24 (room checks for awake pawns)
 			["VanillaFurnitureExpandedFactory.StoreUtility_IsGoodStoreCell_Patch:Postfix"] = 0xCE7EFB50ACFC94E1, // VFE Factory 1.7, 2026-11-24 (no-insert hopper in the haul list)
-			["GUIPerformancePatch.GppFightTarget:Pre"] = 0x45F4C1F937D413E4,                         // WOWGAG's Performance Patch 1.7, DLL of 2026-11-24 13:33 (validator method lookup)
-			["GUIPerformancePatch.GppFightTarget:Post"] = 0x8E3CC772ED18899A,
+			["GUIPerformancePatch.GppFightTarget:Pre"] = 0x36D1CBE254914D43,                         // WOWGAG's Performance Patch 1.7, DLL of 2026-11-24 18:20 (validator method lookup)
+			["GUIPerformancePatch.GppFightTarget:Post"] = 0x239D8B379E1FB455,
 			["Verse.Reachability:CheckRegionBasedReachability"] = 0x0AE52A32FAF5BA8D,                // game 1.7.5014, 2026-11-22 (reach flood memo)
 			["Verse.Reachability:QueueNewOpenRegion"] = 0xAA67D4BF0BC72D97,
 			["Verse.Reachability:CanReach"] = 0x22585B275FCEF578,

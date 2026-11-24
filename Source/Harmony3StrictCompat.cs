@@ -356,6 +356,7 @@ namespace Harmony3StrictCompat
 			RechargeBarInside.Init(harmony);
 			GravshipLaunchKeptMapNoWarning.Init(harmony);
 			FleetHoldLetsLeaversGo.Init(harmony);
+			BasGravshipFlagForVge.Init(harmony);
 			VqeArcComponentFindsComponent.Init(harmony);
 			harmony.Patch(AccessTools.Method(typeof(CompTransporter), nameof(CompTransporter.Notify_ThingAdded)),
 				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ShuttleClockStartsAtBoarding)));
@@ -4160,6 +4161,9 @@ namespace Harmony3StrictCompat
 			["VanillaGravshipExpanded.WorldComponent_GravshipController_TakeoffEnded_Patch:CanEverKeepThisMap"] = 0x479CE351B185A114,
 			["VanillaGravshipExpanded.WorldComponent_GravshipController_TakeoffEnded_Patch:ShouldAlwaysKeepThisMap"] = 0x8AD816C302A0AD78,
 			["GravshipFleet.FleetLaunchHold:Hold"] = 0x9D06C470CD36959F,                                     // Gravship Fleet 1.7, DLL of 2026-10-25 21:37 (lets LeaveShip visitors walk off)
+			["VanillaGravshipExpanded.WorldComponent_GravshipController_TakeoffEnded_Patch+<>c__DisplayClass0_0:<Prefix>g__AbandonTile|1"] = 0xC2441200ED47772A, // VGE 1.7, DLL of 2026-10-20 17:20 (BAS gravship flag)
+			["BetterAbandonedSettlements.Patches:AbandonMapPrefix"] = 0xE694E2BEC4B5959B,                   // BAS 1.1.1, DLL of 2026-10-31 12:43
+			["BetterAbandonedSettlements.Patches:AbandonMapFinalizer"] = 0x80BD445544A465A2,
 			["VanillaQuestsExpandedTheGenerator.CompAbilityCraftAnARCComponent:Apply"] = 0xA99D1505A77AE8CC, // VQE The Generator 1.6 DLL of 2026-07-08 (finds the component in the cell)
 			["RimWorld.Selector:SelectUnderMouse"] = 0x59EF35E3AE5B2B41,                                    // game 1.7.5013, 2026-11-18
 			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,
@@ -5230,6 +5234,25 @@ namespace Harmony3StrictCompat
 		}
 
 		static bool SkipLeaving(Pawn pawn) => pawn?.CurJobDef != JobDefOf.LeaveShip;
+	}
+
+	// ---- Better Abandoned Settlements + Vanilla Gravship Expanded: "Keep the maps a gravship leaves behind" ignored --
+	// BAS tells a gravship launch from a plain abandon by a flag it raises only inside vanilla
+	// GravshipUtility.AbandonMap (prefix + finalizer), and with keepGravship off it skips storing the map. VGE's
+	// TakeoffEnded prefix sets mapHasGravAnchor, so vanilla never calls AbandonMap; "Discard map" (or VGE's no-dialog
+	// branch) runs its own AbandonTile, which calls Settlement.Abandon(false) directly. BAS saw a normal abandon and
+	// kept every landing site (three "The Flying Shark landing site" kept settlements by 2026-11-24). Run BAS's own
+	// launch-flag prefix and finalizer around AbandonTile too.
+	static class BasGravshipFlagForVge
+	{
+		internal static void Init(Harmony harmony)
+		{
+			var prefix = Harmony3StrictCompatMod.Target("BetterAbandonedSettlements.Patches:AbandonMapPrefix");
+			var finalizer = Harmony3StrictCompatMod.Target("BetterAbandonedSettlements.Patches:AbandonMapFinalizer");
+			if (prefix == null || finalizer == null) return;
+			if (Harmony3StrictCompatMod.Target("VanillaGravshipExpanded.WorldComponent_GravshipController_TakeoffEnded_Patch+<>c__DisplayClass0_0:<Prefix>g__AbandonTile|1") is { } abandonTile)
+				harmony.Patch(abandonTile, prefix: new HarmonyMethod(prefix), finalizer: new HarmonyMethod(finalizer));
+		}
 	}
 
 	// ---- Vanilla Gravship Expanded: launch warning lists pawns that stay safely behind (personal tweak) ----------

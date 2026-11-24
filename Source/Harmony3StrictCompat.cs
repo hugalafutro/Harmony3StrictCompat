@@ -297,6 +297,15 @@ namespace Harmony3StrictCompat
 				nupNonplayerDownedDropEquipment = nupNonplayerField;
 				harmony.Patch(healthStateCheck, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(NupNoManipulationDropTranspiler)));
 			}
+			if (Target("OgRepairGear.WorkGiver_OgRepairGear:NonScanJob") != null
+				&& AccessTools.Field(AccessTools.TypeByName("Og_RepairGear.OgRepairGearMod"), "settings") is { } rygSettingsField
+				&& AccessTools.Field(AccessTools.TypeByName("Og_RepairGear.OgRepairGearSettings"), "repairBelow") is { } rygRepairBelowField
+				&& Target("RimWorld.JobGiver_OptimizeApparel:TryGiveJob") is { } optimizeApparel)
+			{
+				rygSettings = rygSettingsField;
+				rygRepairBelow = rygRepairBelowField;
+				harmony.Patch(optimizeApparel, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RygRepairBeforeSwap)));
+			}
 			var hospPocket = Target("Hospitality.Utilities.ItemUtility:PocketHeadgear");
 			if (hospPocket != null)
 				harmony.Patch(hospPocket, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospKeepCasketHelmet)));
@@ -1777,6 +1786,46 @@ namespace Harmony3StrictCompat
 				return false;
 			}
 			return tracker.TryDropEquipment(eq, out resultingEq, pos, forbid);
+		}
+
+		// ---- [Og] Repair Your Gear: repair worn apparel before swapping it for a spare ------------------------------
+		// Vanilla JobGiver_OptimizeApparel scores worn apparel by hit points, so a damaged masterwork cloak loses to an
+		// excellent spare in storage and the pawn swaps it (2026-11-24: a colonist stepped off a shuttle and went
+		// straight for the spare). The swap sits in the think tree ahead of work, where Repair Your Gear's WorkGiver
+		// lives, so the repair never got a turn. When the wear job would replace a worn item that Repair Your Gear
+		// would repair (below its "repair below" percentage) and the pawn has the Repair Gear work type on, the pawn
+		// gets Repair Your Gear's own repair job instead. Its follow-up jobs repair to full; the next apparel check
+		// then compares the repaired item, so a real upgrade is still worn. If a redirect made no progress on the same
+		// item within an hour (no material, repair failed), the swap goes ahead.
+		static FieldInfo rygSettings, rygRepairBelow;
+		static WorkGiverDef rygGiver;
+		static readonly Dictionary<int, (int item, int hp, int tick)> rygRedirects = new();
+
+		static void RygRepairBeforeSwap(Pawn pawn, ref Job __result)
+		{
+			if (__result?.def != JobDefOf.Wear || __result.targetA.Thing is not Apparel spare || pawn.apparel == null || pawn.workSettings == null)
+				return;
+			rygGiver ??= DefDatabase<WorkGiverDef>.GetNamedSilentFail("OgRepairGear");
+			if (rygGiver == null || !pawn.workSettings.WorkIsActive(rygGiver.workType))
+				return;
+			int below = rygSettings.GetValue(null) is { } settings ? (int)rygRepairBelow.GetValue(settings) : 100;
+			Apparel worn = null;
+			foreach (var ap in pawn.apparel.WornApparel)
+				if (!ApparelUtility.CanWearTogether(spare.def, ap.def, pawn.RaceProps.body) && ap.def.useHitPoints && ap.MaxHitPoints > 0
+					&& ap.HitPoints * 100 < ap.MaxHitPoints * below
+					&& (worn == null || ap.HitPoints * worn.MaxHitPoints < worn.HitPoints * ap.MaxHitPoints))
+					worn = ap;
+			if (worn == null)
+				return;
+			int now = Find.TickManager.TicksGame;
+			if (rygRedirects.TryGetValue(pawn.thingIDNumber, out var last) && last.item == worn.thingIDNumber
+				&& worn.HitPoints <= last.hp && now - last.tick < GenDate.TicksPerHour)
+				return;
+			var repair = rygGiver.Worker.NonScanJob(pawn);
+			if (repair == null)
+				return;
+			rygRedirects[pawn.thingIDNumber] = (worn.thingIDNumber, worn.HitPoints, now);
+			__result = repair;
 		}
 
 		// ---- ReplaceLib: recipes on different benches treated as duplicates ----
@@ -4459,6 +4508,8 @@ namespace Harmony3StrictCompat
 			["Hospitality.JoyGiver_BuyStuff:CanEat"] = 0x304D1E10604FFCD2,                           // Hospitality 1.7
 			["Hospitality.JoyGiver_BuyStuff:Qualifies"] = 0xB8921C6506227CE6,                        // Hospitality 1.7
 			["Verse.Pawn_HealthTracker:CheckForStateChange"] = 0x11CBE5B3F4E855EF,                    // game 1.7.5014 (Non Uno Pinata manipulation weapon drop)
+			["OgRepairGear.WorkGiver_OgRepairGear:NonScanJob"] = 0xC0EC7B2547B37999,                  // [Og] Repair Your Gear 1.6 DLL of 2026-04-20
+			["RimWorld.JobGiver_OptimizeApparel:TryGiveJob"] = 0x93EA8AD3AEE54BBA,                    // game 1.7.5014, 2026-11-24 (Repair Your Gear before apparel swap)
 			["RimWorld.Bill_Production:ShouldDoNow"] = 0x91426C66CA668FA7,                           // game 1.7.5014, 2026-11-20 (bill count cache)
 			["Inventory.BillUtility:Satisfied"] = 0xAC4273F963D8D1D6,                                // Loadout Compositing 1.7, 2026-11-22 (bill count cache, per-tag bills)
 			["Verse.Pawn:SpawnSetup"] = 0xEBD14AA4AA28AC29,                                           // game 1.7.5014, 2026-11-23 (bill count cache dropped when colonists arrive)

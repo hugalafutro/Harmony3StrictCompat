@@ -916,6 +916,7 @@ namespace Harmony3StrictCompat
 			BbRequestOnStockedMap.Init(harmony);
 			UirArchitectTwoLineNames.Init(harmony);
 			AdaptedTextOncePerSecond.Init(harmony);
+			NoSampleOnEndedSustainer.Init(harmony);
 			NoZeroSeverityDamageHediffs.Init(harmony);
 			AcNoBirthInSleeveCasket.Init(harmony);
 			MssHoloNoBodyNeeds.Init(harmony);
@@ -4430,6 +4431,7 @@ namespace Harmony3StrictCompat
 			["RimWorld.ThoughtWorker_Precept_HasNoProsthetic_Social:ShouldHaveThought"] = 0xC00806208BA0013F,
 			["RimWorld.StunHandler:Notify_DamageApplied"] = 0xC6A267835D6DFF3C,                        // game 1.7.5014, 2026-11-20 ("Adapted" text once a second)
 			["Verse.Pawn_HealthTracker:PostApplyDamage"] = 0x7279655035C5644A,                        // game 1.7.5014, 2026-11-21 (no zero-severity damage hediffs)
+			["Verse.Sound.SubSustainer:StartSample"] = 0xE01DA2EFCC466EB7,                             // game 1.7, 2026-11-24 (no sample on an ended sustainer)
 			["RimWorld.QuestPart_SubquestGenerator_Gravcores:QuestPartTick"] = 0x57A1138EAA085FF4,     // game 1.7.5014, 2026-11-20 (cheap tests first)
 			["RimWorld.QuestPart_SubquestGenerator_Gravcores:get_CanGenerateSubquest"] = 0xD22781A31626AD88,
 			["RimWorld.JobDriver_BoardOrLeaveGravship:GetGotoToil"] = 0x47A90334C2BA15AE,               // game 1.7.5014, 2026-11-23 (stale leave/board ship job ends)
@@ -7941,6 +7943,25 @@ namespace Harmony3StrictCompat
 			Text.Font = GameFont.Small;
 			themeLabel(area, cut, TextAnchor.UpperLeft, color, font);
 		}
+	}
+
+	// ---- Vanilla + Loading Progress: no sound sample on a sustainer that already ended --------------------------
+	// A SubSustainer starts its first sample from a LongEventHandler.ExecuteWhenFinished action. Loading Progress
+	// (InGameDeferredActionReplacement) runs that queue over several frames, so a sustainer created during a load
+	// can end first: Sustainer.Cleanup has already destroyed its worldRootObject, and the queued StartSample then
+	// asks the destroyed object for its transform. Waylith throws "Object is not tracked by the Unity world"
+	// (3-4 errors on every load) and the sample GameObject made just before is left behind. Vanilla runs the queue
+	// in one frame, where the destroy is still pending. An ended sustainer never plays again (SustainerUpdate is
+	// skipped once Ended and its samples were already cleaned up), so starting no sample loses no sound.
+	static class NoSampleOnEndedSustainer
+	{
+		internal static void Init(Harmony harmony)
+		{
+			if (Harmony3StrictCompatMod.Target("Verse.Sound.SubSustainer:StartSample") is { } start)
+				harmony.Patch(start, prefix: new HarmonyMethod(typeof(NoSampleOnEndedSustainer), nameof(NotEnded)));
+		}
+
+		static bool NotEnded(Verse.Sound.SubSustainer __instance) => __instance.parent is not { Ended: true };
 	}
 
 	// ---- Vanilla: one "Adapted" text per pawn per second (seen with Alpha Armoury's tesla coil trait) ----------

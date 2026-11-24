@@ -902,6 +902,7 @@ namespace Harmony3StrictCompat
 			ModWorkGiverScans.Init(harmony);
 			VanillaWorkSearchScans.Init(harmony);
 			TickHotPaths.Init(harmony);
+			DoorReachCacheWalk.Init(harmony);
 			TickTrace.Init(harmony, content.RootDir);
 			GravcoreSubquestTick.Init(harmony);
 			GravshipStaleBoardOrLeave.Init(harmony);
@@ -4378,6 +4379,9 @@ namespace Harmony3StrictCompat
 			["RimWorld.WorkGiver_Merge:JobOnThing"] = 0xD4A1FFB8CB803F0F,
 			["Verse.GenTypes:IsSealedWithCache"] = 0x809310C4C09A3747,                           // game 1.7.5014, 2026-11-20 (tick hot paths)
 			["Verse.ReachabilityCache:ClearForHostile"] = 0x5BED8EFCC91F582A,
+			["Verse.ReachabilityCache:AddCachedResult"] = 0x52C17A50E704CDE7,                     // game 1.7, 2026-11-24 (door walk skipped when no cached pawn is hostile)
+			["Verse.ReachabilityCache:Clear"] = 0x34E418474887367D,
+			["Verse.ReachabilityCache:ClearFor"] = 0x6C9DA9A3AAD02814,
 			["Verse.TickManager:TickManagerUpdate"] = 0xBD63B2C8DA3F0F13,
 			["RimWorld.PregnancyUtility:IsUsableBedFor"] = 0xB20AF11F5CB7A925,                         // game 1.7.5014, 2026-11-20 (no birth in an Altered Carbon sleeve casket)
 			["RimWorld.CompNeuralSupercharger:CanAutoUse"] = 0x8735971C2DE0F655,                       // game 1.7.5014, 2026-11-20 (MSS hologram: no supercharger, no body-need thoughts)
@@ -6149,6 +6153,123 @@ namespace Harmony3StrictCompat
 				Log.Message($"[Harmony3StrictCompat] Door hostility memo: {lookups} lookups, {checks} real checks");
 			}
 			return result;
+		}
+	}
+
+	// ---- Vanilla: every door that opens or closes walks the whole reachability cache ---------------------------
+	// ReachabilityCache.ClearForHostile visits every cached entry and drops those whose pawn is hostile to the
+	// door. DPA counts 2026-11-24 (calm colony, 262 pawns): 383 door events in 1,200 ticks, about 51,500 entries
+	// walked each, 0.15 ms per tick (3.6% of the tick) with the per-entry hostility memo above already in place.
+	// The entries belong to a few hundred pawns at most. A count of entries per pawn is kept beside each cache
+	// (AddCachedResult, Clear, ClearFor); a door event asks hostility once per pawn that has entries. None
+	// hostile: the walk would remove nothing and is skipped. Some hostile (raid, hostile prisoners): the game's
+	// own walk runs as before.
+	// Cross-check: the first 300 skips and every 256th after still run the walk and compare the entry count; a
+	// walk that removes more than the counts say turns the shortcut off for the session, one that removes fewer
+	// (another mod took entries out directly) falls back to the full walk until the cache's next Clear.
+	static class DoorReachCacheWalk
+	{
+		sealed class Index
+		{
+			public readonly Dictionary<Pawn, int> entries = new();
+			public bool complete; // false: the cache holds entries that were never counted
+		}
+
+		static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ReachabilityCache, Index> indexes = new();
+		static readonly List<Pawn> hostileNow = new();
+		static bool enabled = true, reported;
+		static int events, skipped, checkedSkips, recounts;
+		static long entriesNotWalked, pawnsAsked;
+
+		internal static void Init(Harmony harmony)
+		{
+			var clearHostile = AccessTools.DeclaredMethod(typeof(ReachabilityCache), nameof(ReachabilityCache.ClearForHostile));
+			if (Harmony3StrictCompatMod.Target("Verse.ReachabilityCache:AddCachedResult") is not { } add
+				|| Harmony3StrictCompatMod.Target("Verse.ReachabilityCache:Clear") is not { } clear
+				|| Harmony3StrictCompatMod.Target("Verse.ReachabilityCache:ClearFor") is not { } clearFor || clearHostile == null) return;
+			var me = typeof(DoorReachCacheWalk);
+			harmony.Patch(add, prefix: new HarmonyMethod(me, nameof(BeforeAdd)), postfix: new HarmonyMethod(me, nameof(AfterAdd)));
+			harmony.Patch(clear, postfix: new HarmonyMethod(me, nameof(AfterClear)));
+			harmony.Patch(clearFor, postfix: new HarmonyMethod(me, nameof(AfterClearFor)));
+			harmony.Patch(clearHostile, prefix: new HarmonyMethod(me, nameof(BeforeDoorWalk)), postfix: new HarmonyMethod(me, nameof(AfterDoorWalk)));
+		}
+
+		static void BeforeAdd(ReachabilityCache __instance, out int __state) => __state = __instance.Count;
+
+		// The original adds only a key it does not hold yet, so the count tells whether an entry was added.
+		static void AfterAdd(ReachabilityCache __instance, TraverseParms traverseParams, int __state)
+		{
+			if (!enabled || __instance.Count <= __state) return;
+			if (!indexes.TryGetValue(__instance, out var index))
+				indexes.Add(__instance, index = new Index { complete = __state == 0 });
+			var pawn = traverseParams.pawn;
+			if (pawn == null) return;
+			index.entries.TryGetValue(pawn, out int n);
+			index.entries[pawn] = n + 1;
+		}
+
+		static void AfterClear(ReachabilityCache __instance)
+		{
+			if (!indexes.TryGetValue(__instance, out var index)) return;
+			index.entries.Clear();
+			index.complete = true;
+		}
+
+		static void AfterClearFor(ReachabilityCache __instance, Pawn p)
+		{
+			if (p != null && indexes.TryGetValue(__instance, out var index)) index.entries.Remove(p);
+		}
+
+		// __state: the entry count the walk must leave behind, or -1 when there is nothing to compare.
+		static bool BeforeDoorWalk(ReachabilityCache __instance, Thing hostileTo, out int __state)
+		{
+			__state = -1;
+			hostileNow.Clear();
+			if (!enabled || !indexes.TryGetValue(__instance, out var index) || !index.complete) return true;
+			events++;
+			int toRemove = 0;
+			foreach (var kv in index.entries)
+				if (TickHotPaths.Hostile(kv.Key, hostileTo))
+				{
+					hostileNow.Add(kv.Key);
+					toRemove += kv.Value;
+				}
+			pawnsAsked += index.entries.Count;
+			if (hostileNow.Count == 0)
+			{
+				skipped++;
+				if (checkedSkips >= 300 && (skipped & 255) != 0)
+				{
+					entriesNotWalked += __instance.Count;
+					if (!reported && events >= 300)
+					{
+						reported = true;
+						Log.Message($"[Harmony3StrictCompat] Door reach-cache walk: {skipped} of {events} door events needed no walk (no cached pawn hostile to the door); {pawnsAsked} pawns asked, {entriesNotWalked} entries not walked so far, {checkedSkips} skips cross-checked against the full walk, {recounts} recounts");
+					}
+					return false;
+				}
+				checkedSkips++;
+			}
+			__state = __instance.Count - toRemove;
+			return true;
+		}
+
+		static void AfterDoorWalk(ReachabilityCache __instance, int __state)
+		{
+			if (__state < 0 || !indexes.TryGetValue(__instance, out var index)) return;
+			foreach (var pawn in hostileNow) index.entries.Remove(pawn);
+			hostileNow.Clear();
+			int left = __instance.Count;
+			if (left == __state) return;
+			if (left < __state)
+			{
+				enabled = false;
+				Log.Error($"[Harmony3StrictCompat] Door reach-cache walk: the full walk removed {__state - left} entries more than the per-pawn counts hold, shortcut turned off for this session");
+				return;
+			}
+			index.complete = false;
+			if (recounts++ == 0)
+				Log.Warning($"[Harmony3StrictCompat] Door reach-cache walk: the per-pawn counts were {left - __state} entries too high (something removed entries directly); full walk until the cache is cleared next");
 		}
 	}
 

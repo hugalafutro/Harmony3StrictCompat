@@ -182,9 +182,8 @@ namespace Harmony3StrictCompat
 					finalizer: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpGuardStepEnd)));
 				harmony.Patch(AccessTools.Method(typeof(Lord), nameof(Lord.AddPawn)), postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RpGuardDressForWeather)));
 			}
-			guiWrapRn = AccessTools.TypeByName("RimworldReadableNumbers.RnGuiBackend");
 			guiWrapBsb = AccessTools.TypeByName("BetterScrollBar.ScrollBarBackend");
-			if ((guiWrapRn != null || guiWrapBsb != null) && AccessTools.TypeByName("RimWorldWaylith.Imgui.ImGuiHost") is { } imguiHost
+			if (guiWrapBsb != null && AccessTools.TypeByName("RimWorldWaylith.Imgui.ImGuiHost") is { } imguiHost
 				&& AccessTools.Inner(imguiHost, "Activation") is { } activation && AccessTools.DeclaredConstructor(activation, [imguiHost]) is { } activationCtor)
 			{
 				Fingerprint("RimWorldWaylith.Imgui.ImGuiHost+Activation:.ctor", activationCtor);
@@ -259,13 +258,6 @@ namespace Harmony3StrictCompat
 				harmony.Patch(gojiParrot, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GojiParrotNeedsTracker)));
 			harmony.Patch(AccessTools.Method(typeof(TraderCaravanUtility), nameof(TraderCaravanUtility.GetTraderCaravanRole)),
 				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(TraderRoleByTraderKind)));
-			// Hospitality caches CompGuest per pawn (CompUtility.guestComps) and only drops entries on Pawn.DeSpawn.
-			// 1.7 made Pawn.Equals/GetHashCode compare thingIDNumber (+ def), so after loading another save in the same
-			// session the new pawn objects hit the old game's entries. Clear it whenever a game is thrown away.
-			hospGuestComps = AccessTools.Field(AccessTools.TypeByName("Hospitality.Utilities.CompUtility"), "guestComps");
-			if (hospGuestComps != null)
-				harmony.Patch(AccessTools.Method(typeof(MemoryUtility), nameof(MemoryUtility.ClearAllMapsAndWorld)),
-					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ClearHospitalityGuestComps)));
 			var hospRegear = Target("Hospitality.Utilities.SpawnGroupUtility:GenerateNewGearFor");
 			if (hospRegear != null)
 				harmony.Patch(hospRegear, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospKeepWarcasketGear)));
@@ -584,15 +576,16 @@ namespace Harmony3StrictCompat
 			qcColors = qcSettings == null ? null : AccessTools.Field(qcSettings.FieldType, "Colors");
 			if (qcColors != null)
 			{
-				var uirqLabel = Target("UIRethemed.Quests.Theme:LabelTruncated");
-				var uirqRegion = Target("UIRethemed.Quests.HoverCard:Region");
-				var uirqContent = Target("UIRethemed.Quests.HoverCard:ContentRegion");
-				var uirqRegister = Target("UIRethemed.Quests.HoverCard:Register");
-				if (uirqLabel != null && uirqRegion != null && uirqContent != null && uirqRegister != null)
+				// UIR Quests draws tile labels and tips through UI Rethemed - Core since its 2026-11-22 update.
+				var uirqLabel = Target("UIRethemed.Core.Theme:LabelTruncated");
+				var uirqRegion = Target("UIRethemed.Core.HoverCard:Region", args: [typeof(Rect), typeof(string), typeof(string), typeof(string), typeof(Color?)]);
+				var uirqRegister = Target("UIRethemed.Core.HoverCard:Register", args: [typeof(Rect), typeof(string), typeof(string),
+					AccessTools.TypeByName("UIRethemed.Core.ICardContent"), typeof(string), typeof(Color?), typeof(string), typeof(int)]);
+				if (uirqLabel != null && uirqRegion != null && uirqRegister != null)
 				{
 					harmony.Patch(uirqLabel, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirqLabelQuality)));
-					harmony.Patch(uirqRegion, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirqTipTitle)));
-					harmony.Patch(uirqContent, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirqTipTitle)));
+					harmony.Patch(uirqRegion, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirqTipTitle)),
+						postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirqTipDone)));
 					harmony.Patch(uirqRegister, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirqTipRegister)));
 				}
 			}
@@ -904,9 +897,6 @@ namespace Harmony3StrictCompat
 				if (uirccEffects != null && uirccEffectDef != null && uirccEffectLabel != null)
 					harmony.Patch(uirccTake, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirccNameInspiration)));
 			}
-			Target("UIRethemed.Animals.Motion:Key"); // fingerprint only: the key the patched Hover hands its rect to
-			if (Target("UIRethemed.Animals.Motion:Hover") is { } uiraHover)
-				harmony.Patch(uiraHover, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UiraHoverKeyOnScreen)));
 			if (Target("UIRethemed.Architect.ArchitectData:ShownApart") is { } uirShownApart)
 			{
 				var entryType = AccessTools.TypeByName("UIRethemed.Architect.Entry");
@@ -969,16 +959,6 @@ namespace Harmony3StrictCompat
 			if (__result && (bool)uirEntryIsOrder.GetValue(entry)
 				&& (uirEntryCategory.GetValue(entry) as DesignationCategoryDef)?.defName == "Orders")
 				__result = false;
-		}
-
-		// ---- UI Rethemed - Animals: hover highlight mirrored into other groups ----
-		// Motion.Hover keeps each hover fade under a key hashed from the rect it is given. Grouped animal rows are drawn
-		// inside Widgets.BeginGroup(group body), so the Nth row of every unfolded group has the same local rect and
-		// shares one fade: hovering a row lit the same row (and its cells) in every group below. Hover only uses its rect
-		// for that key, so a prefix hands it the screen rect (patching the small Key itself could be defeated by inlining); a scroll moves the key, so a row under a scrolling mouse fades in again (0.08 s).
-		static void UiraHoverKeyOnScreen(ref Rect rect)
-		{
-			if (Event.current != null) rect = GUIUtility.GUIToScreenRect(rect);
 		}
 
 		// ---- Altered Carbon + Too Many Mods: Cuirassier belt reload NRE ----
@@ -2827,8 +2807,10 @@ namespace Harmony3StrictCompat
 		// ---- UI Rethemed - Quests x Quality Colors: reward tiles and their tooltip titles ----------------
 		// Reward labels reach the tiles without Quality Colors' tag, and the hover card strips tags from its title. A
 		// postfix on the tile builder finds each tile's item through its click closure and wraps the label in the
-		// item's Quality Colors colour; a label carrying such a colour is then drawn whole in it, and the card title
-		// gets the colour back after the strip. Other coloured labels are left alone.
+		// item's Quality Colors colour; a label carrying such a colour is then drawn whole in it (UIR Core's
+		// Theme.LabelTruncated, so truncation never cuts a tag), and the card title gets the colour back after Core's
+		// HoverCard.Region strips it. Other coloured labels are left alone. Any UIR label or tip title carrying a
+		// Quality Colors tag gets the same treatment.
 		// The same postfix moves the market value from the pill beside the name (which took half the tile and cut the
 		// name short) to the second line under it.
 		static FieldInfo qcSettings, qcColors;
@@ -2838,7 +2820,7 @@ namespace Harmony3StrictCompat
 		static Type uirqTile;
 		static MethodInfo uirqTextDim;
 		// The stack count shares the value line; it is drawn in the theme's dim text colour so the value stands out.
-		static Color UirqDim() => (uirqTextDim ??= AccessTools.PropertyGetter(AccessTools.TypeByName("UIRethemed.Quests.Theme"), "TextDim"))
+		static Color UirqDim() => (uirqTextDim ??= AccessTools.PropertyGetter(AccessTools.TypeByName("UIRethemed.Core.Theme"), "TextDim"))
 			?.Invoke(null, null) is Color dim ? dim : new Color(0.7f, 0.7f, 0.7f);
 
 		static void UirqRewardTiles(IList tiles)
@@ -2900,12 +2882,12 @@ namespace Harmony3StrictCompat
 			text = ColoredText.StripTags(text);
 		}
 
-		// Region / ContentRegion strip the title and then call Register; the prefix order carries the colour across.
+		// Region strips the title and then calls Register; the colour is carried across and dropped when Region ends.
 		static void UirqTipTitle(string title) => qcPendingHex = QcQualityHex(title);
+		static void UirqTipDone() => qcPendingHex = null;
 		static void UirqTipRegister(ref string title)
 		{
 			if (qcPendingHex != null && !title.NullOrEmpty()) title = $"<color=#{qcPendingHex}>{title}</color>";
-			qcPendingHex = null;
 		}
 
 		// Hauler's Dream shields Smart Medicine stock only while the stack is not tagged as its own haul. The tag spreads
@@ -4143,23 +4125,6 @@ namespace Harmony3StrictCompat
 		static bool IsCasketPiece(Apparel a) => a?.GetType().Name == "Apparel_Warcasket";
 		static bool WearsCasket(Pawn p) => p?.apparel?.WornApparel.Any(IsCasketPiece) == true;
 
-		// ---- Hospitality: guests with a claimed bed sleep on the floor after a save is loaded --------------------
-		// Seen 2026-11-01, 11-04, 11-08 (Vache, Katie, Drikus, Apaturf, Courtni): every guest that was already a guest
-		// in the game loaded before. Hospitality's CompUtility.CompGuest(pawn) caches the comp in a Dictionary<Pawn,
-		// CompGuest> that nothing clears on load. In 1.7 Pawn implements IEquatable<Pawn> by thingIDNumber (+ defName)
-		// and Thing.GetHashCode is thingIDNumber, so the reloaded pawn gets the previous game's comp: its bed and owner
-		// are the discarded objects. HasBed is true on those (the old bed still reports Spawned), IsValidBedFor fails
-		// on the old bed, and JobGiver_Sleep falls through to a floor LayDown without ever looking for the real bed.
-		// The dictionary also keeps the whole previous game reachable through its pawn keys.
-		static FieldInfo hospGuestComps;
-
-		static void ClearHospitalityGuestComps()
-		{
-			if (hospGuestComps.GetValue(null) is not IDictionary cache || cache.Count == 0) return;
-			Log.Message($"[Harmony3StrictCompat] Hospitality: dropped {cache.Count} cached guest comp(s) of the previous game");
-			cache.Clear();
-		}
-
 		// ---- Giddy-Up 2: caravan mounts forget the caravan's destination ------------------------------------
 		// MountUtility.Dismount sets a non-player animal's duty focus to the cell it stands on. For a trade caravan
 		// still in LordToil_Travel that duty is TravelOrLeave to the chill spot, so the animal parks where its rider
@@ -4385,11 +4350,9 @@ namespace Harmony3StrictCompat
 			["HaulersDream.CraftBatchPlanner:CanPawnBatch"] = 0xDAC66B7918CEFF27,
 			["HaulersDream.StorageCommitments:IsDelivering"] = 0xB2A8CC7128220022,                           // Hauler's Dream 1.24.0 (1.6 build), 2026-08-10
 			["HaulersDream.Alert_CannotUnloadInventory:Evaluate"] = 0x976491A9A63822D1,                       // Hauler's Dream 1.6 build, 2026-11-18
-			["UIRethemed.Quests.Theme:LabelTruncated"] = 0x100BC02BEE333A35,                               // UI Rethemed - Quests 1.7, 2026-11-15 11:06
-			["UIRethemed.Quests.HoverCard:Region"] = 0xC63A1FE873265DBA,
-			["UIRethemed.Quests.RewardTiles:Of"] = 0xB224BEE3491FB587,
-			["UIRethemed.Quests.HoverCard:ContentRegion"] = 0x13E206A5930D6140,
-			["UIRethemed.Quests.HoverCard:Register"] = 0x9CD716D3C79F0120,
+			["UIRethemed.Quests.RewardTiles:Of"] = 0xB224BEE3491FB587,                                 // UI Rethemed - Quests 1.7, 2026-11-15 11:06
+			["UIRethemed.Core.Theme:LabelTruncated"] = 0x713FBFDA4E0F50E1,                             // UI Rethemed - Core 1.7, DLL of 2026-11-25 12:29 (quest reward quality colours)
+			["UIRethemed.Core.HoverCard:Register"] = 0x58CF7C4C60A66D8B,
 			["HaulersDream.InventorySurplus:KeepCountOf"] = 0x04CE467AFB2AB712,                                 // Hauler's Dream 1.6 build, 2026-11-11
 			["SmartMedicine.StockUpUtility:StockUpCount"] = 0x6CFF64A881BBB050,                                   // (Pawn, ThingDef) overload, Smart Medicine 1.7, 2026-11-11
 			["HaulersDream.StorageCommitments:get_InsideSpaceScan"] = 0x212C16560ED8173E,                     // Hauler's Dream 1.6 build, 2026-11-06
@@ -4552,8 +4515,6 @@ namespace Harmony3StrictCompat
 			["UIRethemed.InfoCard.InfoCardWindow:TitleTools"] = 0x5F5F9D5CAFCF963F,                                // UI Rethemed - Info Card 1.7, DLL of 2026-11-22 16:52
 			["UIRethemed.InfoCard.InfoCardWindow:Themed"] = 0xD26943316A2109F1,
 			["UIRethemed.ColonistCard.StatusBar:Take"] = 0x57D442485564A584,                            // UI Rethemed - Colonist Card 1.7, DLL of 2026-11-19 17:22
-			["UIRethemed.Animals.Motion:Key"] = 0xD8B1E64161CEBA55,                                     // UI Rethemed - Animals 1.7, DLL of 2026-11-09
-			["UIRethemed.Animals.Motion:Hover"] = 0xCF658FE8AAEAECFD,
 			["UIRethemed.Architect.ArchitectData:ShownApart"] = 0x5ACDBDDD5FF8FB5A,                  // UI Rethemed - Architect 1.7, DLL of 2026-11-20 12:28
 			["UIRethemed.Architect.DetailsPanel:Header"] = 0xE960A861D26E369E,                         // UI Rethemed - Architect 1.7, DLL of 2026-11-20 12:28 (names on two lines)
 			["UIRethemed.Architect.DesignatorGrid:get_CardHeight"] = 0xB8237D3366CA6C97,
@@ -4639,7 +4600,14 @@ namespace Harmony3StrictCompat
 		{
 			int colon = name.IndexOf(':');
 			var type = AccessTools.TypeByName(name.Substring(0, colon));
-			if (type == null) return null;
+			if (type == null)
+			{
+				// No type: its mod is not loaded (normal), or the mod is loaded and moved or removed the type. Only the
+				// second is an error: a fix whose target type vanished never attaches, and nothing else would say so.
+				if (!optional && TypeNamespace(name.Substring(0, colon)) is { } ns && LoadedNamespaces().Contains(ns))
+					Log.Error($"[Harmony3StrictCompat] {name}: type no longer exists although its mod is loaded: its mod updated, remove or redo this fix");
+				return null;
+			}
 			var method = AccessTools.DeclaredMethod(type, name.Substring(colon + 1), args);
 			if (method == null)
 			{
@@ -4648,6 +4616,32 @@ namespace Harmony3StrictCompat
 			}
 			Fingerprint(name, method);
 			return method;
+		}
+
+		static HashSet<string> loadedNamespaces;
+
+		static string TypeNamespace(string typeName)
+		{
+			var outer = typeName.Split('+')[0];
+			int dot = outer.LastIndexOf('.');
+			return dot > 0 ? outer.Substring(0, dot) : null;
+		}
+
+		// Built once, on the first missing type (every inactive mod's fix gets there).
+		static HashSet<string> LoadedNamespaces()
+		{
+			if (loadedNamespaces != null) return loadedNamespaces;
+			loadedNamespaces = new HashSet<string>();
+			foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+			{
+				Type[] types;
+				try { types = asm.GetTypes(); }
+				catch (ReflectionTypeLoadException e) { types = e.Types; }
+				catch { continue; }
+				foreach (var t in types)
+					if (t?.Namespace != null) loadedNamespaces.Add(t.Namespace);
+			}
+			return loadedNamespaces;
 		}
 
 		internal static bool tmmGuildSkipped;
@@ -4844,28 +4838,24 @@ namespace Harmony3StrictCompat
 			pawn.health.RemoveHediff(__instance.parent);
 		}
 
-		// ---- Readable Numbers + Better Scroll Bars: GUI backend wrappers bypassed by the ImGui host ---------------
-		// Both mods wrap GuiBackend.Current (Readable Numbers once in its Mod constructor, Better Scroll Bars from an
-		// OnGUI on the Camera object). The 1.7 ImGui host swaps its own backend in for every GUI pass
-		// (ImGuiHost.Activation: Current = host.guiBackend) and restores the previous one afterwards, so neither wrapper
-		// ever saw the frame: stock grey scroll bars, unformatted numbers. After the host's swap the same wrappers go
-		// around the host backend, in the mods' own order (game, Readable Numbers, Better Scroll Bars), built once per
-		// host backend.
-		static Type guiWrapRn, guiWrapBsb;
+		// ---- Better Scroll Bars: GUI backend wrapper bypassed by the ImGui host ---------------
+		// Better Scroll Bars wraps GuiBackend.Current from an OnGUI on the Camera object. The 1.7 ImGui host swaps its
+		// own backend in for every GUI pass (ImGuiHost.Activation: Current = host.guiBackend) and restores the previous
+		// one afterwards, so the wrapper never saw the frame: stock grey scroll bars. After the host's swap the same
+		// wrapper goes around the host backend, built once per host backend. Readable Numbers had the same problem
+		// until its 2026-11-19 update, which prefixes ImGuiGuiBackend.DrawText/MeasureText itself.
+		static Type guiWrapBsb;
 		static UnityStubs.Gui.IGuiBackend guiWrapBase, guiWrapped;
 
 		static void GuiHostKeepModBackends()
 		{
 			var current = UnityStubs.Gui.GuiBackend.Current;
-			if (current == null || current == guiWrapped || guiWrapBsb?.IsInstanceOfType(current) == true || guiWrapRn?.IsInstanceOfType(current) == true) return;
+			if (current == null || current == guiWrapped || guiWrapBsb.IsInstanceOfType(current)) return;
 			if (current != guiWrapBase)
 			{
 				// ponytail: one cached chain; rebuilt whenever a different host backend is activated
-				var wrapped = current;
-				if (guiWrapRn != null) wrapped = (UnityStubs.Gui.IGuiBackend)Activator.CreateInstance(guiWrapRn, wrapped);
-				if (guiWrapBsb != null) wrapped = (UnityStubs.Gui.IGuiBackend)Activator.CreateInstance(guiWrapBsb, wrapped);
 				guiWrapBase = current;
-				guiWrapped = wrapped;
+				guiWrapped = (UnityStubs.Gui.IGuiBackend)Activator.CreateInstance(guiWrapBsb, current);
 			}
 			UnityStubs.Gui.GuiBackend.Current = guiWrapped;
 		}

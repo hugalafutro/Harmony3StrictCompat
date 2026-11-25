@@ -61,7 +61,6 @@
 - Vanilla Quests Expanded - Ancients (personal tweak): the pneumatic capsule arrival message lists what arrived.
 - Vanilla Social Interactions Expanded: "cured my friend" thought label resolves for implied relatives (no more template errors or Social tab fallback).
 - TD Enhancement Pack (personal tweak): the Deteriorating alert leaves out corpses.
-- UI Rethemed - Animals: hovering a row in a group no longer highlights the same row in the other groups.
 - UI Rethemed - Info Card + Alpha Prefabs: a prefab box's info card shows its floor-plan picture in the details, under the description.
 - UI Rethemed - Inspector Tabs: long opinion rows in hover cards wrap instead of overlapping.
 - Flourish - Everyday Animations: the telescope pose mirrors with the telescope's art, so a West-rotated telescope is used from the eyepiece side too.
@@ -110,7 +109,6 @@
 - Hospitality: Casino, Vending Machines: the "withdraw earnings" work givers list vending machines without filtering every colony building.
 - Hospitality: Casino: only casino visitors and trade caravans at their chill spot play slot machines (bestowers, shuttle guards and leaving caravans keep their duty).
 - Hospitality: visitors in warcaskets skip the arrival re-gear (casket pieces re-locked) and keep their casket helmet on.
-- Hospitality: guests no longer sleep on the floor after a save is loaded in the same session (stale per-pawn guest comp cache cleared on load).
 - Hospitality: guests helping out no longer null-ref in the hopper-filling work giver on food outside the guest area.
 - Giddy-Up 2: dismounted caravan animals keep their travel/follow target, so the caravan arrives and leaves.
 - Giddy-Up 2: animals rescuing a downed pawn are not picked as mounts.

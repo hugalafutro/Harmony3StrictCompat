@@ -19,14 +19,32 @@ CACHE = os.path.join(HERE, ".fpcheck_cache.json")
 
 
 
+ACTIVE_IDS = None
+
+
+def active_ids():
+    global ACTIVE_IDS
+    if ACTIVE_IDS is None:
+        cfg = os.path.expandvars(r"%USERPROFILE%\AppData\LocalLow\Ludeon Studios\RimWorld by Ludeon Studios\Config\ModsConfig.xml")
+        txt = open(cfg, encoding="utf-8").read().split("<activeMods>")[1].split("</activeMods>")[0]
+        ACTIVE_IDS = {x.lower() for x in re.findall(r"<li>([^<]+)</li>", txt)}
+    return ACTIVE_IDS
+
+
 def dll_dirs(mod):
-    """DLLs the game loads for 1.7. Copy of apicheck.dll_dirs: importing apicheck parses the game DLL (10 s),
-    and every Pool worker would repeat that."""
+    """DLLs the game loads for 1.7. Like the game, a LoadFolders.xml without a v1.7 block uses its newest older
+    block, and IfModActive folders count only when one of their mods is active."""
     lf = os.path.join(mod, "LoadFolders.xml")
     dirs = []
     if os.path.exists(lf):
-        m = re.search(r"<v1\.7>(.*?)</v1\.7>", open(lf, encoding="utf-8-sig", errors="replace").read(), re.S | re.I)
-        if m: dirs = [os.path.join(mod, d.strip().strip("/\\")) if d.strip() not in ("/", "") else mod for d in re.findall(r"<li[^>]*>([^<]*)</li>", m[1])]
+        blocks = {float(v): body for v, body in re.findall(r"<v(\d+\.\d+)>(.*?)</v\1>", open(lf, encoding="utf-8-sig", errors="replace").read(), re.S | re.I)
+                  if float(v) <= 1.7}
+        if blocks:
+            for attrs, d in re.findall(r"<li([^>]*)>([^<]*)</li>", blocks[max(blocks)]):
+                cond = re.search(r'IfModActive="([^"]*)"', attrs)
+                if cond and not {x.strip().lower() for x in cond[1].split(",")} & active_ids():
+                    continue
+                dirs.append(os.path.join(mod, d.strip().strip("/\\")) if d.strip() not in ("/", "") else mod)
     if not dirs:
         vers = sorted((d for d in os.listdir(mod) if re.fullmatch(r"\d+\.\d+", d) and float(d) <= 1.7), key=float)
         dirs = [mod, os.path.join(mod, "Common")] + ([os.path.join(mod, vers[-1])] if vers else [])
@@ -53,12 +71,18 @@ def il(pe, rva):
     return d[off + 12:off + 12 + struct.unpack_from("<I", d, off + 4)[0]]
 
 
+def namespace(type_name):
+    outer = type_name.split("+", 1)[0]
+    return outer.rsplit(".", 1)[0] if "." in outer else None
+
+
 def scan(dll, wanted_types, iter_outer):
     """{full type name: {method name: [hashes]}} for the wanted types this DLL defines, plus the
-    compiler-generated classes ("Outer+<Method>d__N") nested in iter_outer types."""
+    compiler-generated classes ("Outer+<Method>d__N") nested in iter_outer types. The key "" lists the
+    wanted types' namespaces this DLL defines, so a type that vanished from a still-active mod shows."""
     data = open(dll, "rb").read()
-    # cheap pre-filter: namespace and outer type name must both appear in the #Strings heap
-    if not any(all(part.encode() in data for part in t.split("+", 1)[0].rsplit(".", 1)) for t in wanted_types):
+    # cheap pre-filter: a wanted namespace must appear in the #Strings heap
+    if not any(ns.encode() in data for ns in {namespace(t) for t in wanted_types} if ns):
         return {}
     pe = dnfile.dnPE(data=data)
     tables = pe.net.mdtables
@@ -71,14 +95,18 @@ def scan(dll, wanted_types, iter_outer):
             return f"{full(parent[i])}+{t.TypeName}"
         return f"{t.TypeNamespace}.{t.TypeName}" if str(t.TypeNamespace) else str(t.TypeName)
 
-    out = {}
+    out, wanted_ns, seen_ns = {}, {namespace(t) for t in wanted_types}, set()
     for i, t in enumerate(types, 1):
         name = full(i)
+        if i not in parent and str(t.TypeNamespace) in wanted_ns:
+            seen_ns.add(str(t.TypeNamespace))
         if name in wanted_types or name.split("+<", 1)[0] in iter_outer:
             methods = out.setdefault(name, {})
             for m in t.MethodList:
                 if m.row.Rva:
                     methods.setdefault(str(m.row.Name), []).append(fnv(il(pe, m.row.Rva)))
+    if seen_ns:
+        out[""] = {"": sorted(seen_ns)}
     return out
 
 
@@ -117,8 +145,8 @@ def main():
         cache = json.load(open(CACHE, encoding="utf-8"))
     except (OSError, ValueError):
         cache = {}
-    if cache.get("types") != sorted(wanted_types):  # dictionary gained or lost a type: rescan everything
-        cache = {"types": sorted(wanted_types), "dlls": {}}
+    if cache.get("types") != sorted(wanted_types) or cache.get("v") != 2:  # new type list or cache format: rescan all
+        cache = {"v": 2, "types": sorted(wanted_types), "dlls": {}}
     stale = [d for d in dlls if cache["dlls"].get(d, {}).get("stamp") != stamp[d]]
     if stale:
         with Pool() as pool:
@@ -128,9 +156,12 @@ def main():
                 cache["dlls"][d] = {"stamp": stamp[d], "types": scanned}
     cache["dlls"] = {d: cache["dlls"][d] for d in dlls if d in cache["dlls"]}  # drop inactive mods
     json.dump(cache, open(CACHE, "w", encoding="utf-8"))
-    found, owner = {}, {}
+    found, owner, ns_owner = {}, {}, {}
     for d, entry in cache["dlls"].items():
+        for ns in entry["types"].get("", {}).get("", []):
+            ns_owner[ns] = mod_of[d]
         for t, ms in entry["types"].items():
+            if t == "": continue
             owner[t] = mod_of[d]
             for m, hs in ms.items():
                 found.setdefault(t, {}).setdefault(m, []).extend(hs)
@@ -139,7 +170,11 @@ def main():
     for key, expected in want.items():
         hashes = lookup(found, key)
         lines = by_mod.setdefault(owner.get(key.split(":", 1)[0], "(mod not active)"), [])
-        if hashes is None:
+        if hashes is None and namespace(key.split(":", 1)[0]) in ns_owner:
+            # mod active (its namespace loads) but the type is gone: the fix silently never attaches
+            bad += 1
+            by_mod.setdefault(ns_owner[namespace(key.split(":", 1)[0])], []).append(f"GONE     {key}: type no longer exists")
+        elif hashes is None:
             if verbose: lines.append(f"absent   {key}")
         elif not hashes:
             bad += 1

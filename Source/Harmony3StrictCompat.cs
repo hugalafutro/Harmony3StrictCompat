@@ -307,6 +307,8 @@ namespace Harmony3StrictCompat
 			if (AccessTools.TypeByName("VFEPirates.Apparel_Warcasket") != null
 				&& Target("QuickFast.Source.H_ApparelPatches:ShouldHideApparel") is { } datHide)
 				harmony.Patch(datHide, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DatShowCasketPieces)));
+			if (Target("VEF.Apparels.CompShieldBubble:CompAllowVerbCast") is { } bubbleVerb)
+				harmony.Patch(bubbleVerb, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(BubbleAllowsBeatFire)));
 			var svPrefix = Target("SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix");
 			svStayTimer = AccessTools.TypeByName("Hospitality.Trigger_TicksPassedAndOkayToLeave");
 			if (svPrefix != null && svStayTimer != null)
@@ -4154,6 +4156,18 @@ namespace Harmony3StrictCompat
 			return false;
 		}
 
+		// ---- VEF shield bubble: "no ranged attacks" also stops beating out fire --------------------------------------
+		// CompShieldBubble.CompAllowVerbCast with dontAllowRangedAttack refuses every verb whose IsMeleeAttack is false,
+		// i.e. anything not derived from Verb_MeleeAttack. The native Verb_BeatFire derives from Verb, so a VFE Pirates
+		// Brute warcasket wearer (the only def with that flag) takes firefighting jobs and stands next to the fire forever:
+		// Tormin, 2026-11-25, 4,800 ticks in the beat toil, verb never fired. Beating fire is not an attack: allow it.
+		static bool BubbleAllowsBeatFire(Verb verb, ref bool __result)
+		{
+			if (verb is not Verb_BeatFire) return true;
+			__result = true;
+			return false;
+		}
+
 		static bool IsCasketPiece(Apparel a) => a?.GetType().Name == "Apparel_Warcasket";
 		static bool WearsCasket(Pawn p) => p?.apparel?.WornApparel.Any(IsCasketPiece) == true;
 
@@ -4348,6 +4362,7 @@ namespace Harmony3StrictCompat
 			["Hospitality.Utilities.SpawnGroupUtility:GenerateNewGearFor"] = 0xC7A47125AA159971,                  // Hospitality 1.7, DLL of 2026-11-20 21:09 (rebuild, body unchanged)
 			["Hospitality.Utilities.ItemUtility:PocketHeadgear"] = 0xEC7B03B8570A7845,                       // Hospitality 1.7, DLL of 2026-11-20 21:09 (rebuild, body unchanged)
 			["QuickFast.Source.H_ApparelPatches:ShouldHideApparel"] = 0x1CBEA167E2B1AAE0,               // Dubs Apparel Tweaks 1.7, DLL of 2026-10-14 11:20
+			["VEF.Apparels.CompShieldBubble:CompAllowVerbCast"] = 0x7A78279D0410FE08,                    // VEF 1.7, 2026-11-19
 			["HospitalityCasino.JobGiver_PlaySlotMachines:TryGiveJob"] = 0x886CDC4608E3C02D,                 // Casino 1.7, 2026-11-05
 			["HospitalityCasino.VendingMachineJobHelper:InsertCoin"] = 0xDD3ACDA377763174,                   // Casino 1.7, 2026-11-06
 			["HospitalityCasino.CompVendingMachine:CompInspectStringExtra"] = 0x4C16897C23044EC3,            // Casino 1.7, 2026-11-06

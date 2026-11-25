@@ -543,6 +543,8 @@ namespace Harmony3StrictCompat
 				harmony.Patch(uirThingCard, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCardQualityOnlyColored)));
 			else if (uirThingCard != null)
 				Log.Error("[Harmony3StrictCompat] UIR Inspector Tabs HoverCard.Card subtitle fields changed: its mod updated, redo the quality-only colour tweak");
+			if (Target("UIRethemed.ColonistCard.Block_Terrain:Read") is { } uirTerrainRead)
+				harmony.Patch(uirTerrainRead, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirTerrainSkipNoHills)));
 			if (Target("RimWorld.RestUtility:FindBedFor", args: [typeof(Pawn), typeof(Pawn), typeof(bool), typeof(bool), typeof(GuestStatus?)]) is { } findBed
 				&& Target("RimWorld.RestUtility+<>c__DisplayClass14_1:<FindBedFor>b__0") is { } medBedValidator)
 			{
@@ -3010,6 +3012,30 @@ namespace Harmony3StrictCompat
 			return codes;
 		}
 
+		// UIR Colonist Card's terrain row (Block_Terrain.Read, also used by the world tile inspector) skips only null or
+		// water tiles, then asks Hilliness.GetLabelCap(). Orbit and space tiles have Hilliness.Undefined, which logs
+		// "Hilliness label unknown: Undefined", and UIR's failsafe turns the whole card off for the session. Vanilla
+		// skips the terrain line for Undefined; treat such a tile like a water tile so the row is hidden.
+		static bool UirTerrainHidden(Tile tile) => tile.WaterCovered || tile.hilliness == Hilliness.Undefined;
+
+		static IEnumerable<CodeInstruction> UirTerrainSkipNoHills(IEnumerable<CodeInstruction> instructions)
+		{
+			var water = AccessTools.PropertyGetter(typeof(Tile), nameof(Tile.WaterCovered));
+			int replaced = 0;
+			foreach (var code in instructions)
+			{
+				if (code.Calls(water))
+				{
+					code.opcode = OpCodes.Call;
+					code.operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(UirTerrainHidden));
+					replaced++;
+				}
+				yield return code;
+			}
+			if (replaced != 1)
+				Log.Error($"[Harmony3StrictCompat] UIR Colonist Card terrain row: expected one Tile.WaterCovered read, replaced {replaced}");
+		}
+
 		// RestUtility.FindBedFor: the medical-bed search starts at sleeper.Position and its validator reads sleeper.Map,
 		// while the normal-bed search uses PositionHeld / MapHeld. A sick baby already carried (BringBabyToSafety right
 		// after breastfeeding) is unspawned: "Did FindClosestThing with start out of bounds" once per bed def, and the
@@ -4548,6 +4574,7 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Notifications.FoodReadout:Draw"] = 0xACA4A6451E388627,
 			["UIRethemed.ColonistCard.InfoList:Defer"] = 0xDF989BEF57F21E79,                            // UIR Colonist Card 1.7, 2026-11-19 17:22
 			["UIRethemed.ColonistCard.InfoList:DrawRow"] = 0x2CC9C2A346FE3B32,                          // UIR Colonist Card 1.7, 2026-11-19 17:22
+			["UIRethemed.ColonistCard.Block_Terrain:Read"] = 0x54DFF26AE2DF16EF,                       // UIR Colonist Card 1.7, 2026-11-19 17:22 (terrain row on orbit tiles)
 			["AutoCastSpecialistCommands.AutoCastToilInjector:Inject"] = 0x68EDEC90F35FF797,             // Auto-Cast Specialist Commands 1.7, 2026-10-12
 			["AutoCastSpecialistCommands.Patch_JobDriver_Mine_MakeNewToils:Postfix"] = 0x9FAC641C9EE82C39,
 			["AutoCastSpecialistCommands.Patch_Pawn_GetGizmos:GizmoOnGUIPrefix"] = 0xDA6444EC5E5D0564,

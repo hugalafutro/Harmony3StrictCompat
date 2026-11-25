@@ -543,6 +543,12 @@ namespace Harmony3StrictCompat
 				harmony.Patch(uirThingCard, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCardQualityOnlyColored)));
 			else if (uirThingCard != null)
 				Log.Error("[Harmony3StrictCompat] UIR Inspector Tabs HoverCard.Card subtitle fields changed: its mod updated, redo the quality-only colour tweak");
+			if (Target("RimWorld.RestUtility:FindBedFor", args: [typeof(Pawn), typeof(Pawn), typeof(bool), typeof(bool), typeof(GuestStatus?)]) is { } findBed
+				&& Target("RimWorld.RestUtility+<>c__DisplayClass14_1:<FindBedFor>b__0") is { } medBedValidator)
+			{
+				harmony.Patch(findBed, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(MedBedSearchHeld)));
+				harmony.Patch(medBedValidator, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(MedBedSearchHeld)));
+			}
 			if (Target("VanillaLootBeams.MapComponent_VLB:MapComponentUpdate") is { } vlbUpdate)
 				harmony.Patch(vlbUpdate, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(VlbCurrentMapOnly)));
 			var smStockUpFilter = Target("SmartMedicine.Dialog_StockUp:<DoWindowContents>b__10_0");
@@ -3004,6 +3010,31 @@ namespace Harmony3StrictCompat
 			return codes;
 		}
 
+		// RestUtility.FindBedFor: the medical-bed search starts at sleeper.Position and its validator reads sleeper.Map,
+		// while the normal-bed search uses PositionHeld / MapHeld. A sick baby already carried (BringBabyToSafety right
+		// after breastfeeding) is unspawned: "Did FindClosestThing with start out of bounds" once per bed def, and the
+		// baby gets a normal bed. Swap the one getter in each method for its Held version (FindBedFor: Position, the
+		// medical validator closure: Map); identical for a spawned sleeper.
+		static IEnumerable<CodeInstruction> MedBedSearchHeld(IEnumerable<CodeInstruction> instructions, MethodBase __originalMethod)
+		{
+			string prop = __originalMethod.Name == "FindBedFor" ? "Position" : "Map";
+			var from = AccessTools.PropertyGetter(typeof(Thing), prop);
+			var to = AccessTools.PropertyGetter(typeof(Thing), prop + "Held");
+			int replaced = 0;
+			foreach (var code in instructions)
+			{
+				if (code.Calls(from))
+				{
+					code.opcode = OpCodes.Callvirt;
+					code.operand = to;
+					replaced++;
+				}
+				yield return code;
+			}
+			if (replaced != 1)
+				Log.Error($"[Harmony3StrictCompat] Medical bed search for a carried pawn: expected one Thing.{prop} read in {__originalMethod.Name}, replaced {replaced}");
+		}
+
 		// Vanilla runs every map's MapComponentUpdate each frame, outside its "Find.CurrentMap == this" draw block.
 		// Vanilla Loot Beams draws from there with only a world-view check, so a beam on the home map showed at the
 		// same cell on the asteroid being viewed. Skip the update (rescan and draw) for maps not on screen.
@@ -4301,6 +4332,8 @@ namespace Harmony3StrictCompat
 			["EventImagePopup.ImageResolver:ResolveForIncident"] = 0xB0C8AE510BAB01F1,
 			["RimWorld.CompShuttle:CompTick"] = 0x807AD3141AD4D8A6,
 			["RimWorld.CompRechargeable:CompTick"] = 0x60A381C5B22A28EF,                                     // game 1.7.5014, 2026-11-24 (recharge bar inside a one-tile-tall machine)
+			["RimWorld.RestUtility:FindBedFor"] = 0x33B8EEAD5C3A2F78,                                     // game 1.7.5014, 2026-11-25 (medical bed search for a carried baby)
+			["RimWorld.RestUtility+<>c__DisplayClass14_1:<FindBedFor>b__0"] = 0xD9F9C15FBA69EEC0,
 			["RimWorld.GravshipUtility:PreLaunchConfirmation"] = 0x5BCE4E3819181DF8,                          // game 1.7.5014, 2026-11-24 (launch warning when VGE keeps the map)
 			["RimWorld.RitualOutcomeEffectWorker_GravshipLaunch:Apply"] = 0x0EF46C19BD6D545A,
 			["VanillaGravshipExpanded.WorldComponent_GravshipController_TakeoffEnded_Patch:Prefix"] = 0x26BB4AA240F19EA4,              // VGE 1.7, DLL of 2026-10-20 17:20 (keeps the map when a colonist stays)

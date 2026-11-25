@@ -4667,8 +4667,13 @@ namespace Harmony3StrictCompat
 		internal static MethodInfo doBillJobOnThing;
 		static bool SkipOriginal() => false;
 
+		// Each name is checked once: a later Target() of the same method may run after compat itself patched it,
+		// and the IL read back from a patched method differs (seen with UIR Core HoverCard.Region, 2026-11-25).
+		static readonly HashSet<string> fingerprinted = new();
+
 		static void Fingerprint(string name, MethodBase method)
 		{
+			if (!fingerprinted.Add(name)) return;
 			if (method == null)
 			{
 				Log.Error($"[Harmony3StrictCompat] {name} no longer exists: its mod updated, remove or redo this fix");

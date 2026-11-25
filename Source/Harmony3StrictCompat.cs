@@ -543,6 +543,8 @@ namespace Harmony3StrictCompat
 				harmony.Patch(uirThingCard, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCardQualityOnlyColored)));
 			else if (uirThingCard != null)
 				Log.Error("[Harmony3StrictCompat] UIR Inspector Tabs HoverCard.Card subtitle fields changed: its mod updated, redo the quality-only colour tweak");
+			if (Target("VanillaLootBeams.MapComponent_VLB:MapComponentUpdate") is { } vlbUpdate)
+				harmony.Patch(vlbUpdate, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(VlbCurrentMapOnly)));
 			var smStockUpFilter = Target("SmartMedicine.Dialog_StockUp:<DoWindowContents>b__10_0");
 			if (smStockUpFilter != null)
 				harmony.Patch(smStockUpFilter, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SmStockUpExtras)));
@@ -3002,6 +3004,11 @@ namespace Harmony3StrictCompat
 			return codes;
 		}
 
+		// Vanilla runs every map's MapComponentUpdate each frame, outside its "Find.CurrentMap == this" draw block.
+		// Vanilla Loot Beams draws from there with only a world-view check, so a beam on the home map showed at the
+		// same cell on the asteroid being viewed. Skip the update (rescan and draw) for maps not on screen.
+		static bool VlbCurrentMapOnly(MapComponent __instance) => __instance.map == Find.CurrentMap;
+
 		static void HcGroupEnter() => hcInGroup = true;
 		static void HcGroupExit() => hcInGroup = false;
 
@@ -4545,6 +4552,7 @@ namespace Harmony3StrictCompat
 			["Verse.Pawn:SpawnSetup"] = 0xEBD14AA4AA28AC29,                                           // game 1.7.5014, 2026-11-23 (bill count cache dropped when colonists arrive)
 			["VanillaGravshipExpanded2.WarcomputerHelper:ApplyForcedMissRadiusBuffs"] = 0x7C5E4AA83043349A, // Vanilla Gravship Expanded - Chapter 2 1.7, 2026-11-22
 			["QuietWonders.QWLife:FindAsleepRooms"] = 0x1C199B69873D2271,                                       // Quiet Wonders, 2026-11-24 (room checks for awake pawns)
+			["VanillaLootBeams.MapComponent_VLB:MapComponentUpdate"] = 0xB6057CCBACF5C359,                // Vanilla Loot Beams, DLL of 2026-06-21 (current map only)
 			["VanillaFurnitureExpandedFactory.StoreUtility_IsGoodStoreCell_Patch:Postfix"] = 0xCE7EFB50ACFC94E1, // VFE Factory 1.7, 2026-11-24 (no-insert hopper in the haul list)
 			["GUIPerformancePatch.GppFightTarget:Pre"] = 0x21092853452BA2F4,                         // WOWGAG's Performance Patch 1.7, DLL of 2026-11-25 04:54 (validator method lookup)
 			["GUIPerformancePatch.GppFightTarget:Post"] = 0x5FA8D8F3208F35DE,

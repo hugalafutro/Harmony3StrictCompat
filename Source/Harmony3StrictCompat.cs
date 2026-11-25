@@ -304,6 +304,9 @@ namespace Harmony3StrictCompat
 			var hospPocket = Target("Hospitality.Utilities.ItemUtility:PocketHeadgear");
 			if (hospPocket != null)
 				harmony.Patch(hospPocket, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HospKeepCasketHelmet)));
+			if (AccessTools.TypeByName("VFEPirates.Apparel_Warcasket") != null
+				&& Target("QuickFast.Source.H_ApparelPatches:ShouldHideApparel") is { } datHide)
+				harmony.Patch(datHide, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DatShowCasketPieces)));
 			var svPrefix = Target("SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix");
 			svStayTimer = AccessTools.TypeByName("Hospitality.Trigger_TicksPassedAndOkayToLeave");
 			if (svPrefix != null && svStayTimer != null)
@@ -4140,6 +4143,17 @@ namespace Harmony3StrictCompat
 			__result += "\n" + line;
 		}
 
+		// ---- Dubs Apparel Tweaks + VFE Pirates: hidden apparel layers hide the warcasket ---------------------------
+		// "Hide apparel" (when not drafted / indoors or not drafted) hides every worn piece on a ticked layer, and the
+		// casket armor and shoulders sit on the Shell (outer) layer and the helmet on Overhead, so an undrafted wearer is
+		// drawn without its casket. A warcasket is the pawn's body, not a coat: every Apparel_Warcasket piece stays drawn.
+		static bool DatShowCasketPieces(Apparel apparel, ref bool __result)
+		{
+			if (!IsCasketPiece(apparel)) return true;
+			__result = false;
+			return false;
+		}
+
 		static bool IsCasketPiece(Apparel a) => a?.GetType().Name == "Apparel_Warcasket";
 		static bool WearsCasket(Pawn p) => p?.apparel?.WornApparel.Any(IsCasketPiece) == true;
 
@@ -4333,6 +4347,7 @@ namespace Harmony3StrictCompat
 			["GojisMiscGenes.InteractionWorker_Interacted_Patch:Postfix"] = 0x0DC1938A4ABAED83,                       // Goji's Misc Genes 1.7, 2026-11-15
 			["Hospitality.Utilities.SpawnGroupUtility:GenerateNewGearFor"] = 0xC7A47125AA159971,                  // Hospitality 1.7, DLL of 2026-11-20 21:09 (rebuild, body unchanged)
 			["Hospitality.Utilities.ItemUtility:PocketHeadgear"] = 0xEC7B03B8570A7845,                       // Hospitality 1.7, DLL of 2026-11-20 21:09 (rebuild, body unchanged)
+			["QuickFast.Source.H_ApparelPatches:ShouldHideApparel"] = 0x1CBEA167E2B1AAE0,               // Dubs Apparel Tweaks 1.7, DLL of 2026-10-14 11:20
 			["HospitalityCasino.JobGiver_PlaySlotMachines:TryGiveJob"] = 0x886CDC4608E3C02D,                 // Casino 1.7, 2026-11-05
 			["HospitalityCasino.VendingMachineJobHelper:InsertCoin"] = 0xDD3ACDA377763174,                   // Casino 1.7, 2026-11-06
 			["HospitalityCasino.CompVendingMachine:CompInspectStringExtra"] = 0x4C16897C23044EC3,            // Casino 1.7, 2026-11-06
@@ -4552,8 +4567,8 @@ namespace Harmony3StrictCompat
 			["QuietWonders.QWLife:FindAsleepRooms"] = 0x1C199B69873D2271,                                       // Quiet Wonders, 2026-11-24 (room checks for awake pawns)
 			["VanillaLootBeams.MapComponent_VLB:MapComponentUpdate"] = 0xB6057CCBACF5C359,                // Vanilla Loot Beams, DLL of 2026-06-21 (current map only)
 			["VanillaFurnitureExpandedFactory.StoreUtility_IsGoodStoreCell_Patch:Postfix"] = 0xCE7EFB50ACFC94E1, // VFE Factory 1.7, 2026-11-24 (no-insert hopper in the haul list)
-			["GUIPerformancePatch.GppFightTarget:Pre"] = 0x21092853452BA2F4,                         // WOWGAG's Performance Patch 1.7, DLL of 2026-11-25 04:54 (validator method lookup)
-			["GUIPerformancePatch.GppFightTarget:Post"] = 0x5FA8D8F3208F35DE,
+			["GUIPerformancePatch.GppFightTarget:Pre"] = 0x43C2B4BFEA300970,                         // WOWGAG's Performance Patch 1.7, DLL of 2026-11-25 16:43 (still one validator.Method read each)
+			["GUIPerformancePatch.GppFightTarget:Post"] = 0x50A020A923092144,
 			["Verse.Reachability:CheckRegionBasedReachability"] = 0x0AE52A32FAF5BA8D,                // game 1.7.5014, 2026-11-22 (reach flood memo)
 			["Verse.Reachability:QueueNewOpenRegion"] = 0xAA67D4BF0BC72D97,
 			["Verse.Reachability:CanReach"] = 0x22585B275FCEF578,

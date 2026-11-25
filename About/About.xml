@@ -74,6 +74,7 @@
 - VFE Pirates + Shelf Stack Logistics: warcasket welding takes its ingredients from the logistics pickup point next to the foundry, like any bill, instead of walking to the depot.
 - Dubs Apparel Tweaks + VFE Pirates: hidden apparel layers no longer hide warcasket armor, shoulders or helmet.
 - VFE Pirates: pawns in a Brute warcasket can beat out fires again instead of standing next to them.
+- Childhood Backstories + Altered Carbon 2: gestated sleeves no longer get a childhood backstory (and its skills) when they reach 13 in the vat.
 - Colony Manager Redux + MSS Tweaks and Fun: loading a save no longer counts as researching a tech, so it stops granting a free reformation point.
 - Flourish + Muzzle Flash: no double flash; guns with Muzzle Flash art use it, every other gun uses Flourish's flash.
 - Leo - Events + Biomes! Caverns: the mineral seams cave gets a random Caverns biome.

@@ -116,6 +116,7 @@
 - Giddy-Up 2: dismounted caravan animals keep their travel/follow target, so the caravan arrives and leaves.
 - Giddy-Up 2: animals rescuing a downed pawn are not picked as mounts.
 - Giddy-Up 2: an animal the rider may not touch (forbidden, outside the allowed area) is not picked as a mount, so the Mount job no longer restarts ten times a tick.
+- Giddy-Up 2: a mounted pawn ordered into a shuttle no longer gives up after parking the mount.
 - Goji's Misc Genes + Living Bonds: no Parroting null-ref when a carried baby is talked to.
 - Vanilla Social Interactions Expanded + Goji's Misc Genes: a Parroting pupil can answer a teaching interaction without a "key was not present in the dictionary" tick exception.
 - Vanilla/unknown: a caravan guard holding a trader kind counts as the Trader (dismiss works, caravan exits).

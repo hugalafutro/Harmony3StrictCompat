@@ -236,6 +236,9 @@ namespace Harmony3StrictCompat
 			var guMountable = Target("GiddyUp.IsMountableUtility:IsMountable");
 			if (guMountable != null)
 				harmony.Patch(guMountable, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GuNoForbiddenMount)));
+			var guRiderDismount = Target("GiddyUp.Jobs.JobDriver_Mounted:RiderShouldDismount");
+			if (guRiderDismount != null)
+				harmony.Patch(guRiderDismount, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(GuRepathToThingTranspiler)));
 			var vsieTeach = Target("VanillaSocialInteractionsExpanded.InteractionWorker_Teaching:Interacted");
 			if (vsieTeach != null)
 			{
@@ -4157,6 +4160,32 @@ namespace Harmony3StrictCompat
 				duty.focus = __state;
 		}
 
+		// ---- Giddy-Up 2: rider sent into a shuttle gives up after parking the mount ------------------------------
+		// JobDriver_Mounted.RiderShouldDismount parks the mount once the rider's destination is under 25 cells away.
+		// It saves that destination as a bare cell (pather.Destination.Cell) and later restarts the rider's path with
+		// StartPath(cell, Touch). The rider was walking to a Thing; as a cell that is the building's centre, and for a
+		// quest shuttle every cell touching the centre is shuttle too, so the path fails, the job ends ErroredPather,
+		// the rider stands for the vanilla wait and then wanders off (reproduced 2026-11-25: Anteater on Radyak 2,
+		// "Get in shuttle" from 30 cells). Both StartPath calls in that method go through GuStartPathOnThing: when the
+		// target cell is not walkable and a spawned Thing in the rider's current job covers it, the path goes to that
+		// Thing. The parking spot itself is always walkable, so that call is unchanged.
+		static readonly AccessTools.FieldRef<Pawn_PathFollower, Pawn> guPatherPawn = AccessTools.FieldRefAccess<Pawn_PathFollower, Pawn>("pawn");
+
+		static IEnumerable<CodeInstruction> GuRepathToThingTranspiler(IEnumerable<CodeInstruction> instructions) =>
+			Transpilers.MethodReplacer(instructions,
+				AccessTools.Method(typeof(Pawn_PathFollower), nameof(Pawn_PathFollower.StartPath)),
+				AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(GuStartPathOnThing)));
+
+		static void GuStartPathOnThing(Pawn_PathFollower pather, LocalTargetInfo dest, PathEndMode peMode)
+		{
+			if (!dest.HasThing && dest.Cell.IsValid && guPatherPawn(pather) is { Map: { } map, CurJob: { } job } && !dest.Cell.Walkable(map))
+				dest = GuCovering(job.targetA, dest.Cell, map) ?? GuCovering(job.targetB, dest.Cell, map) ?? GuCovering(job.targetC, dest.Cell, map) ?? dest;
+			pather.StartPath(dest, peMode);
+		}
+
+		static LocalTargetInfo? GuCovering(LocalTargetInfo target, IntVec3 cell, Map map) =>
+			target.Thing is { Spawned: true } thing && thing.Map == map && thing.OccupiedRect().Contains(cell) ? thing : null;
+
 		// ---- Positive Connections: Den room role null-refs on a one-sided region link ----------------------------
 		// RoomRoleWorker_Den.CountDoors walks region links without the null checks vanilla uses: a link with only one
 		// region registered gives GetOtherRegion / RegionA / RegionB == null. The exception leaves Room.role null
@@ -4290,6 +4319,7 @@ namespace Harmony3StrictCompat
 			["TriumphantResearch.Window_ResearchComplete:.ctor"] = 0x55438039A644309A,                            // 1.6 build, 2026-11-01
 			["GiddyUp.IsMountableUtility:IsMountable"] = 0x9158721D61502B63,                                   // Giddy-Up 2 Continued 1.7, 2026-11-18 (no forbidden / allowed-area test on the animal)
 			["GiddyUp.MountUtility:Dismount"] = 0x4D071C5677D8DCC2,                                                // Giddy-Up 2 Continued 1.7, 2026-11-09 (Dismount still parks lord animals)
+			["GiddyUp.Jobs.JobDriver_Mounted:RiderShouldDismount"] = 0xD640A3387DDD8D48,                          // Giddy-Up 2 Continued 2.2.5, 2026-11-25 (parking re-path to a building's centre cell)
 			["PositiveConnectionsNmSpc.RoomRoleWorker_Den:CountDoors"] = 0x3CD5612235092B15,                                    // Positive Connections 1.7, 2026-11-15
 			["GojisMiscGenes.InteractionWorker_Interacted_Patch:Postfix"] = 0x0DC1938A4ABAED83,                       // Goji's Misc Genes 1.7, 2026-11-15
 			["Hospitality.Utilities.SpawnGroupUtility:GenerateNewGearFor"] = 0xC7A47125AA159971,                  // Hospitality 1.7, DLL of 2026-11-20 21:09 (rebuild, body unchanged)

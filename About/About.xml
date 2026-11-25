@@ -87,7 +87,6 @@
 - UI Rethemed - Colonist Card: info rows show tooltips (the whole line) and highlight on hover; the meal ingredients row leaves out the "only stacks with similar meals" note.
 - UI Rethemed - Architect + Vanilla Plants Expanded (personal tweak): Tilled soil sits in one Orders group with Cancel, Mine and the other orders instead of a group of its own.
 - UI Rethemed - Architect (personal tweak): long names show on two lines, on the grid cards and in the Details panel header, instead of one line cut with "...".
-- UI Rethemed - Colonist Card: the guilty icon in the inspect pane header gets its own slot instead of covering another button.
 - UI Rethemed - Colonist Card + TD Enhancement Pack: the "jump to selection" eye button shows its tooltip on itself, not over another header button.
 - UI Rethemed - Colonist Card (visual tweak): the status pill names the inspiration ("Inspired creativity") instead of "Inspired".
 - UI Rethemed - Quests + Quality Colors (Continued) (visual tweak): quest reward tiles and their hover card titles are drawn in the item's quality colour, and the market value sits on the line under the name instead of beside it.

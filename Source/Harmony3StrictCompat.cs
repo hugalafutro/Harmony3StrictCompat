@@ -888,9 +888,6 @@ namespace Harmony3StrictCompat
 			{
 				uirccThemingHeader = (Func<bool>)uirccTheming.CreateDelegate(typeof(Func<bool>));
 				uirccNextSlot = (Func<Rect>)uirccSlot.CreateDelegate(typeof(Func<Rect>));
-				foreach (var drawer in new[] { Target("RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"), umInspect })
-					if (drawer != null)
-						harmony.Patch(drawer, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirccGuiltyIconInSlot)));
 				uirccHeaderSlots = AccessTools.Field(uirccSlot.DeclaringType, "headerSlots");
 				uirccHeaderRowWidth = AccessTools.Field(uirccSlot.DeclaringType, "headerRowWidth");
 				if (uirccHeaderSlots?.FieldType != typeof(int) || uirccHeaderRowWidth?.FieldType != typeof(float))
@@ -1091,47 +1088,9 @@ namespace Harmony3StrictCompat
 			return false;
 		}
 
-		// ---- UI Rethemed - Colonist Card: guilty icon over a header button ----
-		// The card header runs the pane's DoInspectPaneButtons and moves each button it draws (Widgets.ButtonImage,
-		// the hostility response button) into its own 24 px slot from the right (Card.NextHeaderSlot). The guilty icon
-		// is a plain GUI.DrawTexture, so it stayed at vanilla's spot and covered a slotted button (Useful Marks' marker).
-		// In vanilla's DoInspectPaneButtons and Useful Marks' copy of it, the rect local handed to that DrawTexture (and
-		// to its tooltip right after) is moved into the next slot while the card header is drawing.
+		// UI Rethemed - Colonist Card header slots, shared by the fixes below.
 		internal static Func<bool> uirccThemingHeader;
 		internal static Func<Rect> uirccNextSlot;
-
-		static Rect UirccGuiltySlot(Rect rect) => uirccThemingHeader() ? uirccNextSlot() : rect;
-
-		// The rect reaches DrawTexture either as `newobj Rect; dup` (vanilla: the copy left on the stack feeds the
-		// tooltip) or as `ldloc rect` (tooltip reloads the local). Swap it for the slot right there: before the dup, or
-		// after the ldloc with the local written back.
-		static IEnumerable<CodeInstruction> UirccGuiltyIconInSlot(IEnumerable<CodeInstruction> instructions, MethodBase __originalMethod)
-		{
-			var guilty = AccessTools.Field(typeof(TexUI), nameof(TexUI.GuiltyTex));
-			var draw = AccessTools.Method(typeof(GUI), nameof(GUI.DrawTexture), new[] { typeof(Rect), typeof(Texture) });
-			var slot = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(UirccGuiltySlot));
-			var codes = instructions.ToList();
-			int done = 0;
-			for (int i = 1; i + 1 < codes.Count; i++)
-			{
-				if (!codes[i].LoadsField(guilty) || !codes[i + 1].Calls(draw)) continue;
-				if (codes[i - 1].opcode == OpCodes.Dup)
-				{
-					codes.Insert(i - 1, new CodeInstruction(OpCodes.Call, slot).MoveLabelsFrom(codes[i - 1]));
-					i++;
-				}
-				else if (codes[i - 1].IsLdloc())
-				{
-					codes.InsertRange(i, new[] { new CodeInstruction(OpCodes.Call, slot), new CodeInstruction(OpCodes.Dup), CodeInstruction.StoreLocal(codes[i - 1].LocalIndex()) });
-					i += 3;
-				}
-				else continue;
-				done++;
-			}
-			if (done != 1)
-				Log.Error($"[Harmony3StrictCompat] guilty icon slot: expected one guilty icon draw in {__originalMethod.DeclaringType?.Name}.{__originalMethod.Name}, found {done}");
-			return codes;
-		}
 
 		// ---- UI Rethemed - Colonist Card: tooltip of a slotted header button left at the game's spot ----
 		// A mod button drawn from a DoInspectPaneButtons postfix as Widgets.ButtonImage(rect) + TooltipHandler.TipRegion(rect)
@@ -4585,7 +4544,6 @@ namespace Harmony3StrictCompat
 			["UsefulMarks.Patch_MainTabWindow_Inspect_DoInspectPaneButtons:Prefix"] = 0xD2A3A440ED802D16,
 			["AlteredCarbon.JobGiver_Reload_TryGiveJob_Patch:Postfix"] = 0xAA1E07B7E7346A11,             // Altered Carbon 2 1.6 DLL, 2026-10-29
 			["IdeologyPatch.LookChangeDesiredFix.LookChangeDesiredUtility:CanUseStyle"] = 0x59A806A930DD6F06, // 1trickPwnyta's Ideology Patch 1.6 DLL, 2026-11-21
-			["RimWorld.MainTabWindow_Inspect:DoInspectPaneButtons"] = 0x9ADB9BA182DCDD68,               // vanilla 1.7.5013, guilty icon slot
 			["UIRethemed.ColonistCard.Card:get_ThemingHeader"] = 0xE0BB7E0F75774563,                     // UI Rethemed - Colonist Card 1.7, 2026-11-15 03:21
 			["UIRethemed.ColonistCard.Card:NextHeaderSlot"] = 0x140F60EC9F696E2F,
 			["TD_Enhancement_Pack.JumpToSelection:Postfix"] = 0xED9E022B9869D83B,                         // TD Enhancement Pack - Continued 1.7, DLL of 2026-10-22 (eye button tooltip)

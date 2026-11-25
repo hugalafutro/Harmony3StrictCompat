@@ -535,6 +535,13 @@ namespace Harmony3StrictCompat
 				harmony.Patch(uirThingCard, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirCardQualityOnlyColored)));
 			else if (uirThingCard != null)
 				Log.Error("[Harmony3StrictCompat] UIR Inspector Tabs HoverCard.Card subtitle fields changed: its mod updated, redo the quality-only colour tweak");
+			if (AccessTools.TypeByName("VREArchon.RaidStrategyWorker_ArchonRaid") is { } archonStrategy)
+			{
+				if (AccessTools.DeclaredMethod(archonStrategy, "CanUseWith") != null)
+					Log.Error("[Harmony3StrictCompat] VRE Archon's RaidStrategyWorker_ArchonRaid now has its own CanUseWith: its mod updated, check whether the Archon raid strategy fix is still needed");
+				else if (Target("RimWorld.RaidStrategyWorker:CanUseWith") is { } raidStrategyCanUse)
+					harmony.Patch(raidStrategyCanUse, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ArchonStrategyArchonsOnly)));
+			}
 			if (Target("UIRethemed.ColonistCard.Block_Terrain:Read") is { } uirTerrainRead)
 				harmony.Patch(uirTerrainRead, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirTerrainSkipNoHills)));
 			if (Target("RimWorld.RestUtility:FindBedFor", args: [typeof(Pawn), typeof(Pawn), typeof(bool), typeof(bool), typeof(GuestStatus?)]) is { } findBed
@@ -2953,6 +2960,17 @@ namespace Harmony3StrictCompat
 			return codes;
 		}
 
+		// VRE Archon's raid strategy (VREA_ArchonRaidStrategy, letter "Archon raid", LordJob_ArchonRaid: kidnap the
+		// downed and leave) has weight 1 for every faction but mechanoids and no faction check. Vanilla only drops it
+		// for other factions because its one arrival mode accepts nothing but VRE_Archons, and that arrival check is
+		// skipped when the raid already has an arrival mode: Simple Leadership's raids preset EdgeWalkIn, so an 81-man
+		// bandit raid came in as an "Archon raid". VRE's own Archon incident sets the strategy directly, not through here.
+		static void ArchonStrategyArchonsOnly(RaidStrategyWorker __instance, IncidentParms parms, ref bool __result)
+		{
+			if (__result && __instance.def.defName == "VREA_ArchonRaidStrategy" && parms.faction?.def.defName != "VRE_Archons")
+				__result = false;
+		}
+
 		// UIR Colonist Card's terrain row (Block_Terrain.Read, also used by the world tile inspector) skips only null or
 		// water tiles, then asks Hilliness.GetLabelCap(). Orbit and space tiles have Hilliness.Undefined, which logs
 		// "Hilliness label unknown: Undefined", and UIR's failsafe turns the whole card off for the session. Vanilla
@@ -4283,6 +4301,7 @@ namespace Harmony3StrictCompat
 			["RimWorld.CompShuttle:CompTick"] = 0x807AD3141AD4D8A6,
 			["RimWorld.CompRechargeable:CompTick"] = 0x60A381C5B22A28EF,                                     // game 1.7.5014, 2026-11-24 (recharge bar inside a one-tile-tall machine)
 			["RimWorld.RestUtility:FindBedFor"] = 0x33B8EEAD5C3A2F78,                                     // game 1.7.5014, 2026-11-25 (medical bed search for a carried baby)
+			["RimWorld.RaidStrategyWorker:CanUseWith"] = 0x8BFCCD9056E05028,                              // game 1.7.5014, 2026-11-25 (VRE Archon raid strategy for Archons only)
 			["RimWorld.RestUtility+<>c__DisplayClass14_1:<FindBedFor>b__0"] = 0xD9F9C15FBA69EEC0,
 			["RimWorld.GravshipUtility:PreLaunchConfirmation"] = 0x5BCE4E3819181DF8,                          // game 1.7.5014, 2026-11-24 (launch warning when VGE keeps the map)
 			["RimWorld.RitualOutcomeEffectWorker_GravshipLaunch:Apply"] = 0x0EF46C19BD6D545A,

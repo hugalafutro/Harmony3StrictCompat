@@ -32,6 +32,8 @@ namespace Harmony3StrictCompat
 				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FixXpathPrefix)));
 			harmony.Patch(AccessTools.Method(typeof(PatchOperation), nameof(PatchOperation.Apply)),
 				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SkipConditionalPrefix)));
+			harmony.Patch(AccessTools.Method(typeof(PatchOperation), nameof(PatchOperation.Apply)),
+				prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ObsoleteOpPrefix)));
 			var sbo = Target("SensibleBedOwnership.Patch_ReservationManager:Prefix");
 			if (sbo != null)
 				harmony.Patch(sbo, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(SboUnspawnedBedPrefix)));
@@ -5289,6 +5291,32 @@ namespace Harmony3StrictCompat
 			matchRef(cond) = null;
 			nomatchRef(cond) = null;
 			Log.Message($"[Harmony3StrictCompat] emptied duplicate-comp patch: {xpath.Trim()} ({cond.sourceFile})");
+		}
+
+		// ---- Required patches whose target another mod removes on purpose (reported as succeeded) -----------
+		//  - Vanilla Pawns Retextured (2275310562) replaces the renderNodeProperties of the Eyes_Red and Eyes_Gray
+		//    genes. Genetic Biotech for Facial Animation (3501317537, update of 2026-11-26 06:50) removes those nodes
+		//    so Facial Animation's own eyes take the colour, and it loads earlier, so VPR's replaces find nothing:
+		//    four red errors on every start from 2026-11-26. Loaded the other way round, Genetic Biotech would remove
+		//    VPR's nodes anyway, so the replace has nothing to give.
+		//    Key: xpath -> substring the patch's sourceFile must contain.
+		// The op still runs (a present node is still replaced); only its result counts as success, which also
+		// clears the error XML Extensions queued for it and keeps PatchOperation.Complete quiet. If the mod
+		// changes the xpath, the key stops matching and the red error comes back.
+		static readonly Dictionary<string, string> ObsoleteOps = new()
+		{
+			["/Defs/GeneDef[defName=\"Eyes_Red\"]/renderNodeProperties"] = "2275310562",
+			["/Defs/GeneDef[defName=\"Eyes_Gray\"]/renderNodeProperties"] = "2275310562",
+		};
+		static readonly FieldInfo successField = AccessTools.Field(typeof(PatchOperation), "success");
+		static readonly object successAlways = Enum.Parse(successField.FieldType, "Always");
+		static void ObsoleteOpPrefix(PatchOperation __instance)
+		{
+			if (__instance is not PatchOperationPathed pathed || xpathRef(pathed) is not { } xpath) return;
+			if (!ObsoleteOps.TryGetValue(xpath.Trim(), out var fileMarker) || pathed.sourceFile?.Contains(fileMarker) != true) return;
+			if (successField.GetValue(pathed).Equals(successAlways)) return;
+			successField.SetValue(pathed, successAlways);
+			Log.Message($"[Harmony3StrictCompat] obsolete patch counted as succeeded: {xpath.Trim()} ({pathed.sourceFile})");
 		}
 	}
 

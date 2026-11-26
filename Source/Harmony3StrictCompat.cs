@@ -202,9 +202,9 @@ namespace Harmony3StrictCompat
 				raCompIndex = AccessTools.FieldRefAccess<int>(raComp.DeclaringType, "compIndex");
 				harmony.Patch(raComp, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RaCompWithoutPrecept)));
 			}
-			var btApply = Target("TraitTracker.TraitHediffApplier:ApplyHediffsToPawnsWithTraits");
-			if (btApply != null)
-				harmony.Patch(btApply, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DropLogMessages)));
+			var btInteract = Target("TraitTracker.TraitComp_SocialInteraction:TryDoInteraction");
+			if (btInteract != null)
+				harmony.Patch(btInteract, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DropLogMessages)));
 			var trWindow = AccessTools.TypeByName("TriumphantResearch.Window_ResearchComplete");
 			var trCtor = trWindow == null ? null : AccessTools.DeclaredConstructor(trWindow, [typeof(ResearchProjectDef)]);
 			if (trCtor != null)
@@ -4368,7 +4368,7 @@ namespace Harmony3StrictCompat
 			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,
 			["Verse.GizmoGridDrawer:DrawGizmoGrid"] = 0x01194CA4A1ED54CD,
 			["RimWorld.PawnRelationWorker_Sibling:CreateRelation"] = 0xCC2ADCE90DEE9FA6,                                              // game 1.7.5011, 2026-11-16
-			["TraitTracker.TraitHediffApplier:ApplyHediffsToPawnsWithTraits"] = 0x67BDC9BB976E9B72,                // 2026-10-22
+			["TraitTracker.TraitComp_SocialInteraction:TryDoInteraction"] = 0x3B8F65FCFB461D08,                    // Basic Traits DLL of 2026-11-26 06:50
 			// VEF 1.7 MVCF.dll, 2026-10-31
 			["MVCF.Utilities.VerbStatsUtility:GetStatValue"] = 0x691C1FF55EB56CE6,
 			["MVCF.Utilities.VerbStatsUtility:CreateAverageStat"] = 0x00F6026D0950F156,                           // StatDef overload
@@ -4804,9 +4804,11 @@ namespace Harmony3StrictCompat
 		}
 
 		// ---- Basic Traits debug log ----------------------------------------------------------------------
-		// TraitHediffApplier.ApplyHediffsToPawnsWithTraits runs every 600 ticks and Log.Message()s two
-		// "Processing pawn ..." lines per alive pawn. The author acknowledged it (workshop, 2026-10-24) but has
-		// not shipped a fix. Drop just its Log.Message(string) calls; its warnings and the hediff logic stay.
+		// TraitComp_SocialInteraction.TryDoInteraction runs every 2000 ticks per Friendly or Charismatic pawn and
+		// Log.Message()s "[BasicTraits] <pawn> trying to interact with <target>" each time, target or not (315 lines in
+		// one session, 2026-11-26). The 2026-11-26 update removed the older "Processing pawn" spam from
+		// TraitHediffApplier, which this used to strip; its remaining messages fire only when a trait hediff is added or
+		// removed. Drop just the Log.Message(string) call; the Log.Error and the interaction itself stay.
 		static readonly MethodInfo LogMessage = AccessTools.Method(typeof(Log), nameof(Log.Message), [typeof(string)]);
 		static IEnumerable<CodeInstruction> DropLogMessages(IEnumerable<CodeInstruction> instructions)
 		{

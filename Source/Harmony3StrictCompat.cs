@@ -384,6 +384,7 @@ namespace Harmony3StrictCompat
 			FleetHoldLetsLeaversGo.Init(harmony);
 			BasGravshipFlagForVge.Init(harmony);
 			VqeArcComponentFindsComponent.Init(harmony);
+			VqeArcCalibrationTimerReset.Init(harmony);
 			harmony.Patch(AccessTools.Method(typeof(CompTransporter), nameof(CompTransporter.Notify_ThingAdded)),
 				postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ShuttleClockStartsAtBoarding)));
 			foreach (var csClean in new[] { "CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__0", "CommonSense.Utility+<>c__DisplayClass21_0:<CleanFilthToil>b__1" })
@@ -4359,6 +4360,10 @@ namespace Harmony3StrictCompat
 			["BetterAbandonedSettlements.Patches:AbandonMapPrefix"] = 0xE694E2BEC4B5959B,                   // BAS 1.1.1, DLL of 2026-10-31 12:43
 			["BetterAbandonedSettlements.Patches:AbandonMapFinalizer"] = 0x80BD445544A465A2,
 			["VanillaQuestsExpandedTheGenerator.CompAbilityCraftAnARCComponent:Apply"] = 0xA99D1505A77AE8CC, // VQE The Generator 1.6 DLL of 2026-07-08 (finds the component in the cell)
+			["VanillaQuestsExpandedTheGenerator.Building_GenetronWithCalibration:Tick"] = 0xC593D0DEFD1BAE0D,  // same DLL (calibration timer never reset)
+			["VanillaQuestsExpandedTheGenerator.Building_GenetronWithCalibration:Signal_CalibrationStarted"] = 0xE048083040DDCFA9,
+			["VanillaQuestsExpandedTheGenerator.Building_GenetronWithFuelRodCalibration:Tick"] = 0xBBE5A78F0E593CC7,
+			["VanillaQuestsExpandedTheGenerator.Building_GenetronWithFuelRodCalibration:Signal_FuelRodCalibrationStarted"] = 0x226F3DB2D29984C3,
 			["RimWorld.Selector:SelectUnderMouse"] = 0x59EF35E3AE5B2B41,                                    // game 1.7.5013, 2026-11-18
 			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,
 			["Verse.GizmoGridDrawer:DrawGizmoGrid"] = 0x01194CA4A1ED54CD,
@@ -5451,6 +5456,38 @@ namespace Harmony3StrictCompat
 		// Same stack shape as GenCollection.FirstOrFallback<Thing>(IEnumerable<Thing>, Thing).
 		static Thing ComponentOrFirst(IEnumerable<Thing> things, Thing fallback) =>
 			things.FirstOrDefault(t => t.def == ThingDefOf.ComponentSpacer) ?? things.FirstOrFallback(fallback);
+	}
+
+	// ---- VQE The Generator: efficiency / fuel rod calibration ends on its first tick after the first one ------------
+	// Building_GenetronWithCalibration.Tick counts calibrationTimer up while in calibration mode and ends the
+	// calibration (+1% output) once it passes 60000, but nothing ever sets it back to 0. From the second press on the
+	// timer starts above 60000, so the low-power day is skipped and the bonus lands on the next tick (Chemfuel-fortified
+	// ARC on 2026-11-26: calibrationCounter 5, calibrationTimer 60005). Building_GenetronWithFuelRodCalibration has the
+	// same bug with fuelRodCalibrationTimer (shutdown day skipped, fuel x0.9 at once). On each start, clear a timer left
+	// over from a finished calibration; the progress of one ended early by running out of fuel or a breakdown is kept,
+	// as the mod does now.
+	static class VqeArcCalibrationTimerReset
+	{
+		internal static void Init(Harmony harmony)
+		{
+			Harmony3StrictCompatMod.Target("VanillaQuestsExpandedTheGenerator.Building_GenetronWithCalibration:Tick");
+			Harmony3StrictCompatMod.Target("VanillaQuestsExpandedTheGenerator.Building_GenetronWithFuelRodCalibration:Tick");
+			if (Harmony3StrictCompatMod.Target("VanillaQuestsExpandedTheGenerator.Building_GenetronWithCalibration:Signal_CalibrationStarted") is { } eff)
+				harmony.Patch(eff, prefix: new HarmonyMethod(typeof(VqeArcCalibrationTimerReset), nameof(ResetEfficiency)));
+			if (Harmony3StrictCompatMod.Target("VanillaQuestsExpandedTheGenerator.Building_GenetronWithFuelRodCalibration:Signal_FuelRodCalibrationStarted") is { } rods)
+				harmony.Patch(rods, prefix: new HarmonyMethod(typeof(VqeArcCalibrationTimerReset), nameof(ResetFuelRods)));
+		}
+
+		// 60000 = the mod's calibrationTime; a timer past it belongs to a calibration that completed.
+		static void ResetEfficiency(ref int ___calibrationTimer)
+		{
+			if (___calibrationTimer > 60000) ___calibrationTimer = 0;
+		}
+
+		static void ResetFuelRods(ref int ___fuelRodCalibrationTimer)
+		{
+			if (___fuelRodCalibrationTimer > 60000) ___fuelRodCalibrationTimer = 0;
+		}
 	}
 
 	// ---- Gravship Fleet: launch hold stops visitors the launch told to leave ---------------------------------------

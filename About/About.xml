@@ -130,6 +130,7 @@
 - Gravship Fleet: visitors inside the ship when a launch ritual starts walk off it instead of being held aboard ("cannot exit").
 - Better Abandoned Settlements + Vanilla Gravship Expanded: "Keep the maps a gravship leaves behind" turned off now also covers maps VGE abandons after takeoff.
 - Vanilla Quests Expanded - The Generator: "Craft an ARC component" works on advanced components stored on a shelf or sharing a cell with other things.
+- Vanilla Quests Expanded - The Generator: ARC efficiency and fuel rod calibrations run their full day every time, not only the first.
 - Vanilla friendly raids: reinforcements arrive dressed for extreme cold (warmest non-armor apparel their faction can make).
 - Ritual Size Attenuation + VFE Empire: art exhibit, grand ball and parade no longer crash in the outcome (an art exhibit stuck forever, guests starving).
 - VEF (MVCF): multi-verb weapons use the weapon's own accuracy/cooldown when the verb sets none; duplicate stat rows hidden; Range row fixed.

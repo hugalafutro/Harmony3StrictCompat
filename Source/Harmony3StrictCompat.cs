@@ -60,6 +60,8 @@ namespace Harmony3StrictCompat
 			foreach (var levelUpHook in new[] { Target("LevelUp.Patcher:DirtyAptitudesPostfix"), Target("LevelUp.Patcher:LearnPostfix") })
 				if (levelUpHook != null)
 					harmony.Patch(levelUpHook, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LevelUpOnlyPresentPawns)));
+			if (Target("VanillaPsycastsExpanded.Hediff_PsycastAbilities:ChangeLevel", args: [typeof(int), typeof(bool)]) is { } vpeChangeLevel)
+				harmony.Patch(vpeChangeLevel, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(VpePsylinkLetterOnlyPresentPawns)));
 			if (Target("Verse.HediffComp_MessageBase:Message") is { } hediffMessage)
 				harmony.Patch(hediffMessage, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HediffMessageNeedsText)));
 			if (Target("KanbanStockpileContinue.WorkGiver_RemoveExcessFromKanban:HasJobOnThing") is { } ksHasJob
@@ -556,7 +558,8 @@ namespace Harmony3StrictCompat
 				else if (Target("RimWorld.RaidStrategyWorker:CanUseWith") is { } raidStrategyCanUse)
 					harmony.Patch(raidStrategyCanUse, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ArchonStrategyArchonsOnly)));
 			}
-			if (Target("UIRethemed.ColonistCard.Block_Terrain:Read") is { } uirTerrainRead)
+			if (Target("VREArchon.PawnsArrivalModeWorker_ArchonRaidArrival:Arrive") is { } archonArrive)
+				harmony.Patch(archonArrive, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ArchonRaidArrivalRightPawns)));			if (Target("UIRethemed.ColonistCard.Block_Terrain:Read") is { } uirTerrainRead)
 				harmony.Patch(uirTerrainRead, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirTerrainSkipNoHills)));
 			if (Target("RimWorld.RestUtility:FindBedFor", args: [typeof(Pawn), typeof(Pawn), typeof(bool), typeof(bool), typeof(GuestStatus?)]) is { } findBed
 				&& Target("RimWorld.RestUtility+<>c__DisplayClass14_1:<FindBedFor>b__0") is { } medBedValidator)
@@ -2985,6 +2988,34 @@ namespace Harmony3StrictCompat
 				__result = false;
 		}
 
+		// VRE Archon's raid arrival (PawnsArrivalModeWorker_ArchonRaidArrival.Arrive) picks 2-4 random raiders to skip
+		// in next to the colony and walks the rest in, but both loops index the full pawns list: the first spawns
+		// pawns[0..k) instead of the picked ones, the second spawns pawns[0..n-k) again. So k raiders log "Tried to spawn
+		// X but it's already spawned" and the last k are never spawned: they stay in the raid lord, off every map and
+		// not world pawns (reproduced 2026-11-26: 17 Archons, 3 errors, 3 missing from the save). Same steps with the
+		// right lists; a raid of 4 or fewer is all skip-ins either way.
+		static FleckDef archonSkipFlash;
+
+		static bool ArchonRaidArrivalRightPawns(List<Pawn> pawns, IncidentParms parms)
+		{
+			var map = (Map)parms.target;
+			archonSkipFlash ??= DefDatabase<FleckDef>.GetNamedSilentFail("VREA_PsycastSkipFlashGreen");
+			var skip = pawns.InRandomOrder().Take(new IntRange(2, 4).RandomInRange).ToList();
+			foreach (var pawn in skip)
+			{
+				var cell = map.AllCells.Where(x => x.Walkable(map) && map.reachability.CanReachColony(x)).RandomElement();
+				GenSpawn.Spawn(pawn, cell, map, parms.spawnRotation, WipeMode.Vanish);
+				if (archonSkipFlash == null) continue;
+				var flash = FleckMaker.GetDataAttachedOverlay(pawn, archonSkipFlash, Vector3.zero);
+				flash.link.detachAfterTicks = 5;
+				map.flecks.CreateFleck(flash);
+			}
+			foreach (var pawn in pawns)
+				if (!skip.Contains(pawn))
+					GenSpawn.Spawn(pawn, CellFinder.RandomClosewalkCellNear(parms.spawnCenter, map, 8), map, parms.spawnRotation, WipeMode.Vanish);
+			return false;
+		}
+
 		// UIR Colonist Card's terrain row (Block_Terrain.Read, also used by the world tile inspector) skips only null or
 		// water tiles, then asks Hilliness.GetLabelCap(). Orbit and space tiles have Hilliness.Undefined, which logs
 		// "Hilliness label unknown: Undefined", and UIR's failsafe turns the whole card off for the session. Vanilla
@@ -3578,6 +3609,16 @@ namespace Harmony3StrictCompat
 		// gene aptitudes popped "Baby reached level 9 in Animals!" with the pregnancy letter. Skips both Level Up hooks (the third
 		// argument of each is the pawn) unless the pawn is on a map (held or carried counts) or in a caravan.
 		static bool LevelUpOnlyPresentPawns(Pawn __2) => __2 == null || __2.SpawnedOrAnyParentSpawned || __2.IsCaravanMember();
+
+		// Same throwaway pawn, VPE side: when the rolled genes include an innate psylink gene (VRE Archon's
+		// VRE_InnatePsylink), VPE's Hediff_PsycastAbilities.ChangeLevel(int, bool) posts "Psylink level gained: Baby <name>"
+		// for it (player faction, so ShouldSendNotificationAbout passes). Seen 2026-11-26 on an Archon raid: a pregnant
+		// raider's conception made "Baby Boo". Drops the letter, not the level, for pawns not in play by the same test.
+		static void VpePsylinkLetterOnlyPresentPawns(Hediff __instance, ref bool sendLetter)
+		{
+			if (sendLetter && __instance.pawn is { } pawn && !pawn.SpawnedOrAnyParentSpawned && !pawn.IsCaravanMember())
+				sendLetter = false;
+		}
 
 		// ---- Hediff message comps without message text ----------------------------------------------------------
 		// HediffComp_MessageBase.Message posts Props.message unconditionally. [FSF] Advanced Bionics Expansion adds a
@@ -4606,7 +4647,9 @@ namespace Harmony3StrictCompat
 			["Inventory.BillUtility:Satisfied"] = 0xAC4273F963D8D1D6,                                // Loadout Compositing 1.7, 2026-11-22 (bill count cache, per-tag bills)
 			["Verse.Pawn:SpawnSetup"] = 0xEBD14AA4AA28AC29,                                           // game 1.7.5014, 2026-11-23 (bill count cache dropped when colonists arrive)
 			["VanillaGravshipExpanded2.WarcomputerHelper:ApplyForcedMissRadiusBuffs"] = 0x7C5E4AA83043349A, // Vanilla Gravship Expanded - Chapter 2 1.7, 2026-11-22
-			["QuietWonders.QWLife:FindAsleepRooms"] = 0xA4AB64F59EBA1DA8,                                       // Quiet Wonders, DLL of 2026-11-26 19:16 (room checks for awake pawns)
+			["VanillaPsycastsExpanded.Hediff_PsycastAbilities:ChangeLevel"] = 0x5048F945B3DE2802,         // (int, bool) overload, VPE 1.7 DLL of 2026-11-26 15:51 (no psylink letter for BGI's throwaway pawn)
+			["VREArchon.PawnsArrivalModeWorker_ArchonRaidArrival:Arrive"] = 0x25485622B881EDD8,         // VRE Archon, DLL of 2026-03-21 (both spawn loops index the full list)
+			["QuietWonders.QWLife:FindAsleepRooms"] = 0xA4AB64F59EBA1DA8,                                      // Quiet Wonders, DLL of 2026-11-26 19:16 (room checks for awake pawns)
 			["VanillaLootBeams.MapComponent_VLB:MapComponentUpdate"] = 0xB6057CCBACF5C359,                // Vanilla Loot Beams, DLL of 2026-06-21 (current map only)
 			["VanillaFurnitureExpandedFactory.StoreUtility_IsGoodStoreCell_Patch:Postfix"] = 0xCE7EFB50ACFC94E1, // VFE Factory 1.7, 2026-11-24 (no-insert hopper in the haul list)
 			["GUIPerformancePatch.GppFightTarget:Pre"] = 0x80FF1F136935A536,                         // WOWGAG's Performance Patch 1.7, DLL of 2026-11-26 13:56 (still one validator.Method read each)

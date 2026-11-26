@@ -4606,7 +4606,7 @@ namespace Harmony3StrictCompat
 			["Inventory.BillUtility:Satisfied"] = 0xAC4273F963D8D1D6,                                // Loadout Compositing 1.7, 2026-11-22 (bill count cache, per-tag bills)
 			["Verse.Pawn:SpawnSetup"] = 0xEBD14AA4AA28AC29,                                           // game 1.7.5014, 2026-11-23 (bill count cache dropped when colonists arrive)
 			["VanillaGravshipExpanded2.WarcomputerHelper:ApplyForcedMissRadiusBuffs"] = 0x7C5E4AA83043349A, // Vanilla Gravship Expanded - Chapter 2 1.7, 2026-11-22
-			["QuietWonders.QWLife:FindAsleepRooms"] = 0x1C199B69873D2271,                                       // Quiet Wonders, 2026-11-24 (room checks for awake pawns)
+			["QuietWonders.QWLife:FindAsleepRooms"] = 0xA4AB64F59EBA1DA8,                                       // Quiet Wonders, DLL of 2026-11-26 19:16 (room checks for awake pawns)
 			["VanillaLootBeams.MapComponent_VLB:MapComponentUpdate"] = 0xB6057CCBACF5C359,                // Vanilla Loot Beams, DLL of 2026-06-21 (current map only)
 			["VanillaFurnitureExpandedFactory.StoreUtility_IsGoodStoreCell_Patch:Postfix"] = 0xCE7EFB50ACFC94E1, // VFE Factory 1.7, 2026-11-24 (no-insert hopper in the haul list)
 			["GUIPerformancePatch.GppFightTarget:Pre"] = 0x80FF1F136935A536,                         // WOWGAG's Performance Patch 1.7, DLL of 2026-11-26 13:56 (still one validator.Method read each)

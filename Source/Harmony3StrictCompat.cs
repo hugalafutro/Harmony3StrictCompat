@@ -206,9 +206,6 @@ namespace Harmony3StrictCompat
 				raCompIndex = AccessTools.FieldRefAccess<int>(raComp.DeclaringType, "compIndex");
 				harmony.Patch(raComp, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RaCompWithoutPrecept)));
 			}
-			var btInteract = Target("TraitTracker.TraitComp_SocialInteraction:TryDoInteraction");
-			if (btInteract != null)
-				harmony.Patch(btInteract, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DropLogMessages)));
 			var trWindow = AccessTools.TypeByName("TriumphantResearch.Window_ResearchComplete");
 			var trCtor = trWindow == null ? null : AccessTools.DeclaredConstructor(trWindow, [typeof(ResearchProjectDef)]);
 			if (trCtor != null)
@@ -4380,7 +4377,7 @@ namespace Harmony3StrictCompat
 			["RimPacts.WorldComponent_RimPacts:WardLordPawns"] = 0x7724DA3409C9A731,                    // RimPacts 1.7, DLL of 2026-11-17 16:55
 			["RimPacts.HediffComp_RptDropOnPlayerOwned:CompPostTick"] = 0x15979899F58581E4,
 			["RimPacts.WorldComponent_RimPacts:CaravanGuardStep"] = 0x9AF75C085C4C990A,
-			["RimWorldWaylith.Imgui.ImGuiHost+Activation:.ctor"] = 0x84FE454465EF6075,                   // game 1.7.5014 RimWorld.dll
+			["RimWorldWaylith.Imgui.ImGuiHost+Activation:.ctor"] = 0x085C7E0AA89600A5,                   // game 1.7.5021 RimWorld.dll
 			["DressForTheWeather.PawnsArriveUtilities:DressPawnAppropriately"] = 0xF6A3084C72CDCFB6,   // Dress for the Weather 1.7, DLL of 2026-10-27
 			["DressForTheWeather.PawnsArriveUtilities:InitializeApparelPairs"] = 0x642A784DF0292B51,
 			["DressForTheWeather.IncidentWorker_NeutralGroup_SpawnPawns:Postfix"] = 0xB1048B0DC4E3B6FC,
@@ -4411,7 +4408,6 @@ namespace Harmony3StrictCompat
 			["RimWorld.Selector+<>c:<SelectUnderMouse>b__45_0"] = 0x98B740D7A8C6EA63,
 			["Verse.GizmoGridDrawer:DrawGizmoGrid"] = 0x01194CA4A1ED54CD,
 			["RimWorld.PawnRelationWorker_Sibling:CreateRelation"] = 0xCC2ADCE90DEE9FA6,                                              // game 1.7.5011, 2026-11-16
-			["TraitTracker.TraitComp_SocialInteraction:TryDoInteraction"] = 0x3B8F65FCFB461D08,                    // Basic Traits DLL of 2026-11-26 06:50
 			// VEF 1.7 MVCF.dll, 2026-10-31
 			["MVCF.Utilities.VerbStatsUtility:GetStatValue"] = 0x691C1FF55EB56CE6,
 			["MVCF.Utilities.VerbStatsUtility:CreateAverageStat"] = 0x00F6026D0950F156,                           // StatDef overload
@@ -4468,8 +4464,8 @@ namespace Harmony3StrictCompat
 			["HaulersDream.StorageCommitments:IsDelivering"] = 0xB2A8CC7128220022,                           // Hauler's Dream 1.24.0 (1.6 build), 2026-08-10
 			["HaulersDream.Alert_CannotUnloadInventory:Evaluate"] = 0x976491A9A63822D1,                       // Hauler's Dream 1.6 build, 2026-11-18
 			["UIRethemed.Quests.RewardTiles:Of"] = 0xB224BEE3491FB587,                                 // UI Rethemed - Quests 1.7, 2026-11-15 11:06
-			["UIRethemed.Core.Theme:LabelTruncated"] = 0xD03681EC43BA1D17,                             // UI Rethemed - Core 1.7, DLL of 2026-11-26 14:04 (quest reward quality colours)
-			["UIRethemed.Core.HoverCard:Register"] = 0xA68167F4A756B549,
+			["UIRethemed.Core.Theme:LabelTruncated"] = 0x8C5A03C35E7B7B73,                             // UI Rethemed - Core 1.7, DLL of 2026-11-27 09:50 (quest reward quality colours)
+			["UIRethemed.Core.HoverCard:Register"] = 0xC4F2267C004F9E86,
 			["HaulersDream.InventorySurplus:KeepCountOf"] = 0x04CE467AFB2AB712,                                 // Hauler's Dream 1.6 build, 2026-11-11
 			["SmartMedicine.StockUpUtility:StockUpCount"] = 0x6CFF64A881BBB050,                                   // (Pawn, ThingDef) overload, Smart Medicine 1.7, 2026-11-11
 			["HaulersDream.StorageCommitments:get_InsideSpaceScan"] = 0x212C16560ED8173E,                     // Hauler's Dream 1.6 build, 2026-11-06
@@ -4518,15 +4514,15 @@ namespace Harmony3StrictCompat
 			["Flourish.Everyday.JobAnimationWorker_Anchored:Evaluate"] = 0x817B489F5395FF01,                // Flourish Everyday 1.7, 2026-10-25
 			["VFETribals.FactionUIUtility_DoWindowContents_Patch:Postfix"] = 0x8824F2B542A8AC6E,             // VFE Tribals 1.6 build, 2026-10-14
 			["UIRethemed.Factions.FactionsTab:Themed"] = 0x2C28E9ECF64A340C,                               // UI Rethemed - Factions 1.7, DLL of 2026-11-23 10:30
-			["UIRethemed.Core.CoreWidgets:Button"] = 0x5C23635559D5A8AC,                             // UI Rethemed - Core 1.7, DLL of 2026-11-26 14:04
+			["UIRethemed.Core.CoreWidgets:Button"] = 0xCBFFA95DB6B47A12,                             // UI Rethemed - Core 1.7, DLL of 2026-11-27 09:50
 			["UIRethemed.Core.CoreWidgets:Icon"] = 0x94CAAE18BD1B3409,
 			["UIRethemed.Core.CoreWidgets:ButtonWidth"] = 0x026276E9D68F3DCC,
 			["UIRethemed.Factions.ModCompat:get_HeaderButtonsWidth"] = 0x89EA6B5602E230B4,
-			["UIRethemed.Core.HoverCard:LineHeight"] = 0xC88FE6743EC437BE,                        // UI Rethemed - Core 1.7, DLL of 2026-11-26 14:04 (moved from Inspector Tabs 2026-11-19)
-			["UIRethemed.Core.HoverCard:DrawGroup"] = 0xBDE98DC4443E4FDF,
-			["UIRethemed.Core.HoverCard:GroupBodyWidth"] = 0xB364688CC3EDC6AB,
-			["UIRethemed.Core.Theme:StatLine"] = 0xA9476E87B64D60D1,
-			["UIRethemed.Core.Theme:HoverGlow"] = 0x449E77C02BB46201,
+			["UIRethemed.Core.HoverCard:LineHeight"] = 0xCC726CE5E2155DE9,                        // UI Rethemed - Core 1.7, DLL of 2026-11-27 09:50 (moved from Inspector Tabs 2026-11-19)
+			["UIRethemed.Core.HoverCard:DrawGroup"] = 0x574CFD6077CA8A5C,
+			["UIRethemed.Core.HoverCard:GroupBodyWidth"] = 0xEA6800CA4660E618,
+			["UIRethemed.Core.Theme:StatLine"] = 0x3301E676EFB759F8,
+			["UIRethemed.Core.Theme:HoverGlow"] = 0xA65CB078D91AC328,
 			["UIRethemed.InspectorTabs.GearTab:RefreshVacuumGauge"] = 0xEF12B322E43F9A10,                // UI Rethemed - Inspector Tabs 1.7, DLL of 2026-11-21 04:39
 			["UIRethemed.InspectorTabs.GearTab:SlotLabel"] = 0xA9E4AB8D19BE3AC1,
 			["UIRethemed.InspectorTabs.GearTab:BuildThingCard"] = 0x722260ADE510671B,                 // gear hover card subtitle, 2026-11-16
@@ -4592,11 +4588,11 @@ namespace Harmony3StrictCompat
 			["UIRethemed.Notifications.NotificationStyles:Resolve"] = 0x37E4D5B9BC27B3D0,
 			["UIRethemed.Notifications.Placement:ColumnX"] = 0xE160D086AD81C948,
 			["UIRethemed.Notifications.Placement:get_Position"] = 0x773B4416EAD9CD6E,
-			["UIRethemed.Core.ThemeMotion:Hover"] = 0xB5EA7EFB637F3BF3,
+			["UIRethemed.Core.ThemeMotion:Hover"] = 0x048C119682501759,
 			["UIRethemed.Notifications.Patch_Messages_MessagesDoGUI:Transpiler"] = 0x6975299B4CC464C6,
-			["UIRethemed.Core.HoverCard:Region"] = 0x86DDC6090A537FF6,
-			["UIRethemed.Core.HoverCard:DrawPlaced"] = 0xC6312C8C642B6D6F,
-			["UIRethemed.Core.HoverCard:PlacedSize"] = 0x1241EED04DF5ED10,
+			["UIRethemed.Core.HoverCard:Region"] = 0x5835F0E000BC9F73,
+			["UIRethemed.Core.HoverCard:DrawPlaced"] = 0xBFD6093FD744C69D,
+			["UIRethemed.Core.HoverCard:PlacedSize"] = 0x994191599535D332,
 			["UIRethemed.Notifications.Placement:BesideX"] = 0x47679F286AED5F91,
 			["UIRethemed.Notifications.SectionHeading:Shows"] = 0xFD51782B2B3A5A4A,
 			["UIRethemed.Notifications.SectionHeading:Folded"] = 0xAD16F82687E32083,
@@ -4846,19 +4842,6 @@ namespace Harmony3StrictCompat
 				sb.AppendLine().AppendLine("Stat_Thing_Weapon_Range_Multiplier".Translate() + ": x" + mult.ToStringPercent());
 			string value = string.Join(" / ", ranged.Select(v => (v.range * mult).ToString("F0")).Distinct());
 			return new StatDrawEntry(category, "Range".Translate(), value, sb.ToString(), 5390);
-		}
-
-		// ---- Basic Traits debug log ----------------------------------------------------------------------
-		// TraitComp_SocialInteraction.TryDoInteraction runs every 2000 ticks per Friendly or Charismatic pawn and
-		// Log.Message()s "[BasicTraits] <pawn> trying to interact with <target>" each time, target or not (315 lines in
-		// one session, 2026-11-26). The 2026-11-26 update removed the older "Processing pawn" spam from
-		// TraitHediffApplier, which this used to strip; its remaining messages fire only when a trait hediff is added or
-		// removed. Drop just the Log.Message(string) call; the Log.Error and the interaction itself stay.
-		static readonly MethodInfo LogMessage = AccessTools.Method(typeof(Log), nameof(Log.Message), [typeof(string)]);
-		static IEnumerable<CodeInstruction> DropLogMessages(IEnumerable<CodeInstruction> instructions)
-		{
-			foreach (var ins in instructions)
-				yield return ins.Calls(LogMessage) ? new CodeInstruction(OpCodes.Pop).WithLabels(ins.labels).WithBlocks(ins.blocks) : ins;
 		}
 
 		// ---- Smarter Visitors + Hospitality --------------------------------------------------------------

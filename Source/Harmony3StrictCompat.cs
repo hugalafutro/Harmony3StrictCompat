@@ -602,8 +602,10 @@ namespace Harmony3StrictCompat
 				var uirqRegion = Target("UIRethemed.Core.HoverCard:Region", args: [typeof(Rect), typeof(string), typeof(string), typeof(string), typeof(Color?)]);
 				var uirqRegister = Target("UIRethemed.Core.HoverCard:Register", args: [typeof(Rect), typeof(string), typeof(string),
 					AccessTools.TypeByName("UIRethemed.Core.ICardContent"), typeof(string), typeof(Color?), typeof(string), typeof(int)]);
-				if (uirqLabel != null && uirqRegion != null && uirqRegister != null)
+				var uirqThemeLabelMethod = AccessTools.Method("UIRethemed.Core.Theme:Label", [typeof(Rect), typeof(string), typeof(TextAnchor), typeof(Color), typeof(GameFont)]);
+				if (uirqLabel != null && uirqRegion != null && uirqRegister != null && uirqThemeLabelMethod != null)
 				{
+					uirqThemeLabel = (Action<Rect, string, TextAnchor, Color, GameFont>)uirqThemeLabelMethod.CreateDelegate(typeof(Action<Rect, string, TextAnchor, Color, GameFont>));
 					harmony.Patch(uirqLabel, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirqLabelQuality)));
 					harmony.Patch(uirqRegion, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirqTipTitle)),
 						postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(UirqTipDone)));
@@ -2827,16 +2829,19 @@ namespace Harmony3StrictCompat
 
 		// ---- UI Rethemed - Quests x Quality Colors: reward tiles and their tooltip titles ----------------
 		// Reward labels reach the tiles without Quality Colors' tag, and the hover card strips tags from its title. A
-		// postfix on the tile builder finds each tile's item through its click closure and wraps the label in the
-		// item's Quality Colors colour; a label carrying such a colour is then drawn whole in it (UIR Core's
-		// Theme.LabelTruncated, so truncation never cuts a tag), and the card title gets the colour back after Core's
-		// HoverCard.Region strips it. Other coloured labels are left alone. Any UIR label or tip title carrying a
-		// Quality Colors tag gets the same treatment.
+		// postfix on the tile builder finds each tile's item through its click closure and wraps the quality word of
+		// the label in the item's Quality Colors colour, as Quality Colors does in vanilla labels. UIR Core's
+		// Theme.LabelTruncated truncates the raw string and would cut a tag, so a label carrying a Quality Colors tag
+		// is truncated as plain text and its tags go back in where their whole span survived. The card title gets its
+		// tags back after Core's HoverCard.Region strips them. Other coloured labels are left alone. Any UIR label or
+		// tip title carrying a Quality Colors tag gets the same treatment.
 		// The same postfix moves the market value from the pill beside the name (which took half the tile and cut the
 		// name short) to the second line under it.
 		static FieldInfo qcSettings, qcColors;
 		static readonly Regex QcTag = new("<color=#([0-9A-Fa-f]{6})>", RegexOptions.Compiled);
-		static string qcPendingHex;
+		static string qcPendingTitle;
+		static readonly Regex QcSpan = new("<color=#[0-9A-Fa-f]{6}>([^<]*)</color>", RegexOptions.Compiled);
+		static Action<Rect, string, TextAnchor, Color, GameFont> uirqThemeLabel; // Theme.Label: theme fade and colours
 
 		static Type uirqTile;
 		static MethodInfo uirqTextDim;
@@ -2863,7 +2868,7 @@ namespace Harmony3StrictCompat
 				}
 				if (qcColors != null && label.GetValue(tile) is string text && UirqQualityOf(onClick.GetValue(tile) as Delegate) is { } quality
 					&& qcColors.GetValue(qcSettings.GetValue(null)) is Dictionary<QualityCategory, Color> colors && colors.TryGetValue(quality, out var c))
-					label.SetValue(tile, $"<color=#{QcHex(c)}>{ColoredText.StripTags(text)}</color>");
+					label.SetValue(tile, QcTagQuality(ColoredText.StripTags(text), quality.GetLabel(), QcHex(c)));
 				tiles[i] = tile;
 			}
 		}
@@ -2894,21 +2899,55 @@ namespace Harmony3StrictCompat
 			return null;
 		}
 
-		static void UirqLabelQuality(ref string text, ref Color color)
+		// Colours the last occurrence of the quality word ("good" in "Sling (good)"); the whole label if it has none.
+		static string QcTagQuality(string plain, string word, string hex)
 		{
-			var hex = QcQualityHex(text);
-			if (hex == null) return;
-			color = new Color(Convert.ToInt32(hex.Substring(0, 2), 16) / 255f, Convert.ToInt32(hex.Substring(2, 2), 16) / 255f,
-				Convert.ToInt32(hex.Substring(4, 2), 16) / 255f, color.a);
-			text = ColoredText.StripTags(text);
+			int i = word.NullOrEmpty() ? -1 : plain.LastIndexOf(word, StringComparison.Ordinal);
+			return i < 0 ? $"<color=#{hex}>{plain}</color>" : plain.Insert(i + word.Length, "</color>").Insert(i, $"<color=#{hex}>");
 		}
 
-		// Region strips the title and then calls Register; the colour is carried across and dropped when Region ends.
-		static void UirqTipTitle(string title) => qcPendingHex = QcQualityHex(title);
-		static void UirqTipDone() => qcPendingHex = null;
+		// Replaces LabelTruncated for a label with a Quality Colors tag: same drawing (Repaint only, no word wrap),
+		// but truncation measures and cuts the plain text.
+		static bool UirqLabelQuality(Rect rect, string text, TextAnchor anchor, Color color, GameFont font)
+		{
+			if (QcQualityHex(text) == null) return true;
+			if (Event.current.type != EventType.Repaint) return false;
+			var oldFont = Text.Font;
+			bool wrap = Text.WordWrap;
+			Text.Font = font;
+			Text.WordWrap = false;
+			string plain = ColoredText.StripTags(text);
+			float width = Mathf.CeilToInt(rect.width - 0.01f);
+			if (Text.CalcSize(plain).x > width) text = QcTruncateKeepTags(text, plain, plain.Truncate(width));
+			uirqThemeLabel(rect, text, anchor, color, font);
+			Text.WordWrap = wrap;
+			Text.Font = oldFont;
+			return false;
+		}
+
+		// Puts back each colour span whose whole text is still in the cut; any other kind of tag drops all colour.
+		static string QcTruncateKeepTags(string tagged, string plain, string cut)
+		{
+			if (QcSpan.Replace(tagged, "$1") != plain) return cut;
+			int keep = cut.EndsWith("...") ? cut.Length - 3 : cut.Length, removed = 0;
+			var spans = new List<(int start, int length, string open)>();
+			foreach (Match m in QcSpan.Matches(tagged))
+			{
+				int start = m.Index - removed, length = m.Groups[1].Length;
+				if (start + length <= keep) spans.Add((start, length, m.Value.Substring(0, 15))); // "<color=#RRGGBB>"
+				removed += m.Length - length;
+			}
+			for (int i = spans.Count - 1; i >= 0; i--)
+				cut = cut.Insert(spans[i].start + spans[i].length, "</color>").Insert(spans[i].start, spans[i].open);
+			return cut;
+		}
+
+		// Region strips the title's tags and then calls Register; the tagged title is carried across and put back.
+		static void UirqTipTitle(string title) => qcPendingTitle = QcQualityHex(title) == null ? null : title.Trim();
+		static void UirqTipDone() => qcPendingTitle = null;
 		static void UirqTipRegister(ref string title)
 		{
-			if (qcPendingHex != null && !title.NullOrEmpty()) title = $"<color=#{qcPendingHex}>{title}</color>";
+			if (qcPendingTitle != null && title == ColoredText.StripTags(qcPendingTitle)) title = qcPendingTitle;
 		}
 
 		// Hauler's Dream shields Smart Medicine stock only while the stack is not tagged as its own haul. The tag spreads

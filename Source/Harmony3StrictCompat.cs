@@ -60,6 +60,9 @@ namespace Harmony3StrictCompat
 			foreach (var levelUpHook in new[] { Target("LevelUp.Patcher:DirtyAptitudesPostfix"), Target("LevelUp.Patcher:LearnPostfix") })
 				if (levelUpHook != null)
 					harmony.Patch(levelUpHook, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LevelUpOnlyPresentPawns)));
+			if (Target("VanillaPsycastsExpanded.MeditationUtilities:CanUnlock") is { } vpeCanUnlock)
+				harmony.Patch(vpeCanUnlock, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(VpeDignifiedNeedsAnyTitle)),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(VpeUsableFocusNoLockLine)));
 			if (Target("VanillaPsycastsExpanded.Hediff_PsycastAbilities:ChangeLevel", args: [typeof(int), typeof(bool)]) is { } vpeChangeLevel)
 				harmony.Patch(vpeChangeLevel, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(VpePsylinkLetterOnlyPresentPawns)));
 			if (Target("Verse.HediffComp_MessageBase:Message") is { } hediffMessage)
@@ -4324,6 +4327,49 @@ namespace Harmony3StrictCompat
 		static bool ZcbSkipSleeves(Pawn pawn) =>
 			pawn?.ParentHolder?.GetType().Name != "Building_SleeveGestator" && !acEmptySleeve(pawn);
 
+		// ---- VPE: "Locked: Requires a Royal Title" on the Dignified focus of a titled pawn -----------------------------
+		// MeditationUtilities.CanUnlock (may the Dignified focus be bought with a psycast point) refuses with
+		// "VPE.LockedTitle" when the pawn has no royalty, no title, or !CanUpdateTitleOfAnyFaction, which means "has not
+		// got the honor for its next title". The focus tab appends that reason to every focus tooltip, usable or not, so
+		// Knights with 0 and 4 honor showed a white (usable) Dignified icon saying it needs a royal title (2026-11-27).
+		// The title is what the message names: the honor clause is dropped, so any title passes.
+		static IEnumerable<CodeInstruction> VpeDignifiedNeedsAnyTitle(IEnumerable<CodeInstruction> instructions)
+		{
+			var canUpdate = AccessTools.Method(typeof(Pawn_RoyaltyTracker), nameof(Pawn_RoyaltyTracker.CanUpdateTitleOfAnyFaction));
+			int swapped = 0;
+			foreach (var ins in instructions)
+			{
+				if (ins.Calls(canUpdate))
+				{
+					ins.opcode = OpCodes.Call;
+					ins.operand = AccessTools.Method(typeof(Harmony3StrictCompatMod), nameof(AnyTitleIsEnough));
+					swapped++;
+				}
+				yield return ins;
+			}
+			if (swapped != 1)
+				Log.Error($"[Harmony3StrictCompat] VPE MeditationUtilities.CanUnlock: expected one CanUpdateTitleOfAnyFaction call, replaced {swapped}");
+		}
+
+		// The focus tab (its only caller) appends CanUnlock's reason to the tooltip of every focus, including ones the
+		// pawn can already use: Anteater's Natural focus (from his own natural meditation, psylink from the anima tree)
+		// said "Locked: Cannot be unlocked with points" under a white icon. A focus the pawn can use needs no unlock, so
+		// it reports no reason; the buy button only shows for foci the pawn cannot use, so it is unaffected.
+		static void VpeUsableFocusNoLockLine(MeditationFocusDef focus, Pawn pawn, ref bool __result, ref string reason)
+		{
+			if (__result || focus == null || pawn == null || !focus.CanPawnUse(pawn)) return;
+			__result = true;
+			reason = null;
+		}
+
+		// Same stack shape as Pawn_RoyaltyTracker.CanUpdateTitleOfAnyFaction(out Faction): the caller already checked
+		// that the pawn has a title.
+		static bool AnyTitleIsEnough(Pawn_RoyaltyTracker royalty, out Faction faction)
+		{
+			faction = null;
+			return true;
+		}
+
 		// ---- Better Workbench Management + Nice Bill Tab: bills past the 15th are not pasted -------------------------
 		// BWM's bill copy/paste (BillCopyPaste.CanWorkTableDoRecipeNow, the only caller of Main.GetMaxBills) only pastes
 		// into a bench with fewer bills than GetMaxBills: vanilla's BillStack.MaxCount of 15, or 125 when the No Max
@@ -4789,6 +4835,7 @@ namespace Harmony3StrictCompat
 			["Inventory.BillUtility:Satisfied"] = 0xAC4273F963D8D1D6,                                // Loadout Compositing 1.7, 2026-11-22 (bill count cache, per-tag bills)
 			["Verse.Pawn:SpawnSetup"] = 0xEBD14AA4AA28AC29,                                           // game 1.7.5014, 2026-11-23 (bill count cache dropped when colonists arrive)
 			["VanillaGravshipExpanded2.WarcomputerHelper:ApplyForcedMissRadiusBuffs"] = 0x7C5E4AA83043349A, // Vanilla Gravship Expanded - Chapter 2 1.7, 2026-11-22
+			["VanillaPsycastsExpanded.MeditationUtilities:CanUnlock"] = 0xFAD5A4F1EA4ACDD8,                 // VPE 1.7 DLL of 2026-11-26 15:51 (Dignified lock asks for next-title honor)
 			["VanillaPsycastsExpanded.Hediff_PsycastAbilities:ChangeLevel"] = 0x5048F945B3DE2802,         // (int, bool) overload, VPE 1.7 DLL of 2026-11-26 15:51 (no psylink letter for BGI's throwaway pawn)
 			["VREArchon.PawnsArrivalModeWorker_ArchonRaidArrival:Arrive"] = 0x25485622B881EDD8,         // VRE Archon, DLL of 2026-03-21 (both spawn loops index the full list)
 			["QuietWonders.QWLife:FindAsleepRooms"] = 0xA4AB64F59EBA1DA8,                                      // Quiet Wonders, DLL of 2026-11-26 19:16 (room checks for awake pawns)

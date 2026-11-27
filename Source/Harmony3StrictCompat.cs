@@ -458,6 +458,8 @@ namespace Harmony3StrictCompat
 				harmony.Patch(doBillJobOnThing,
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdNoBillOnForeignInventory)) { priority = Priority.Last });
 			}
+			if (Target("RimWorld.WorkGiver_CookFillHopper:HopperFillFoodJob") is { } hopperFill)
+				harmony.Patch(hopperFill, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HopperFillNeedsGoodCell)));
 			if (Target("RimWorld.IncidentWorker_Raid:TryGenerateRaidInfo") is { } raidInfo)
 				harmony.Patch(raidInfo, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FriendlyRaidDressedForCold)));
 			// Smarter Visitors' leave dialog gets Event Image Popup's visitor picture; both mods fingerprinted.
@@ -3289,6 +3291,21 @@ namespace Harmony3StrictCompat
 			}
 		}
 
+		// ---- Vanilla fill-hopper job skips the store-cell check -------------------------------------------------
+		// WorkGiver_CookFillHopper.HopperFillFoodJob hands the hopper cell straight to HaulToCellStorageJob without
+		// StoreUtility.IsGoodStoreCell, which every normal haul destination passes. Hauler's Dream refuses a cell there
+		// once its storage group's room is all claimed by pawns already on their way, then clamps a job built anyway to
+		// at least 1. Seen 2026-11-27: kitchen hoppers capped at 300 by Kanban, 46 free and about 90 claimed; every
+		// cook, Omniservant and Lifter walked insect meat over from the landed gravship one piece per trip (12 of 12
+		// probed jobs were this path, IsGoodStoreCell false on all). The fill job now needs the hopper cell to pass
+		// IsGoodStoreCell for that pawn and food; the haul-aside job for a blocking item is left alone.
+		static void HopperFillNeedsGoodCell(Pawn pawn, ISlotGroupParent hopperSgp, ref Job __result)
+		{
+			if (__result?.def == JobDefOf.HaulToCell && hopperSgp is Thing hopper && __result.targetB.Cell == hopper.Position
+				&& __result.targetA.Thing is { } food && !StoreUtility.IsGoodStoreCell(hopper.Position, hopper.Map, food, pawn, pawn.Faction))
+				__result = null;
+		}
+
 		static void HdNoBillOnForeignInventory(ref Job __result, Pawn pawn)
 		{
 			if (__result?.def != JobDefOf.DoBill || __result.targetQueueB == null) return;
@@ -4581,6 +4598,7 @@ namespace Harmony3StrictCompat
 			["RimPacts.WorldComponent_RimPacts:CaravanGuardStep"] = 0x9AF75C085C4C990A,
 			["RimWorldWaylith.Imgui.ImGuiHost+Activation:.ctor"] = 0x085C7E0AA89600A5,                   // game 1.7.5021 RimWorld.dll
 			["Verse.PawnRenderNode:AppendRequests"] = 0x27B4435049B4D5E1,                                    // game 1.7.5021 (warcasket hides gene nodes)
+			["RimWorld.WorkGiver_CookFillHopper:HopperFillFoodJob"] = 0xD3E9C68143DDD442,                    // game 1.7.5021 (fill-hopper job needs a good store cell)
 			["DressForTheWeather.PawnsArriveUtilities:DressPawnAppropriately"] = 0xF6A3084C72CDCFB6,   // Dress for the Weather 1.7, DLL of 2026-10-27
 			["DressForTheWeather.PawnsArriveUtilities:InitializeApparelPairs"] = 0x642A784DF0292B51,
 			["DressForTheWeather.IncidentWorker_NeutralGroup_SpawnPawns:Postfix"] = 0xB1048B0DC4E3B6FC,

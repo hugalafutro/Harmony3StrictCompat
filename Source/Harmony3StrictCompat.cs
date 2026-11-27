@@ -2853,7 +2853,7 @@ namespace Harmony3StrictCompat
 		// postfix on the tile builder finds each tile's item through its click closure and wraps the quality word of
 		// the label in the item's Quality Colors colour, as Quality Colors does in vanilla labels. UIR Core's
 		// Theme.LabelTruncated truncates the raw string and would cut a tag, so a label carrying a Quality Colors tag
-		// is truncated as plain text and its tags go back in where their whole span survived. The card title gets its
+		// is truncated as plain text and its tags go back in over what is left of each span. The card title gets its
 		// tags back after Core's HoverCard.Region strips them. Other coloured labels are left alone. Any UIR label or
 		// tip title carrying a Quality Colors tag gets the same treatment.
 		// The same postfix moves the market value from the pill beside the name (which took half the tile and cut the
@@ -2889,7 +2889,7 @@ namespace Harmony3StrictCompat
 				}
 				if (qcColors != null && label.GetValue(tile) is string text && UirqQualityOf(onClick.GetValue(tile) as Delegate) is { } quality
 					&& qcColors.GetValue(qcSettings.GetValue(null)) is Dictionary<QualityCategory, Color> colors && colors.TryGetValue(quality, out var c))
-					label.SetValue(tile, QcTagQuality(ColoredText.StripTags(text), quality.GetLabel(), QcHex(c)));
+					label.SetValue(tile, QcTagQuality(ColoredText.StripTags(text), ColoredText.StripTags(quality.GetLabel()), QcHex(c))); // Quality Colors tags GetLabel itself
 				tiles[i] = tile;
 			}
 		}
@@ -2946,7 +2946,7 @@ namespace Harmony3StrictCompat
 			return false;
 		}
 
-		// Puts back each colour span whose whole text is still in the cut; any other kind of tag drops all colour.
+		// Puts back each colour span over what is left of its text; any other kind of tag drops all colour.
 		static string QcTruncateKeepTags(string tagged, string plain, string cut)
 		{
 			if (QcSpan.Replace(tagged, "$1") != plain) return cut;
@@ -2955,7 +2955,8 @@ namespace Harmony3StrictCompat
 			foreach (Match m in QcSpan.Matches(tagged))
 			{
 				int start = m.Index - removed, length = m.Groups[1].Length;
-				if (start + length <= keep) spans.Add((start, length, m.Value.Substring(0, 15))); // "<color=#RRGGBB>"
+				// A span cut short keeps its colour up to the end, "..." included.
+				if (start < keep) spans.Add((start, (start + length <= keep ? start + length : cut.Length) - start, m.Value.Substring(0, 15))); // "<color=#RRGGBB>"
 				removed += m.Length - length;
 			}
 			for (int i = spans.Count - 1; i >= 0; i--)

@@ -312,6 +312,8 @@ namespace Harmony3StrictCompat
 				harmony.Patch(datHideHeld, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DatHideHeldPawns)));
 			if (Target("VEF.Apparels.CompShieldField:Draw") is { } fieldDraw)
 				harmony.Patch(fieldDraw, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ShieldFieldSkipUnspawned)));
+			harmony.Patch(AccessTools.Method(typeof(Pawn), nameof(Pawn.SpawnSetup)), postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RenderRecacheOnSpawnChange)));
+			harmony.Patch(AccessTools.Method(typeof(Pawn), nameof(Pawn.DeSpawn)), postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RenderRecacheOnSpawnChange)));
 			if (Target("VEF.Apparels.CompShieldBubble:CompAllowVerbCast") is { } bubbleVerb)
 				harmony.Patch(bubbleVerb, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(BubbleAllowsBeatFire)));
 			if (Target("ZCB.BackstoryReplacementPatch:Postfix") is { } zcbAdult
@@ -4285,6 +4287,20 @@ namespace Harmony3StrictCompat
 		// render tree path draws no worn extras and it disappeared (2026-11-27). Vanilla's shield belt only shows on a
 		// spawned wearer (CompShield.ShouldDisplay); the field now does the same. Shield fields on buildings are unchanged.
 		static bool ShieldFieldSkipUnspawned(ThingComp __instance) => __instance.parent is not Apparel { Wearer: { Spawned: false } };
+
+		// ---- Vanilla: render tree keeps the draw requests it built while the pawn was not spawned -------------------
+		// PawnRenderTree.ParallelPreDraw rebuilds its draw request list only when PawnDrawParms.ShouldRecache sees a
+		// change (facing, posture, flags, bed, carried thing, ...) or a node asks for it. PawnRenderNodeWorker_Carried
+		// also needs pawn.Spawned, and its PostDraw is what draws worn extras (VEF shield bubbles) and carried things on
+		// the zoomed-in path. Spawned is not one of the compared parms: a list rebuilt while the pawn sat in the gene
+		// extractor (the extraction hediff dirties its graphics) had no carried node, and after the pawn stepped out with
+		// the same parms the archoplate bubble stayed missing until drafting forced a rebuild (2026-11-27). The reverse
+		// case left the node in the list of a pawn that just entered a building. Ask for a rebuild whenever a pawn
+		// spawns or despawns; it costs one request-list rebuild on the next drawn frame.
+		static void RenderRecacheOnSpawnChange(Pawn __instance)
+		{
+			if (__instance.Drawer.renderer?.renderTree?.rootNode is { } root) root.requestRecache = true;
+		}
 
 		// ---- Childhood Backstories + Altered Carbon 2: gestated sleeves get a childhood backstory at 13 --------------
 		// ZCB's postfix on LifeStageWorker_HumanlikeAdult.Notify_LifeStageStarted swaps a colony/tribe child backstory

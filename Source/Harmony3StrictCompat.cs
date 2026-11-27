@@ -308,6 +308,10 @@ namespace Harmony3StrictCompat
 			if (AccessTools.TypeByName("VFEPirates.Apparel_Warcasket") != null
 				&& Target("QuickFast.Source.H_ApparelPatches:ShouldHideApparel") is { } datHide)
 				harmony.Patch(datHide, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DatShowCasketPieces)));
+			if (Target("QuickFast.Source.H_ApparelPatches:ShouldHideApparel") is { } datHideHeld)
+				harmony.Patch(datHideHeld, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DatHideHeldPawns)));
+			if (Target("VEF.Apparels.CompShieldField:Draw") is { } fieldDraw)
+				harmony.Patch(fieldDraw, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ShieldFieldSkipUnspawned)));
 			if (Target("VEF.Apparels.CompShieldBubble:CompAllowVerbCast") is { } bubbleVerb)
 				harmony.Patch(bubbleVerb, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(BubbleAllowsBeatFire)));
 			if (Target("ZCB.BackstoryReplacementPatch:Postfix") is { } zcbAdult
@@ -4242,6 +4246,46 @@ namespace Harmony3StrictCompat
 			return false;
 		}
 
+		// ---- Dubs Apparel Tweaks: a pawn inside a building flips between helmet and bald ---------------------------
+		// ShouldHideApparel answers "show" for any pawn that is not spawned. A pawn in a gene extractor (or any other
+		// building that holds pawns) is not spawned, so DAT's indoor hat hiding switches off the moment it enters. The
+		// render tree only asks again when it rebuilds (GraphicsFor fills the apparel graphics), while AdjustParms asks
+		// every frame to decide whether hair shows under the hat. A tree built while the pawn walked in indoors has no
+		// helmet graphic, but the per-frame answer now hides the hair under it: bald. A rebuild inside the building
+		// draws the helmet. The colonist bar portrait showed either, depending on when the tree last rebuilt
+		// (2026-11-27). A held pawn is now judged where it is held: SpawnedOrAnyParentSpawned, MapHeld and
+		// PositionHeld in place of Spawned, Map and Position. Pawns in caravans or on the world still answer "show".
+		static IEnumerable<CodeInstruction> DatHideHeldPawns(IEnumerable<CodeInstruction> instructions)
+		{
+			var swaps = new Dictionary<MethodInfo, MethodInfo>
+			{
+				[AccessTools.PropertyGetter(typeof(Thing), nameof(Thing.Spawned))] = AccessTools.PropertyGetter(typeof(Thing), nameof(Thing.SpawnedOrAnyParentSpawned)),
+				[AccessTools.PropertyGetter(typeof(Thing), nameof(Thing.Map))] = AccessTools.PropertyGetter(typeof(Thing), nameof(Thing.MapHeld)),
+				[AccessTools.PropertyGetter(typeof(Thing), nameof(Thing.Position))] = AccessTools.PropertyGetter(typeof(Thing), nameof(Thing.PositionHeld)),
+			};
+			int swapped = 0;
+			foreach (var ins in instructions)
+			{
+				if (ins.operand is MethodInfo m && swaps.TryGetValue(m, out var held))
+				{
+					ins.operand = held;
+					swapped++;
+				}
+				yield return ins;
+			}
+			if (swapped != swaps.Count)
+				Log.Error($"[Harmony3StrictCompat] Dubs Apparel Tweaks ShouldHideApparel: expected {swaps.Count} Spawned/Map/Position reads, swapped {swapped}");
+		}
+
+		// ---- VEF shield field on apparel: bubble drawn where a held wearer last stood -----------------------------
+		// CompShieldField.Draw puts the bubble at the wearer's TrueCenter, which reads Position. A wearer inside a gene
+		// extractor is not spawned and keeps the Position of the cell it entered from (the interaction spot). Zoomed
+		// out, the game draws pawns from the cached atlas, and that path calls DrawEquipmentAndApparelExtras, so the
+		// extractor's occupant drew a full archoplate bubble (VRE Archon, radius 2) beside the machine; zoomed in, the
+		// render tree path draws no worn extras and it disappeared (2026-11-27). Vanilla's shield belt only shows on a
+		// spawned wearer (CompShield.ShouldDisplay); the field now does the same. Shield fields on buildings are unchanged.
+		static bool ShieldFieldSkipUnspawned(ThingComp __instance) => __instance.parent is not Apparel { Wearer: { Spawned: false } };
+
 		// ---- Childhood Backstories + Altered Carbon 2: gestated sleeves get a childhood backstory at 13 --------------
 		// ZCB's postfix on LifeStageWorker_HumanlikeAdult.Notify_LifeStageStarted swaps a colony/tribe child backstory
 		// for one of its own, adds its skill gains, forced traits and passions. A sleeve gestator ages its pawn from
@@ -4463,6 +4507,7 @@ namespace Harmony3StrictCompat
 			["Hospitality.Utilities.SpawnGroupUtility:GenerateNewGearFor"] = 0xC7A47125AA159971,                  // Hospitality 1.7, DLL of 2026-11-20 21:09 (rebuild, body unchanged)
 			["Hospitality.Utilities.ItemUtility:PocketHeadgear"] = 0xEC7B03B8570A7845,                       // Hospitality 1.7, DLL of 2026-11-20 21:09 (rebuild, body unchanged)
 			["QuickFast.Source.H_ApparelPatches:ShouldHideApparel"] = 0x1CBEA167E2B1AAE0,               // Dubs Apparel Tweaks 1.7, DLL of 2026-10-14 11:20
+			["VEF.Apparels.CompShieldField:Draw"] = 0x4AECEEABA2B74ED2,                                  // VEF 1.7 VEF.dll, DLL of 2026-11-19 14:38
 			["VEF.Apparels.CompShieldBubble:CompAllowVerbCast"] = 0x7A78279D0410FE08,                    // VEF 1.7, 2026-11-19
 			["ZCB.BackstoryReplacementPatch:Postfix"] = 0x09102092F88BEC1B,                                // Childhood Backstories 1.7 DLL of 2026-10-25 21:37
 			["AlteredCarbon.AC_Utils:IsEmptySleeve"] = 0x22D013499DE9F5AD,                                // Altered Carbon 2 1.6 DLL, 2026-10-29

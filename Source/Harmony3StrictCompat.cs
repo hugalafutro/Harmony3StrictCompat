@@ -459,7 +459,8 @@ namespace Harmony3StrictCompat
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HdNoBillOnForeignInventory)) { priority = Priority.Last });
 			}
 			if (Target("RimWorld.WorkGiver_CookFillHopper:HopperFillFoodJob") is { } hopperFill)
-				harmony.Patch(hopperFill, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HopperFillNeedsGoodCell)));
+				harmony.Patch(hopperFill, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HopperFillCheapTestsFirst)),
+					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HopperFillNeedsGoodCell)));
 			if (Target("RimWorld.IncidentWorker_Raid:TryGenerateRaidInfo") is { } raidInfo)
 				harmony.Patch(raidInfo, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FriendlyRaidDressedForCold)));
 			// Smarter Visitors' leave dialog gets Event Image Popup's visitor picture; both mods fingerprinted.
@@ -3304,6 +3305,77 @@ namespace Harmony3StrictCompat
 			if (__result?.def == JobDefOf.HaulToCell && hopperSgp is Thing hopper && __result.targetB.Cell == hopper.Position
 				&& __result.targetA.Thing is { } food && !StoreUtility.IsGoodStoreCell(hopper.Position, hopper.Map, food, pawn, pawn.Faction))
 				__result = null;
+		}
+
+		// ---- Vanilla fill-hopper search asks reach for food the hopper will never take ------------------------------
+		// For an empty hopper HopperFillFoodJob walks every FoodSourceNotPlantOrTree thing on the map and runs
+		// PawnCanAutomaticallyHaul (a reach check, a near-full region flood after each reach-cache clear) on every raw
+		// food stack before it asks the hopper's own filter and the storage priority. Seen 2026-11-27: one empty paste
+		// hopper, about 300 raw stacks, a wildfire clearing the reach cache every 37 ticks: 0.68 s of a 42.8 s tick
+		// sample, nearly all reach. This is the vanilla method (fingerprinted) with the two cheap tests moved ahead of
+		// the haul check: the same thing in the same list order becomes the job, and the "only food is in higher
+		// priority storage" reason is still set only for food the pawn could haul. Only the right-click reason can
+		// differ: vanilla's haul check may name a reason (burning, reserved) for food the hopper refuses anyway.
+		static int hopperSearches, hopperHaulChecks, hopperHaulSkips;
+		static bool hopperReported;
+		static string hopperHigherPriorityTrans, hopperNoFoodTrans;
+
+		static bool HopperFillCheapTestsFirst(Pawn pawn, ISlotGroupParent hopperSgp, bool forced, ref Job __result)
+		{
+			var building = (Building)hopperSgp;
+			var accept = pawn.Map.haulDestinationManager.SlotGroupAt(building.Position)?.Settings;
+			var own = hopperSgp.GetSlotGroup()?.Settings;
+			if (accept == null || own == null) return true;   // vanilla throws here; let it
+			__result = null;
+			if (!pawn.CanReserveAndReach(building.Position, PathEndMode.Touch, pawn.NormalMaxDanger())) return false;
+			ThingDef thingDef = null;
+			Thing firstItem = building.Position.GetFirstItem(building.Map);
+			if (firstItem != null)
+			{
+				if (!Building_NutrientPasteDispenser.IsAcceptableFeedstock(firstItem.def))
+				{
+					if (!firstItem.IsForbidden(pawn)) __result = HaulAIUtility.HaulAsideJobFor(pawn, firstItem);
+					return false;
+				}
+				thingDef = firstItem.def;
+			}
+			var list = thingDef != null ? pawn.Map.listerThings.ThingsOfDef(thingDef)
+				: pawn.Map.listerThings.ThingsInGroup(ThingRequestGroup.FoodSourceNotPlantOrTree);
+			var hopperPriority = (int)own.Priority;
+			bool higherOnly = false;
+			for (int i = 0; i < list.Count; i++)
+			{
+				Thing thing = list[i];
+				if (!thing.def.IsNutritionGivingIngestible || (thing.def.ingestible.preferability != FoodPreferability.RawBad
+					&& thing.def.ingestible.preferability != FoodPreferability.RawTasty)) continue;
+				if (!accept.AllowedToAccept(thing)) { hopperHaulSkips++; continue; }
+				if ((int)StoreUtility.CurrentStoragePriorityOf(thing, forced) >= hopperPriority)
+				{
+					// vanilla only sets the reason again here, so one haulable stack in better storage is enough
+					if (higherOnly) { hopperHaulSkips++; continue; }
+					hopperHaulChecks++;
+					if (HaulAIUtility.PawnCanAutomaticallyHaul(pawn, thing, forced))
+					{
+						higherOnly = true;
+						JobFailReason.Is(hopperHigherPriorityTrans ??= "TheOnlyAvailableFoodIsInStorageOfHigherPriority".Translate());
+					}
+					continue;
+				}
+				hopperHaulChecks++;
+				if (!HaulAIUtility.PawnCanAutomaticallyHaul(pawn, thing, forced)) continue;
+				if (HaulAIUtility.HaulToCellStorageJob(pawn, thing, building.Position, fitInStoreCell: true) is { } job)
+				{
+					__result = job;
+					break;
+				}
+			}
+			if (__result == null && !higherOnly) JobFailReason.Is(hopperNoFoodTrans ??= "NoFoodToFillHopper".Translate());
+			if (!hopperReported && ++hopperSearches >= 300)
+			{
+				hopperReported = true;
+				Log.Message($"[Harmony3StrictCompat] Hopper fill search: {hopperSearches} searches ran {hopperHaulChecks} haul checks and skipped {hopperHaulSkips} for food the hopper refuses or that sits in better storage");
+			}
+			return false;
 		}
 
 		static void HdNoBillOnForeignInventory(ref Job __result, Pawn pawn)

@@ -4999,7 +4999,7 @@ namespace Harmony3StrictCompat
 			["SatelliteMinimap.MinimapWindow:Toggle"] = 0x2C37E6475E92163E,
 			["SatelliteMinimap.MinimapSettings:ExposeData"] = 0x75F6660846866D5A,
 			["RimWorld.Planet.SettleUtility:AddNewHome"] = 0x69C44B511913CADB,                       // game 1.7.5014, 2026-11-22 ("live in a new settlement" want goes to the settlers)
-			["WantsAndQuirks.SettleUtility_AddNewHome_Patch:Postfix"] = 0x8F77A64C6D0DB00F,          // Character Development, DLL of 2026-11-13
+			["WantsAndQuirks.SettleUtility_AddNewHome_Patch:Postfix"] = 0x74906C525BD832E1,          // Character Development, DLL of 2026-11-27
 			["Impact.WeaponEqualizer:Run"] = 0xFC3B14BF7DB2BCE2,                                   // IMPACT - Combat Overhaul 1.0.1, 2026-11-23 (damage floor scaled by rate of fire)
 			["Impact.WeaponEqualizer:Equalize"] = 0xEF0B66E9178B4A5A,
 			["Impact.WeaponEqualizer:GetClamps"] = 0x55A423DD45A86ED9,

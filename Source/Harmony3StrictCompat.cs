@@ -362,6 +362,12 @@ namespace Harmony3StrictCompat
 			if (lpInfo != null)
 				harmony.Patch(lpInfo, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LpLockEnter)),
 					finalizer: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(LpLockExit)));
+			if (AccessTools.TypeByName("NiceBillTab.BetterWorkbenchesIntegration") != null
+				&& Target("ImprovedWorkbenches.Main:GetMaxBills") is { } bwmMaxBills)
+			{
+				Target("ImprovedWorkbenches.BillCopyPaste:CanWorkTableDoRecipeNow"); // fingerprint only: the one caller of GetMaxBills
+				harmony.Patch(bwmMaxBills, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(BwmPasteLimitForNiceBillTab)));
+			}
 			var bwmFilters = Target("ImprovedWorkbenches.BillConfig_DoWindowContents_Patch:DrawFilters");
 			if (bwmFilters != null)
 				harmony.Patch(bwmFilters, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(BwmClearStyleButton)));
@@ -4318,6 +4324,18 @@ namespace Harmony3StrictCompat
 		static bool ZcbSkipSleeves(Pawn pawn) =>
 			pawn?.ParentHolder?.GetType().Name != "Building_SleeveGestator" && !acEmptySleeve(pawn);
 
+		// ---- Better Workbench Management + Nice Bill Tab: bills past the 15th are not pasted -------------------------
+		// BWM's bill copy/paste (BillCopyPaste.CanWorkTableDoRecipeNow, the only caller of Main.GetMaxBills) only pastes
+		// into a bench with fewer bills than GetMaxBills: vanilla's BillStack.MaxCount of 15, or 125 when the No Max
+		// Bills mod is loaded. Nice Bill Tab adds bills with no limit, so the fabrication benches here carry 24-35
+		// bills. Pasting "copy all" stopped at the 15th bill (the bionics further down the list were left out), and on
+		// a bench that already had 15 CanPasteInto was false, so Nice Bill Tab hid the paste button as if the clipboard
+		// were empty (2026-11-27). With Nice Bill Tab loaded, BWM gets the same 125 it uses for No Max Bills.
+		static void BwmPasteLimitForNiceBillTab(ref int __result)
+		{
+			if (__result < 125) __result = 125;
+		}
+
 		// ---- Childhood Backstories: "surgery victim" body purists in a transhumanist colony --------------------------
 		// ZCB_SurgeryVictim ("distrusts doctors, as every hospital visit seems to result in a new artificial part") is
 		// picked for any child with 2+ added or implanted parts and forces Body Purist. Its only guard is the
@@ -4563,6 +4581,8 @@ namespace Harmony3StrictCompat
 			["Inventory.BWM_DoWindowContentsPatch_Patch:Transpiler"] = 0x1208A46933A47D41,                     // Loadout Compositing 1.7, 2026-10-28
 			["Inventory.BWM_DoWindowContentsPatch_Patch:ShouldCountAway"] = 0xA22693055B6314E7,                // Loadout Compositing 1.7, 2026-10-28
 			["ImprovedWorkbenches.BillConfig_DoWindowContents_Patch:DrawFilters"] = 0x9EC9048AEF0F485C,        // BWM 1.7 Waylith (Debug build), 2026-11-15
+			["ImprovedWorkbenches.Main:GetMaxBills"] = 0xE0E16C6BDC79D335,
+			["ImprovedWorkbenches.BillCopyPaste:CanWorkTableDoRecipeNow"] = 0xC64DF5FD08916B34,
 			["ImprovedWorkbenches.BillConfig_DoWindowContents_Patch:DrawWorkTableNavigation"] = 0xCD24E921595CA15E,
 			["VanillaRacesExpandedSanguophage.JobGiver_GetCorpseHemogen:TryGiveJob"] = 0x00285EA300E503C6,   // VRE Sanguophage 1.6 build, 2026-10-01
 			["ModSettingsFramework.PatchOperationSliderFloat:ApplyWorker"] = 0x7D3F07C2C28B20A5,              // VEF 1.7 0ModSettingsFramework.dll, 2026-10-13

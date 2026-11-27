@@ -4774,8 +4774,8 @@ namespace Harmony3StrictCompat
 			["QuietWonders.QWLife:FindAsleepRooms"] = 0xA4AB64F59EBA1DA8,                                      // Quiet Wonders, DLL of 2026-11-26 19:16 (room checks for awake pawns)
 			["VanillaLootBeams.MapComponent_VLB:MapComponentUpdate"] = 0xB6057CCBACF5C359,                // Vanilla Loot Beams, DLL of 2026-06-21 (current map only)
 			["VanillaFurnitureExpandedFactory.StoreUtility_IsGoodStoreCell_Patch:Postfix"] = 0xCE7EFB50ACFC94E1, // VFE Factory 1.7, 2026-11-24 (no-insert hopper in the haul list)
-			["GUIPerformancePatch.GppFightTarget:Pre"] = 0x80FF1F136935A536,                         // WOWGAG's Performance Patch 1.7, DLL of 2026-11-26 13:56 (still one validator.Method read each)
-			["GUIPerformancePatch.GppFightTarget:Post"] = 0x9A456E1C23C61553,
+			["GUIPerformancePatch.GppFightTarget:Pre"] = 0xBB695E46A0A8EA02,                         // WOWGAG's Performance Patch 1.7, DLL of 2026-11-27 12:57 (still one validator.Method read each; now also compares closure captures)
+			["GUIPerformancePatch.GppFightTarget:Post"] = 0x261655609FF302AB,
 			["Verse.Reachability:CheckRegionBasedReachability"] = 0x0AE52A32FAF5BA8D,                // game 1.7.5014, 2026-11-22 (reach flood memo)
 			["Verse.Reachability:QueueNewOpenRegion"] = 0xAA67D4BF0BC72D97,
 			["Verse.Reachability:CanReach"] = 0x22585B275FCEF578,

@@ -319,6 +319,8 @@ namespace Harmony3StrictCompat
 			if (Target("Verse.Pawn:SpawnSetup") is { } pawnSpawnSetup)
 				harmony.Patch(pawnSpawnSetup, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RenderRecacheOnSpawnChange)));
 			harmony.Patch(AccessTools.Method(typeof(Pawn), nameof(Pawn.DeSpawn)), postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RenderRecacheOnSpawnChange)));
+			if (AccessTools.TypeByName("VFEPirates.Apparel_Warcasket") != null && Target("Verse.PawnRenderNode:AppendRequests") is { } nodeAppend)
+				harmony.Patch(nodeAppend, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(WarcasketHidesGeneNodes)));
 			if (Target("VEF.Apparels.CompShieldBubble:CompAllowVerbCast") is { } bubbleVerb)
 				harmony.Patch(bubbleVerb, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(BubbleAllowsBeatFire)));
 			if (Target("ZCB.BackstoryReplacementPatch:Postfix") is { } zcbAdult
@@ -4418,6 +4420,17 @@ namespace Harmony3StrictCompat
 		static bool IsCasketPiece(Apparel a) => a?.GetType().Name == "Apparel_Warcasket";
 		static bool WearsCasket(Pawn p) => p?.apparel?.WornApparel.Any(IsCasketPiece) == true;
 
+		// ---- VFE Pirates: gene graphics stick out of a warcasket ---------------------------------------------------
+		// A warcasket is the wearer's whole body, but VFE Pirates hides nothing of the pawn: its pieces have no render
+		// skip flags, and the only render patch keeps the casket helmet visible. Gene attachments still draw. Ears
+		// mostly vanished under the big helmet sprite, but a tail stuck out past the casket (Tormin, 2026-11-27).
+		// While a warcasket is worn, every gene render node (and so its children) is left out of the draw request
+		// list. PawnRenderNode.AppendRequests only runs when the tree rebuilds that list, and putting on or taking off
+		// apparel dirties the tree, so this costs nothing per frame. Covers casket mods built on VFE Pirates' bases
+		// (Overlord Warcasket).
+		static bool WarcasketHidesGeneNodes(PawnRenderNode __instance, PawnDrawParms parms) =>
+			__instance.gene == null || !WearsCasket(parms.pawn);
+
 		// ---- Giddy-Up 2: caravan mounts forget the caravan's destination ------------------------------------
 		// MountUtility.Dismount sets a non-player animal's duty focus to the cell it stands on. For a trade caravan
 		// still in LordToil_Travel that duty is TravelOrLeave to the chill spot, so the animal parks where its rider
@@ -4566,6 +4579,7 @@ namespace Harmony3StrictCompat
 			["RimPacts.HediffComp_RptDropOnPlayerOwned:CompPostTick"] = 0x15979899F58581E4,
 			["RimPacts.WorldComponent_RimPacts:CaravanGuardStep"] = 0x9AF75C085C4C990A,
 			["RimWorldWaylith.Imgui.ImGuiHost+Activation:.ctor"] = 0x085C7E0AA89600A5,                   // game 1.7.5021 RimWorld.dll
+			["Verse.PawnRenderNode:AppendRequests"] = 0x27B4435049B4D5E1,                                    // game 1.7.5021 (warcasket hides gene nodes)
 			["DressForTheWeather.PawnsArriveUtilities:DressPawnAppropriately"] = 0xF6A3084C72CDCFB6,   // Dress for the Weather 1.7, DLL of 2026-10-27
 			["DressForTheWeather.PawnsArriveUtilities:InitializeApparelPairs"] = 0x642A784DF0292B51,
 			["DressForTheWeather.IncidentWorker_NeutralGroup_SpawnPawns:Postfix"] = 0xB1048B0DC4E3B6FC,

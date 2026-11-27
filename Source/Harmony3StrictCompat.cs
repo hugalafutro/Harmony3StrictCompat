@@ -324,6 +324,8 @@ namespace Harmony3StrictCompat
 				acEmptySleeve = AccessTools.MethodDelegate<Func<Pawn, bool>>(acIsEmptySleeve);
 				harmony.Patch(zcbAdult, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ZcbSkipSleeves)));
 			}
+			if (ModsConfig.IdeologyActive && Target("ZCB.ZCBackstoryDef:IsAcceptable") is { } zcbAcceptable)
+				harmony.Patch(zcbAcceptable, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ZcbNoPuristInTranshumanists)));
 			var svPrefix = Target("SmarterVisitors.Trigger_TicksPassed_ActivateOn:Prefix");
 			svStayTimer = AccessTools.TypeByName("Hospitality.Trigger_TicksPassedAndOkayToLeave");
 			if (svPrefix != null && svStayTimer != null)
@@ -4316,6 +4318,27 @@ namespace Harmony3StrictCompat
 		static bool ZcbSkipSleeves(Pawn pawn) =>
 			pawn?.ParentHolder?.GetType().Name != "Building_SleeveGestator" && !acEmptySleeve(pawn);
 
+		// ---- Childhood Backstories: "surgery victim" body purists in a transhumanist colony --------------------------
+		// ZCB_SurgeryVictim ("distrusts doctors, as every hospital visit seems to result in a new artificial part") is
+		// picked for any child with 2+ added or implanted parts and forces Body Purist. Its only guard is the
+		// Transhumanist trait. In a transhumanist colony the child's own ideoligion says "Body modification: Approved"
+		// and gives it "No artificial enhancement" (-3) until it gets a bionic, so a child raised by fully bionic
+		// parents does not grow up resenting implants (personal tweak, 2026-11-27): a backstory that forces Body Purist
+		// is not acceptable for a pawn whose ideoligion has the BodyMod_Approved precept. Applies to any ZCB backstory
+		// that forces the trait, so a later one is covered too.
+		static PreceptDef bodyModApproved;
+		static void ZcbNoPuristInTranshumanists(BackstoryDef __instance, Pawn pawn, ref bool __result)
+		{
+			bodyModApproved ??= DefDatabase<PreceptDef>.GetNamedSilentFail("BodyMod_Approved");
+			if (!__result || bodyModApproved == null || __instance.forcedTraits == null || pawn?.Ideo?.HasPrecept(bodyModApproved) != true) return;
+			foreach (var trait in __instance.forcedTraits)
+				if (trait.def == TraitDefOf.BodyPurist)
+				{
+					__result = false;
+					return;
+				}
+		}
+
 		// ---- VEF shield bubble: "no ranged attacks" also stops beating out fire --------------------------------------
 		// CompShieldBubble.CompAllowVerbCast with dontAllowRangedAttack refuses every verb whose IsMeleeAttack is false,
 		// i.e. anything not derived from Verb_MeleeAttack. The native Verb_BeatFire derives from Verb, so a VFE Pirates
@@ -4528,6 +4551,7 @@ namespace Harmony3StrictCompat
 			["VEF.Apparels.CompShieldField:Draw"] = 0x4AECEEABA2B74ED2,                                  // VEF 1.7 VEF.dll, DLL of 2026-11-19 14:38
 			["VEF.Apparels.CompShieldBubble:CompAllowVerbCast"] = 0x7A78279D0410FE08,                    // VEF 1.7, 2026-11-19
 			["ZCB.BackstoryReplacementPatch:Postfix"] = 0x09102092F88BEC1B,                                // Childhood Backstories 1.7 DLL of 2026-10-25 21:37
+			["ZCB.ZCBackstoryDef:IsAcceptable"] = 0x7D3BF4CD4DE2E581,
 			["AlteredCarbon.AC_Utils:IsEmptySleeve"] = 0x22D013499DE9F5AD,                                // Altered Carbon 2 1.6 DLL, 2026-10-29
 			["HospitalityCasino.JobGiver_PlaySlotMachines:TryGiveJob"] = 0x886CDC4608E3C02D,                 // Casino 1.7, 2026-11-05
 			["HospitalityCasino.VendingMachineJobHelper:InsertCoin"] = 0xDD3ACDA377763174,                   // Casino 1.7, 2026-11-06

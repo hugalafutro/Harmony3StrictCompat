@@ -312,7 +312,9 @@ namespace Harmony3StrictCompat
 				harmony.Patch(datHideHeld, transpiler: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(DatHideHeldPawns)));
 			if (Target("VEF.Apparels.CompShieldField:Draw") is { } fieldDraw)
 				harmony.Patch(fieldDraw, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(ShieldFieldSkipUnspawned)));
-			harmony.Patch(AccessTools.Method(typeof(Pawn), nameof(Pawn.SpawnSetup)), postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RenderRecacheOnSpawnChange)));
+			// Target, not AccessTools: BillCountCache fingerprints SpawnSetup later and would read back the patched IL
+			if (Target("Verse.Pawn:SpawnSetup") is { } pawnSpawnSetup)
+				harmony.Patch(pawnSpawnSetup, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RenderRecacheOnSpawnChange)));
 			harmony.Patch(AccessTools.Method(typeof(Pawn), nameof(Pawn.DeSpawn)), postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(RenderRecacheOnSpawnChange)));
 			if (Target("VEF.Apparels.CompShieldBubble:CompAllowVerbCast") is { } bubbleVerb)
 				harmony.Patch(bubbleVerb, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(BubbleAllowsBeatFire)));

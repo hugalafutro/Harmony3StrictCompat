@@ -184,6 +184,7 @@
 - WOWGAG's Performance Patch: its turret/pawn target reuse no longer asks the runtime for the validator's method on every search (about half of all turret tick time); a small table gives the same answer.
 - Alpha Books: ruined and burned books show in the reading policy dialog again, so a policy can allow them and colonists read them for recreation (Alpha Books hid them together with its single-use books).
 - Alpha Books: colonists pick ruined and burned books at random together with novels, instead of only when no novel or useful textbook is left.
+- Vanilla: a fight inside a room no longer recomputes the room's stats on every hit for the Wounded tale.
 - (tooling): the previous run's Player.log and Hauler's Dream debug log are copied to Logs/Archive at startup (newest 30 kept).
 - (tooling, temporary): a job that restarts ten times a tick logs what it points at (job-loop probe).
 - (tooling, temporary): Loadout Compositing per-tag bills log their target, cached and live count and tagged pawns when they decide to craft and when they finish (per-tag bill probe).</description>

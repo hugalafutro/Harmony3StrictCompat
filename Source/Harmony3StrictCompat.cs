@@ -461,6 +461,13 @@ namespace Harmony3StrictCompat
 			if (Target("RimWorld.WorkGiver_CookFillHopper:HopperFillFoodJob") is { } hopperFill)
 				harmony.Patch(hopperFill, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HopperFillCheapTestsFirst)),
 					postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(HopperFillNeedsGoodCell)));
+			if (Target("RimWorld.TaleRecorder:RecordTale") is { } recordTale && Target("RimWorld.TaleData_Surroundings:GenerateFrom") is { } taleSurroundings)
+			{
+				harmony.Patch(recordTale, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(WoundedTaleBegin)),
+					finalizer: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(WoundedTaleEnd)));
+				harmony.Patch(taleSurroundings, prefix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(WoundedTaleKeepRoomStats)),
+					finalizer: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(WoundedTaleRoomDirtyAgain)));
+			}
 			if (Target("RimWorld.IncidentWorker_Raid:TryGenerateRaidInfo") is { } raidInfo)
 				harmony.Patch(raidInfo, postfix: new HarmonyMethod(typeof(Harmony3StrictCompatMod), nameof(FriendlyRaidDressedForCold)));
 			// Smarter Visitors' leave dialog gets Event Image Popup's visitor picture; both mods fingerprinted.
@@ -3307,6 +3314,56 @@ namespace Harmony3StrictCompat
 				__result = null;
 		}
 
+		// ---- Vanilla Wounded tale recomputes the fight room on every hit ---------------------------------------------
+		// Pawn_HealthTracker.PreApplyDamage records a Wounded tale (no ignoreChance) for every violent hit on a flesh
+		// pawn. The tale's TaleData_Surroundings reads room.Role and three room stats; blood, filth and corpses keep the
+		// fight room dirty, so nearly every hit runs Room.UpdateRoomStatsAndRole (all role workers, wealth, beauty).
+		// Seen 2026-11-28, 100 insects in melee indoors: 4.9 s of an 18.5 s tick sample. While a Wounded tale is built,
+		// a dirty room that has been computed before hands out its last role and stats; the dirty flag is put back, so
+		// every other reader still recomputes. Only the short-lived Wounded tale can hold slightly old room values.
+		// ponytail: no age limit on the old values; add a per-room refresh every N ticks if tale text ever matters.
+		static bool woundedTale, woundedReported;
+		static int woundedTales, woundedKept;
+		static AccessTools.FieldRef<Room, bool> roomStatsDirty;
+		static AccessTools.FieldRef<Room, RoomRoleDef> roomRole;
+
+		static void WoundedTaleBegin(TaleDef def)
+		{
+			if (def == TaleDefOf.Wounded) woundedTale = true;
+		}
+
+		static Exception WoundedTaleEnd(Exception __exception)
+		{
+			woundedTale = false;
+			return __exception;
+		}
+
+		static void WoundedTaleKeepRoomStats(IntVec3 c, Map map, out Room __state)
+		{
+			__state = null;
+			if (!woundedTale) return;
+			roomStatsDirty ??= AccessTools.FieldRefAccess<Room, bool>("statsAndRoleDirty");
+			roomRole ??= AccessTools.FieldRefAccess<Room, RoomRoleDef>("role");
+			var room = c.GetRoomOrAdjacent(map, RegionType.Set_All);
+			if (room != null && roomStatsDirty(room) && roomRole(room) != null)
+			{
+				roomStatsDirty(room) = false;
+				__state = room;
+				woundedKept++;
+			}
+			if (!woundedReported && ++woundedTales >= 300)
+			{
+				woundedReported = true;
+				Log.Message($"[Harmony3StrictCompat] Wounded tale room stats: {woundedKept} of {woundedTales} tales used the room's last stats instead of recomputing a dirty room");
+			}
+		}
+
+		static Exception WoundedTaleRoomDirtyAgain(Room __state, Exception __exception)
+		{
+			if (__state != null) roomStatsDirty(__state) = true;
+			return __exception;
+		}
+
 		// ---- Vanilla fill-hopper search asks reach for food the hopper will never take ------------------------------
 		// For an empty hopper HopperFillFoodJob walks every FoodSourceNotPlantOrTree thing on the map and runs
 		// PawnCanAutomaticallyHaul (a reach check, a near-full region flood after each reach-cache clear) on every raw
@@ -4671,6 +4728,8 @@ namespace Harmony3StrictCompat
 			["RimWorldWaylith.Imgui.ImGuiHost+Activation:.ctor"] = 0x085C7E0AA89600A5,                   // game 1.7.5021 RimWorld.dll
 			["Verse.PawnRenderNode:AppendRequests"] = 0x27B4435049B4D5E1,                                    // game 1.7.5021 (warcasket hides gene nodes)
 			["RimWorld.WorkGiver_CookFillHopper:HopperFillFoodJob"] = 0xD3E9C68143DDD442,                    // game 1.7.5021 (fill-hopper job needs a good store cell)
+			["RimWorld.TaleRecorder:RecordTale"] = 0xCEA0EF6933BCA51B,                                       // game 1.7.5021 (Wounded tale keeps the room's last stats)
+			["RimWorld.TaleData_Surroundings:GenerateFrom"] = 0x324F8CC7EEB2B66C,
 			["DressForTheWeather.PawnsArriveUtilities:DressPawnAppropriately"] = 0xF6A3084C72CDCFB6,   // Dress for the Weather 1.7, DLL of 2026-10-27
 			["DressForTheWeather.PawnsArriveUtilities:InitializeApparelPairs"] = 0x642A784DF0292B51,
 			["DressForTheWeather.IncidentWorker_NeutralGroup_SpawnPawns:Postfix"] = 0xB1048B0DC4E3B6FC,
